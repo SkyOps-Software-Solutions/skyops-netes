@@ -2326,8 +2326,13 @@ export class DataStore {
     const cluster = this.getCluster(clusterId, orgId);
     if (!cluster) return [];
     let list = this.resources.get(clusterId) || [];
+    const isTestEnv =
+      process.env.NODE_ENV === 'test' ||
+      Boolean(process.env.npm_lifecycle_event?.includes('test')) ||
+      Boolean(process.env.NODE_TEST_CONTEXT);
     if (
-      process.env.NODE_ENV !== 'test' &&
+      !isTestEnv &&
+      cluster.connectionState === 'connected' &&
       (list.length < 8 || !list.some((r) => ['Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob'].includes(r.kind)))
     ) {
       list = this.ensureDefaultClusterResources(cluster);

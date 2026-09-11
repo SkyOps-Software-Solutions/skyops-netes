@@ -18,24 +18,30 @@ import { Button, EmptyState } from '../common/UI';
 import { PodDetailModal } from '../resources/PodDetailModal';
 import { WorkloadDetailModal } from '../resources/WorkloadDetailModal';
 
-interface WorkloadsViewProps {
-  resources: KubernetesResource[];
-  clusters: Cluster[];
-  incidents: Incident[];
-  loading: boolean;
-  onRefresh: () => void;
-  onSelectCluster: (clusterId: string) => void;
-  onSelectIncident: (incidentId: string) => void;
+export interface WorkloadsViewProps {
+  resources?: KubernetesResource[];
+  workloads?: KubernetesResource[];
+  clusterResources?: KubernetesResource[];
+  clusters?: Cluster[];
+  incidents?: Incident[];
+  loading?: boolean;
+  onRefresh?: () => void;
+  onSelectCluster?: (clusterId: string) => void;
+  onSelectIncident?: (incidentId: string) => void;
+  onSelectWorkload?: (workload: KubernetesResource) => void;
 }
 
 export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
-  resources,
-  clusters,
-  incidents,
-  loading,
+  resources = [],
+  workloads = [],
+  clusterResources = [],
+  clusters = [],
+  incidents = [],
+  loading = false,
   onRefresh,
   onSelectCluster,
-  onSelectIncident
+  onSelectIncident,
+  onSelectWorkload
 }) => {
   const [selectedClusterId, setSelectedClusterId] = useState<string>('all');
   const [selectedKind, setSelectedKind] = useState<string>('all');
@@ -45,12 +51,22 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
   const [selectedWorkload, setSelectedWorkload] = useState<KubernetesResource | null>(null);
   const [selectedPod, setSelectedPod] = useState<KubernetesResource | null>(null);
 
+  const safeResources = useMemo(() => {
+    if (Array.isArray(resources) && resources.length > 0) return resources;
+    if (Array.isArray(clusterResources) && clusterResources.length > 0) return clusterResources;
+    if (Array.isArray(workloads) && workloads.length > 0) return workloads;
+    return [];
+  }, [resources, clusterResources, workloads]);
+
+  const safeClusters = useMemo(() => (Array.isArray(clusters) ? clusters : []), [clusters]);
+  const safeIncidents = useMemo(() => (Array.isArray(incidents) ? incidents : []), [incidents]);
+
   // Filter down to workload kinds
   const workloadKinds = ['Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob'];
 
   const allWorkloads = useMemo(() => {
-    return resources.filter((r) => workloadKinds.includes(r.kind));
-  }, [resources]);
+    return safeResources.filter((r) => r && workloadKinds.includes(r.kind));
+  }, [safeResources]);
 
   const filteredWorkloads = useMemo(() => {
     return allWorkloads.filter((w) => {
@@ -74,6 +90,14 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
     (w) => w.health === 'CRITICAL' || w.health === 'WARNING'
   ).length;
   const healthyCount = allWorkloads.filter((w) => w.health === 'HEALTHY').length;
+
+  const handleInspectWorkload = (workload: KubernetesResource) => {
+    if (onSelectWorkload) {
+      onSelectWorkload(workload);
+    } else {
+      setSelectedWorkload(workload);
+    }
+  };
 
   return (
     <div className="p-8 space-y-6 max-w-7xl mx-auto font-sans">
@@ -129,7 +153,7 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
 
         <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80">
           <div className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider">Connected Clusters</div>
-          <div className="text-2xl font-bold text-zinc-200 font-mono mt-1">{clusters.length}</div>
+          <div className="text-2xl font-bold text-zinc-200 font-mono mt-1">{safeClusters.length}</div>
           <div className="text-[10px] font-mono text-zinc-500 mt-1">Registered infrastructure</div>
         </div>
       </div>
@@ -155,8 +179,8 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
             onChange={(e) => setSelectedClusterId(e.target.value)}
             className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-zinc-300 focus:outline-none focus:border-sky-500"
           >
-            <option value="all">All Clusters ({clusters.length})</option>
-            {clusters.map((c) => (
+            <option value="all">All Clusters ({safeClusters.length})</option>
+            {safeClusters.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>
@@ -229,7 +253,7 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
                   0
                 );
 
-                const linkedIncidents = incidents.filter(
+                const linkedIncidents = safeIncidents.filter(
                   (inc) =>
                     inc.clusterId === workload.clusterId &&
                     inc.namespace === workload.namespace &&
@@ -239,7 +263,7 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
                 return (
                   <tr
                     key={workload.id}
-                    onClick={() => setSelectedWorkload(workload)}
+                    onClick={() => handleInspectWorkload(workload)}
                     className="hover:bg-zinc-800/40 transition-colors cursor-pointer group"
                   >
                     <td className="p-3.5 font-bold text-zinc-100 group-hover:text-sky-300">
@@ -252,7 +276,7 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          onSelectCluster(workload.clusterId);
+                          onSelectCluster?.(workload.clusterId);
                         }}
                         className="hover:text-sky-400 underline decoration-zinc-700 underline-offset-2 truncate max-w-[140px]"
                       >
@@ -291,7 +315,7 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            onSelectIncident(linkedIncidents[0].id);
+                            onSelectIncident?.(linkedIncidents[0].id);
                           }}
                           className="px-2 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-800/60 font-bold hover:bg-rose-900"
                         >
@@ -305,7 +329,7 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          setSelectedWorkload(workload);
+                          handleInspectWorkload(workload);
                         }}
                         className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-sky-900/60 hover:text-sky-200 text-zinc-300 text-xs font-mono transition-colors"
                       >
@@ -324,8 +348,8 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
       {selectedWorkload && (
         <WorkloadDetailModal
           workload={selectedWorkload}
-          clusterResources={resources.filter((r) => r.clusterId === selectedWorkload.clusterId)}
-          incidents={incidents}
+          clusterResources={safeResources.filter((r) => r.clusterId === selectedWorkload.clusterId)}
+          incidents={safeIncidents}
           onClose={() => setSelectedWorkload(null)}
           onSelectPod={(pod) => {
             setSelectedWorkload(null);
@@ -339,8 +363,8 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({
       {selectedPod && (
         <PodDetailModal
           pod={selectedPod}
-          clusterResources={resources.filter((r) => r.clusterId === selectedPod.clusterId)}
-          incidents={incidents}
+          clusterResources={safeResources.filter((r) => r.clusterId === selectedPod.clusterId)}
+          incidents={safeIncidents}
           onClose={() => setSelectedPod(null)}
           onSelectIncident={onSelectIncident}
           onSelectResource={(res) => {

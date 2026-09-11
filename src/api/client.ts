@@ -150,6 +150,28 @@ class ApiClient {
     }
 
     if (!res.ok) {
+      if (res.status === 401 && auth.currentUser) {
+        // Token might be expired or invalid. Force token refresh and retry once.
+        try {
+          const freshToken = await auth.currentUser.getIdToken(true);
+          const retryHeaders = {
+            ...headers,
+            Authorization: `Bearer ${freshToken}`
+          };
+          const retryRes = await fetch(url, { ...options, headers: retryHeaders });
+          const retryText = await retryRes.text();
+          if (retryRes.ok) {
+            try {
+              return (retryText ? JSON.parse(retryText) : {}) as T;
+            } catch {
+              return {} as T;
+            }
+          }
+        } catch (refreshErr) {
+          console.warn('Silent token refresh retry notice:', refreshErr);
+        }
+      }
+
       const errMsg = data?.error || `API request failed with status ${res.status}`;
       throw new Error(errMsg);
     }

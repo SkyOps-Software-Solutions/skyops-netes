@@ -18,24 +18,30 @@ import { Button, EmptyState } from '../common/UI';
 import { PodDetailModal } from '../resources/PodDetailModal';
 import { WorkloadDetailModal } from '../resources/WorkloadDetailModal';
 
-interface PodsViewProps {
-  resources: KubernetesResource[];
-  clusters: Cluster[];
-  incidents: Incident[];
-  loading: boolean;
-  onRefresh: () => void;
-  onSelectCluster: (clusterId: string) => void;
-  onSelectIncident: (incidentId: string) => void;
+export interface PodsViewProps {
+  resources?: KubernetesResource[];
+  pods?: KubernetesResource[];
+  clusterResources?: KubernetesResource[];
+  clusters?: Cluster[];
+  incidents?: Incident[];
+  loading?: boolean;
+  onRefresh?: () => void;
+  onSelectCluster?: (clusterId: string) => void;
+  onSelectIncident?: (incidentId: string) => void;
+  onSelectPod?: (pod: KubernetesResource) => void;
 }
 
 export const PodsView: React.FC<PodsViewProps> = ({
-  resources,
-  clusters,
-  incidents,
-  loading,
+  resources = [],
+  pods = [],
+  clusterResources = [],
+  clusters = [],
+  incidents = [],
+  loading = false,
   onRefresh,
   onSelectCluster,
-  onSelectIncident
+  onSelectIncident,
+  onSelectPod
 }) => {
   const [selectedClusterId, setSelectedClusterId] = useState<string>('all');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'crashing' | 'pending' | 'running'>('all');
@@ -44,10 +50,28 @@ export const PodsView: React.FC<PodsViewProps> = ({
   const [selectedPod, setSelectedPod] = useState<KubernetesResource | null>(null);
   const [selectedWorkload, setSelectedWorkload] = useState<KubernetesResource | null>(null);
 
+  const safeResources = useMemo(() => {
+    if (Array.isArray(resources) && resources.length > 0) return resources;
+    if (Array.isArray(clusterResources) && clusterResources.length > 0) return clusterResources;
+    if (Array.isArray(pods) && pods.length > 0) return pods;
+    return [];
+  }, [resources, clusterResources, pods]);
+
+  const safeClusters = useMemo(() => (Array.isArray(clusters) ? clusters : []), [clusters]);
+  const safeIncidents = useMemo(() => (Array.isArray(incidents) ? incidents : []), [incidents]);
+
   // All pods
   const allPods = useMemo(() => {
-    return resources.filter((r) => r.kind === 'Pod');
-  }, [resources]);
+    return safeResources.filter((r) => r && r.kind === 'Pod');
+  }, [safeResources]);
+
+  const handleInspectPod = (pod: KubernetesResource) => {
+    if (onSelectPod) {
+      onSelectPod(pod);
+    } else {
+      setSelectedPod(pod);
+    }
+  };
 
   // Is crashing helper
   const isPodCrashing = (p: KubernetesResource) => {
@@ -225,8 +249,8 @@ export const PodsView: React.FC<PodsViewProps> = ({
             onChange={(e) => setSelectedClusterId(e.target.value)}
             className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-zinc-300 focus:outline-none focus:border-sky-500"
           >
-            <option value="all">All Clusters ({clusters.length})</option>
-            {clusters.map((c) => (
+            <option value="all">All Clusters ({safeClusters.length})</option>
+            {safeClusters.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>
@@ -276,13 +300,11 @@ export const PodsView: React.FC<PodsViewProps> = ({
                 const failingC = pod.containers?.find(
                   (c) => c.waitingReason || c.terminationReason || !c.ready
                 );
-                const diagnosticText =
-                  failingC?.waitingReason || failingC?.terminationReason || pod.status;
 
                 return (
                   <tr
                     key={pod.id}
-                    onClick={() => setSelectedPod(pod)}
+                    onClick={() => handleInspectPod(pod)}
                     className={`hover:bg-zinc-800/40 transition-colors cursor-pointer group ${
                       crashing ? 'bg-rose-950/10' : ''
                     }`}
@@ -305,7 +327,7 @@ export const PodsView: React.FC<PodsViewProps> = ({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          onSelectCluster(pod.clusterId);
+                          onSelectCluster?.(pod.clusterId);
                         }}
                         className="hover:text-sky-400 underline decoration-zinc-700 underline-offset-2 truncate max-w-[130px]"
                       >
@@ -344,7 +366,7 @@ export const PodsView: React.FC<PodsViewProps> = ({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          setSelectedPod(pod);
+                          handleInspectPod(pod);
                         }}
                         className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-sky-900/60 hover:text-sky-200 text-zinc-300 text-xs font-mono transition-colors"
                       >
@@ -363,8 +385,8 @@ export const PodsView: React.FC<PodsViewProps> = ({
       {selectedPod && (
         <PodDetailModal
           pod={selectedPod}
-          clusterResources={resources.filter((r) => r.clusterId === selectedPod.clusterId)}
-          incidents={incidents}
+          clusterResources={safeResources.filter((r) => r.clusterId === selectedPod.clusterId)}
+          incidents={safeIncidents}
           onClose={() => setSelectedPod(null)}
           onSelectIncident={onSelectIncident}
           onSelectResource={(res) => {
@@ -380,8 +402,8 @@ export const PodsView: React.FC<PodsViewProps> = ({
       {selectedWorkload && (
         <WorkloadDetailModal
           workload={selectedWorkload}
-          clusterResources={resources.filter((r) => r.clusterId === selectedWorkload.clusterId)}
-          incidents={incidents}
+          clusterResources={safeResources.filter((r) => r.clusterId === selectedWorkload.clusterId)}
+          incidents={safeIncidents}
           onClose={() => setSelectedWorkload(null)}
           onSelectPod={(pod) => {
             setSelectedWorkload(null);

@@ -2328,8 +2328,6 @@ export class DataStore {
     let list = this.resources.get(clusterId) || [];
     if (
       process.env.NODE_ENV !== 'test' &&
-      cluster.status !== 'pending' &&
-      cluster.agentStatus !== 'PENDING' &&
       (list.length < 8 || !list.some((r) => ['Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob'].includes(r.kind)))
     ) {
       list = this.ensureDefaultClusterResources(cluster);

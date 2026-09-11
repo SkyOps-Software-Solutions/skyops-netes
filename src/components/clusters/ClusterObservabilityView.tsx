@@ -726,6 +726,13 @@ const ClusterObservabilityContent: React.FC<ClusterObservabilityViewProps> = ({
                       </tr>
                     );
                   })}
+                  {nodeSummaries.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-zinc-500 font-mono text-xs">
+                        No node telemetry summaries reported yet for this cluster.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

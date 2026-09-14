@@ -172,6 +172,7 @@ func (c *Collector) collectFromKubernetes(ctx context.Context) {
 	}
 
 	podMetricsMap := make(map[string]*K8sPodMetrics)
+	var podMetricsErr error
 	if podMetricsList, err := c.k8sClient.GetPodMetrics(ctx); err == nil && podMetricsList != nil {
 		for i := range podMetricsList.Items {
 			item := &podMetricsList.Items[i]
@@ -180,7 +181,24 @@ func (c *Collector) collectFromKubernetes(ctx context.Context) {
 		}
 		slog.Debug("Real pod metrics collected from Metrics Server", "podsWithMetrics", len(podMetricsMap))
 	} else {
+		podMetricsErr = err
 		slog.Debug("Kubernetes Metrics Server pod metrics not available", "notice", err)
+	}
+
+	metricsAvailable := len(nodeMetricsMap) > 0 || len(podMetricsMap) > 0
+	metricsErrMsg := ""
+	if !metricsAvailable {
+		if podMetricsErr != nil {
+			metricsErrMsg = fmt.Sprintf("metrics.k8s.io unavailable: %v", podMetricsErr)
+		} else {
+			metricsErrMsg = "metrics.k8s.io unavailable; Metrics Server not installed or reporting"
+		}
+	}
+	collectionStatus["metrics"] = CollectionStatusItem{
+		Collected:   metricsAvailable,
+		Count:       len(nodeMetricsMap) + len(podMetricsMap),
+		LastSuccess: time.Now().UnixMilli(),
+		Error:       metricsErrMsg,
 	}
 
 	// 2. Nodes

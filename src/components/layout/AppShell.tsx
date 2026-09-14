@@ -10,11 +10,6 @@ import { ClustersView } from '../clusters/ClustersView';
 import { IncidentDetailView } from '../incidents/IncidentDetailView';
 import { IncidentsView } from '../incidents/IncidentsView';
 import { OverviewView } from '../overview/OverviewView';
-import { InfrastructureView } from '../infrastructure/InfrastructureView';
-import { ObservabilityHubView } from '../observability/ObservabilityHubView';
-import { SkyOpsAICopilotView } from '../ai/SkyOpsAICopilotView';
-import { ActionsCenterView } from '../actions/ActionsCenterView';
-import { InsightsView } from '../insights/InsightsView';
 import { SettingsView } from '../settings/SettingsView';
 import { AuditView } from '../audit/AuditView';
 import { NavigationTab, Sidebar } from './Sidebar';
@@ -32,8 +27,6 @@ export const AppShell: React.FC<AppShellProps> = ({
   const [activeTab, setActiveTab] = useState<NavigationTab>('overview');
   const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
-  const [copilotInitialPrompt, setCopilotInitialPrompt] = useState<string>('');
-  const [targetLogPod, setTargetLogPod] = useState<{ clusterId: string; namespace: string; name: string } | null>(null);
   const [isAddClusterOpen, setIsAddClusterOpen] = useState(initialOpenAddCluster);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     try {
@@ -145,17 +138,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   const handleSelectCluster = (id: string) => {
     setSelectedClusterId(id);
     setSelectedIncidentId(null);
-    setActiveTab('infrastructure');
-  };
-
-  const handleOpenAICopilot = (prompt?: string) => {
-    if (prompt) setCopilotInitialPrompt(prompt);
-    setActiveTab('ai');
-  };
-
-  const handleOpenLogs = (clusterId: string, namespace: string, podName: string) => {
-    setTargetLogPod({ clusterId, namespace, name: podName });
-    setActiveTab('observability');
+    setActiveTab('clusters');
   };
 
   const handleClearIncident = () => {
@@ -308,11 +291,10 @@ export const AppShell: React.FC<AppShellProps> = ({
               onOpenAddCluster={() => setIsAddClusterOpen(true)}
               onRefresh={handleManualRefresh}
               loading={loading || isRefreshing}
-              onOpenAICopilot={handleOpenAICopilot}
             />
           )}
 
-          {(activeTab === 'infrastructure' || activeTab === 'clusters') && (
+          {activeTab === 'clusters' && (
             <>
               {selectedClusterId ? (
                 <ClusterDetailView
@@ -326,7 +308,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                   }}
                 />
               ) : (
-                <InfrastructureView
+                <ClustersView
                   clusters={clusters}
                   onSelectCluster={handleSelectCluster}
                   onOpenAddCluster={() => setIsAddClusterOpen(true)}
@@ -336,8 +318,6 @@ export const AppShell: React.FC<AppShellProps> = ({
                   }}
                   onRefresh={handleManualRefresh}
                   loading={loading || isRefreshing}
-                  onSelectIncident={handleSelectIncident}
-                  onOpenLogs={handleOpenLogs}
                 />
               )}
             </>
@@ -361,45 +341,6 @@ export const AppShell: React.FC<AppShellProps> = ({
                 />
               )}
             </>
-          )}
-
-          {activeTab === 'observability' && (
-            <ObservabilityHubView
-              clusters={clusters}
-              initialClusterId={targetLogPod?.clusterId}
-              initialPod={
-                targetLogPod ? { namespace: targetLogPod.namespace, name: targetLogPod.name } : undefined
-              }
-              onRefresh={handleManualRefresh}
-            />
-          )}
-
-          {activeTab === 'ai' && (
-            <SkyOpsAICopilotView
-              clusters={clusters}
-              incidents={incidents}
-              onSelectIncident={handleSelectIncident}
-              onSelectCluster={handleSelectCluster}
-              initialPrompt={copilotInitialPrompt}
-            />
-          )}
-
-          {activeTab === 'actions' && (
-            <ActionsCenterView
-              incidents={incidents}
-              onSelectIncident={handleSelectIncident}
-              onRefresh={handleManualRefresh}
-            />
-          )}
-
-          {activeTab === 'insights' && (
-            <InsightsView
-              clusters={clusters}
-              incidents={incidents}
-              onSelectIncident={handleSelectIncident}
-              onSelectCluster={handleSelectCluster}
-              onRefresh={handleManualRefresh}
-            />
           )}
 
           {activeTab === 'audit' && (

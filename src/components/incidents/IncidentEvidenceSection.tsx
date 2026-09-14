@@ -22,7 +22,7 @@ import {
   ExternalLink,
   Code2
 } from 'lucide-react';
-import { TechnicalDetails, SkyOpsAIAnalysis, Incident, IntelligenceAnalysis } from '../../types';
+import { TechnicalDetails, SkyOpsAIAnalysis, Incident } from '../../types';
 import { ProvenanceBadge, ProvenanceType } from '../common/Badges';
 import { CopyButton } from '../common/UI';
 import { ArchitecturalFaultTopology } from './ArchitecturalFaultTopology';
@@ -33,15 +33,13 @@ interface IncidentEvidenceSectionProps {
   aiAnalysis?: SkyOpsAIAnalysis | null;
   incidentType: string;
   incident?: Incident | null;
-  intelligence?: IntelligenceAnalysis | null;
 }
 
 export const IncidentEvidenceSection: React.FC<IncidentEvidenceSectionProps> = ({
   technicalDetails: tech,
   aiAnalysis,
   incidentType,
-  incident,
-  intelligence
+  incident
 }) => {
   const [activeTab, setActiveTab] = useState<'events' | 'containers' | 'conditions' | 'raw' | 'engine'>('events');
   const [isExpanded, setIsExpanded] = useState(true);
@@ -200,10 +198,7 @@ export const IncidentEvidenceSection: React.FC<IncidentEvidenceSectionProps> = (
   const totalEvents = tech.events?.length || 0;
   const totalContainers = tech.containers?.length || 0;
   const totalConditions = tech.conditions?.length || 0;
-  const totalEvidence =
-    (tech.evidence?.length || 0) +
-    (aiAnalysis?.evidence?.length || 0) +
-    (intelligence?.unifiedEvidence?.length || 0);
+  const totalEvidence = (tech.evidence?.length || 0) + (aiAnalysis?.evidence?.length || 0);
 
   return (
     <div className="p-5 sm:p-6 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-6 shadow-xs">
@@ -752,49 +747,7 @@ export const IncidentEvidenceSection: React.FC<IncidentEvidenceSectionProps> = (
                       </div>
                     </div>
                   ))}
-
-                  {/* Unified Evidence Engine Items */}
-                  {intelligence?.unifiedEvidence?.map((ev) => (
-                    <div
-                      key={`unified-${ev.id}`}
-                      className="p-3 rounded-lg bg-zinc-950 border border-zinc-800 flex items-start gap-2.5"
-                    >
-                      <div className="shrink-0 mt-0.5">
-                        <ProvenanceBadge
-                          type={ev.provenance as ProvenanceType}
-                          label={ev.relevance}
-                        />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-mono text-[10px] font-bold text-zinc-400 uppercase">
-                            {ev.sourceType}
-                          </span>
-                          <span className="text-[10px] text-cyan-400 font-mono">
-                            {Math.round(ev.confidence * 100)}% confidence
-                          </span>
-                        </div>
-                        <p className="text-zinc-200 text-xs mt-1 leading-relaxed whitespace-pre-wrap break-words font-mono">
-                          {ev.description}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
                 </div>
-
-                {/* Explicit Unknown Factors / Missing Observability Layers */}
-                {intelligence?.unknownFactors && intelligence.unknownFactors.length > 0 && (
-                  <div className="p-3.5 rounded-lg bg-amber-950/20 border border-amber-900/40 text-xs font-mono space-y-1">
-                    <span className="text-amber-400 font-bold uppercase text-[10px] block">
-                      Missing Telemetry & Unknown Observability Layers
-                    </span>
-                    <ul className="list-disc list-inside text-zinc-300 text-[11px] space-y-0.5">
-                      {intelligence.unknownFactors.map((uf, idx) => (
-                        <li key={idx}>{uf}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
               </div>
             )}
           </div>

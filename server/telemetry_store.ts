@@ -1,0 +1,718 @@
+import {
+  MetricHistoryPoint,
+  ResourceBaseline,
+  SpecChangePoint,
+  TelemetryAnomaly,
+  TelemetryQueryOptions,
+  TelemetryResponse,
+  TelemetrySummary
+} from '../src/types/index';
+
+/**
+ * Internal bucket accumulator for time-series rollups.
+ */
+interface RollupBucket {
+  timestamp: number; // bucket start timestamp
+  resolution: '5m' | '1h';
+  sampleCount: number;
+  cpuRequestMillicores: number;
+  cpuCapacityMillicores: number;
+  cpuRequestedPercent?: number;
+  cpuLimitPercent?: number;
+  memoryRequestBytes: number;
+  memoryCapacityBytes: number;
+  memoryRequestedPercent?: number;
+  memoryLimitPercent?: number;
+
+  // Runtime CPU metrics (if live)
+  cpuUsageSum: number;
+  cpuUsageMin?: number;
+  cpuUsageMax?: number;
+  cpuUsageLatest?: number;
+
+  // Runtime Memory metrics (if live)
+  memoryUsageSum: number;
+  memoryUsageMin?: number;
+  memoryUsageMax?: number;
+  memoryUsageLatest?: number;
+
+  isUsageAvailable: boolean;
+  source?: string;
+  incidentId?: string;
+}
+
+/**
+ * Per-cluster telemetry history state.
+ */
+interface ClusterTelemetryBucket {
+  clusterId: string;
+  rawPoints: MetricHistoryPoint[]; // Recent high-resolution observations (pruned at 2h unless pinned)
+  rollups5m: Map<number, RollupBucket>; // 5-minute rollup buckets (pruned at 48h)
+  rollups1h: Map<number, RollupBucket>; // 1-hour rollup buckets (pruned at 7d)
+  specHistory: SpecChangePoint[]; // Config changes history (pruned at 7d)
+  lastSpecSignature?: string; // Fingerprint of current spec to avoid duplicate snapshots
+}
+
+export class TelemetryStore {
+  private clusters = new Map<string, ClusterTelemetryBucket>();
+
+  // Retention windows
+  private readonly RAW_RETENTION_MS = 2 * 60 * 60 * 1000; // 2 hours for unpinned raw observations
+  private readonly ROLLUP_5M_RETENTION_MS = 48 * 60 * 60 * 1000; // 48 hours for 5m rollups
+  private readonly ROLLUP_1H_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days for 1h rollups
+  private readonly SPEC_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days for spec changes
+  private readonly MAX_RAW_POINTS = 1200;
+
+  private getOrCreateClusterBucket(clusterId: string): ClusterTelemetryBucket {
+    let bucket = this.clusters.get(clusterId);
+    if (!bucket) {
+      bucket = {
+        clusterId,
+        rawPoints: [],
+        rollups5m: new Map(),
+        rollups1h: new Map(),
+        specHistory: []
+      };
+      this.clusters.set(clusterId, bucket);
+    }
+    return bucket;
+  }
+
+  /**
+   * Records a raw telemetry observation and updates tiered rollups and incident pinning.
+   */
+  public recordObservation(
+    clusterId: string,
+    point: MetricHistoryPoint,
+    activeIncidents: Array<{ id: string; startedAt: number; resolvedAt?: number }> = [],
+    now = Date.now()
+  ): void {
+    const bucket = this.getOrCreateClusterBucket(clusterId);
+    const ts = point.timestamp || now;
+
+    // Check incident-aware pinning:
+    // If point falls in [startedAt - 15m, (resolvedAt || now) + 15m] of any incident, pin it.
+    let isPinned = false;
+    let incidentId: string | undefined = undefined;
+
+    const INCIDENT_BUFFER_MS = 15 * 60 * 1000;
+    for (const inc of activeIncidents) {
+      const windowStart = (inc.startedAt || now) - INCIDENT_BUFFER_MS;
+      const windowEnd = (inc.resolvedAt || now) + INCIDENT_BUFFER_MS;
+      if (ts >= windowStart && ts <= windowEnd) {
+        isPinned = true;
+        incidentId = inc.id;
+        break;
+      }
+    }
+
+    const recordedPoint: MetricHistoryPoint = {
+      ...point,
+      timestamp: ts,
+      resolution: 'raw',
+      pinned: isPinned,
+      incidentId
+    };
+
+    // 1. Add to raw points
+    bucket.rawPoints.push(recordedPoint);
+
+    // 2. Update 5-minute rollup bucket
+    this.accumulateRollup(bucket.rollups5m, ts, 5 * 60 * 1000, '5m', recordedPoint);
+
+    // 3. Update 1-hour rollup bucket
+    this.accumulateRollup(bucket.rollups1h, ts, 60 * 60 * 1000, '1h', recordedPoint);
+
+    // 4. Prune raw points older than RAW_RETENTION_MS UNLESS pinned
+    const rawCutoff = now - this.RAW_RETENTION_MS;
+    bucket.rawPoints = bucket.rawPoints.filter((p) => p.pinned || p.timestamp >= rawCutoff);
+    if (bucket.rawPoints.length > this.MAX_RAW_POINTS) {
+      // Keep pinned points and trim the oldest unpinned
+      const pinned = bucket.rawPoints.filter((p) => p.pinned);
+      const unpinned = bucket.rawPoints.filter((p) => !p.pinned);
+      const excess = bucket.rawPoints.length - this.MAX_RAW_POINTS;
+      if (unpinned.length > excess) {
+        unpinned.splice(0, excess);
+        bucket.rawPoints = [...unpinned, ...pinned].sort((a, b) => a.timestamp - b.timestamp);
+      }
+    }
+
+    // 5. Prune rollups
+    const rollup5mCutoff = now - this.ROLLUP_5M_RETENTION_MS;
+    for (const [key] of bucket.rollups5m) {
+      if (key < rollup5mCutoff) bucket.rollups5m.delete(key);
+    }
+
+    const rollup1hCutoff = now - this.ROLLUP_1H_RETENTION_MS;
+    for (const [key] of bucket.rollups1h) {
+      if (key < rollup1hCutoff) bucket.rollups1h.delete(key);
+    }
+  }
+
+  /**
+   * Helper to accumulate a point into a rollup bucket.
+   */
+  private accumulateRollup(
+    map: Map<number, RollupBucket>,
+    ts: number,
+    intervalMs: number,
+    resolution: '5m' | '1h',
+    point: MetricHistoryPoint
+  ): void {
+    const bucketStart = Math.floor(ts / intervalMs) * intervalMs;
+    let b = map.get(bucketStart);
+
+    if (!b) {
+      b = {
+        timestamp: bucketStart,
+        resolution,
+        sampleCount: 1,
+        cpuRequestMillicores: point.cpuRequestMillicores,
+        cpuCapacityMillicores: point.cpuCapacityMillicores,
+        cpuRequestedPercent: point.cpuRequestedPercent,
+        cpuLimitPercent: point.cpuLimitPercent,
+        memoryRequestBytes: point.memoryRequestBytes,
+        memoryCapacityBytes: point.memoryCapacityBytes,
+        memoryRequestedPercent: point.memoryRequestedPercent,
+        memoryLimitPercent: point.memoryLimitPercent,
+        cpuUsageSum: point.cpuUsageMillicores ?? 0,
+        cpuUsageMin: point.cpuUsageMillicores,
+        cpuUsageMax: point.cpuUsageMillicores,
+        cpuUsageLatest: point.cpuUsageMillicores,
+        memoryUsageSum: point.memoryUsageBytes ?? 0,
+        memoryUsageMin: point.memoryUsageBytes,
+        memoryUsageMax: point.memoryUsageBytes,
+        memoryUsageLatest: point.memoryUsageBytes,
+        isUsageAvailable: point.isUsageAvailable,
+        source: point.source,
+        incidentId: point.incidentId
+      };
+      map.set(bucketStart, b);
+      return;
+    }
+
+    b.sampleCount++;
+    b.cpuRequestMillicores = point.cpuRequestMillicores;
+    b.cpuCapacityMillicores = point.cpuCapacityMillicores;
+    b.cpuRequestedPercent = point.cpuRequestedPercent;
+    b.cpuLimitPercent = point.cpuLimitPercent;
+    b.memoryRequestBytes = point.memoryRequestBytes;
+    b.memoryCapacityBytes = point.memoryCapacityBytes;
+    b.memoryRequestedPercent = point.memoryRequestedPercent;
+    b.memoryLimitPercent = point.memoryLimitPercent;
+    if (point.source) b.source = point.source;
+    if (point.incidentId) b.incidentId = point.incidentId;
+
+    if (point.cpuUsageMillicores !== undefined && point.cpuUsageMillicores !== null) {
+      b.cpuUsageSum += point.cpuUsageMillicores;
+      b.cpuUsageMin = b.cpuUsageMin !== undefined ? Math.min(b.cpuUsageMin, point.cpuUsageMillicores) : point.cpuUsageMillicores;
+      b.cpuUsageMax = b.cpuUsageMax !== undefined ? Math.max(b.cpuUsageMax, point.cpuUsageMillicores) : point.cpuUsageMillicores;
+      b.cpuUsageLatest = point.cpuUsageMillicores;
+      b.isUsageAvailable = true;
+    }
+
+    if (point.memoryUsageBytes !== undefined && point.memoryUsageBytes !== null) {
+      b.memoryUsageSum += point.memoryUsageBytes;
+      b.memoryUsageMin = b.memoryUsageMin !== undefined ? Math.min(b.memoryUsageMin, point.memoryUsageBytes) : point.memoryUsageBytes;
+      b.memoryUsageMax = b.memoryUsageMax !== undefined ? Math.max(b.memoryUsageMax, point.memoryUsageBytes) : point.memoryUsageBytes;
+      b.memoryUsageLatest = point.memoryUsageBytes;
+      b.isUsageAvailable = true;
+    }
+  }
+
+  /**
+   * Records a resource specification change only when requests, limits, capacity, or node/pod counts change.
+   */
+  public recordSpecChange(clusterId: string, spec: SpecChangePoint, now = Date.now()): boolean {
+    const bucket = this.getOrCreateClusterBucket(clusterId);
+    const signature = `${spec.cpuRequestMillicores}:${spec.cpuLimitMillicores || 0}:${spec.cpuAllocatableMillicores}:${spec.memoryRequestBytes}:${spec.memoryLimitBytes || 0}:${spec.memoryAllocatableBytes}:${spec.nodeCount}:${spec.podCount}`;
+
+    if (bucket.lastSpecSignature === signature) {
+      return false; // No specification change occurred
+    }
+
+    bucket.lastSpecSignature = signature;
+    bucket.specHistory.push({
+      ...spec,
+      timestamp: spec.timestamp || now
+    });
+
+    const cutoff = now - this.SPEC_RETENTION_MS;
+    bucket.specHistory = bucket.specHistory.filter((s) => s.timestamp >= cutoff);
+    if (bucket.specHistory.length > 200) {
+      bucket.specHistory.splice(0, bucket.specHistory.length - 200);
+    }
+    return true;
+  }
+
+  /**
+   * Retrieves smart telemetry points with range-based resolution, raw observations, spec transitions, and summary.
+   */
+  public getTelemetryHistory(
+    clusterId: string,
+    options: TelemetryQueryOptions = {},
+    now = Date.now()
+  ): TelemetryResponse {
+    const bucket = this.clusters.get(clusterId);
+    const range = options.range || '1h';
+    const rawLimit = options.limit || 20;
+
+    let windowMs = 60 * 60 * 1000;
+    if (range === '15m') windowMs = 15 * 60 * 1000;
+    else if (range === '1h') windowMs = 60 * 60 * 1000;
+    else if (range === '6h') windowMs = 6 * 60 * 60 * 1000;
+    else if (range === '24h') windowMs = 24 * 60 * 60 * 1000;
+    else if (range === '7d') windowMs = 7 * 24 * 60 * 60 * 1000;
+
+    const cutoff = now - windowMs;
+
+    if (!bucket) {
+      return {
+        clusterId,
+        timeRange: range,
+        resolution: 'none',
+        isUsageAvailable: false,
+        metricsSource: 'UNAVAILABLE',
+        runtimeStatus: 'UNAVAILABLE',
+        summary: {
+          dataPointsCount: 0,
+          rawObservationsCount: 0,
+          specChangesCount: 0,
+          currentCpuRequestPercent: 0,
+          currentCpuLimitPercent: 0,
+          currentMemoryRequestPercent: 0,
+          currentMemoryLimitPercent: 0
+        },
+        points: [],
+        rawObservations: [],
+        specHistory: []
+      };
+    }
+
+    // Determine target resolution
+    let effectiveResolution: 'raw' | '5m' | '1h' = 'raw';
+    if (options.resolution && options.resolution !== 'auto') {
+      if (options.resolution === '5m') effectiveResolution = '5m';
+      else if (options.resolution === '1h') effectiveResolution = '1h';
+      else effectiveResolution = 'raw';
+    } else {
+      // Auto selection
+      if (range === '15m' || range === '1h') effectiveResolution = 'raw';
+      else if (range === '6h' || range === '24h') effectiveResolution = '5m';
+      else effectiveResolution = '1h';
+    }
+
+    let returnedPoints: MetricHistoryPoint[] = [];
+
+    if (effectiveResolution === 'raw') {
+      returnedPoints = bucket.rawPoints.filter((p) => p.timestamp >= cutoff);
+      // If raw points don't reach back enough (e.g. older than 2h) but range asked for 1h/raw, complement with 5m rollups
+      if (returnedPoints.length === 0 && bucket.rollups5m.size > 0) {
+        returnedPoints = this.convertRollupsToPoints(bucket.rollups5m, cutoff);
+      }
+    } else if (effectiveResolution === '5m') {
+      returnedPoints = this.convertRollupsToPoints(bucket.rollups5m, cutoff);
+      // If 5m rollups are empty for this window, fall back to raw points or 1h rollups
+      if (returnedPoints.length === 0) {
+        returnedPoints = bucket.rawPoints.filter((p) => p.timestamp >= cutoff);
+      }
+    } else {
+      // 1h rollups
+      returnedPoints = this.convertRollupsToPoints(bucket.rollups1h, cutoff);
+      if (returnedPoints.length === 0) {
+        returnedPoints = this.convertRollupsToPoints(bucket.rollups5m, cutoff);
+      }
+    }
+
+    returnedPoints.sort((a, b) => a.timestamp - b.timestamp);
+
+    // Bounded raw observations for the detailed observation table
+    const recentRaw = bucket.rawPoints
+      .slice(-rawLimit)
+      .reverse();
+
+    // Spec history in window
+    const recentSpecs = bucket.specHistory.filter((s) => s.timestamp >= cutoff);
+
+    // Detect if live runtime usage is available
+    const anyUsage = returnedPoints.some((p) => p.isUsageAvailable && (p.cpuUsagePercent !== undefined || p.memoryUsagePercent !== undefined)) ||
+      bucket.rawPoints.slice(-10).some((p) => p.isUsageAvailable);
+
+    const latestPoint = bucket.rawPoints.length > 0 ? bucket.rawPoints[bucket.rawPoints.length - 1] : returnedPoints[returnedPoints.length - 1];
+    const latestAge = latestPoint ? now - latestPoint.timestamp : Infinity;
+
+    let runtimeStatus: 'LIVE' | 'UNAVAILABLE' | 'STALE' = 'UNAVAILABLE';
+    if (anyUsage) {
+      runtimeStatus = latestAge < 180_000 ? 'LIVE' : 'STALE';
+    }
+
+    const metricsSource = anyUsage ? 'METRICS_SERVER' : 'SPEC_STATUS_ONLY';
+
+    // Calculate summary statistics
+    let sumCpuUsage = 0;
+    let countCpuUsage = 0;
+    let peakCpuUsage: number | undefined = undefined;
+
+    let sumMemUsage = 0;
+    let countMemUsage = 0;
+    let peakMemUsage: number | undefined = undefined;
+
+    for (const p of returnedPoints) {
+      if (p.cpuUsagePercent !== undefined) {
+        sumCpuUsage += p.cpuUsagePercent;
+        countCpuUsage++;
+        peakCpuUsage = peakCpuUsage !== undefined ? Math.max(peakCpuUsage, p.cpuUsagePercent) : p.cpuUsagePercent;
+      }
+      if (p.memoryUsagePercent !== undefined) {
+        sumMemUsage += p.memoryUsagePercent;
+        countMemUsage++;
+        peakMemUsage = peakMemUsage !== undefined ? Math.max(peakMemUsage, p.memoryUsagePercent) : p.memoryUsagePercent;
+      }
+    }
+
+    const currentCpuReq = latestPoint?.cpuRequestedPercent ?? 0;
+    const currentCpuLim = latestPoint?.cpuLimitPercent ?? 0;
+    const currentMemReq = latestPoint?.memoryRequestedPercent ?? 0;
+    const currentMemLim = latestPoint?.memoryLimitPercent ?? 0;
+
+    const unavailableReason = anyUsage
+      ? undefined
+      : 'Metrics Server (metrics.k8s.io) is not available or not reporting in this cluster';
+
+    const summary: TelemetrySummary = {
+      dataPointsCount: returnedPoints.length,
+      rawObservationsCount: bucket.rawPoints.length,
+      specChangesCount: recentSpecs.length,
+      avgCpuUsagePercent: countCpuUsage > 0 ? Math.round(sumCpuUsage / countCpuUsage) : undefined,
+      peakCpuUsagePercent: peakCpuUsage,
+      avgMemoryUsagePercent: countMemMemSafe(sumMemUsage, countMemUsage),
+      peakMemoryUsagePercent: peakMemUsage,
+      currentCpuRequestPercent: currentCpuReq,
+      currentCpuLimitPercent: currentCpuLim,
+      currentMemoryRequestPercent: currentMemReq,
+      currentMemoryLimitPercent: currentMemLim,
+      unavailableReason
+    };
+
+    return {
+      clusterId,
+      timeRange: range,
+      resolution: effectiveResolution,
+      isUsageAvailable: anyUsage,
+      metricsSource,
+      runtimeStatus,
+      unavailableReason,
+      summary,
+      points: returnedPoints,
+      rawObservations: recentRaw,
+      specHistory: recentSpecs
+    };
+  }
+
+  /**
+   * Helper to convert RollupBucket map into sorted MetricHistoryPoint array.
+   */
+  private convertRollupsToPoints(map: Map<number, RollupBucket>, cutoff: number): MetricHistoryPoint[] {
+    const points: MetricHistoryPoint[] = [];
+    for (const b of map.values()) {
+      if (b.timestamp < cutoff) continue;
+
+      const cpuAvg = b.sampleCount > 0 && b.cpuUsageSum > 0 ? Math.round(b.cpuUsageSum / b.sampleCount) : undefined;
+      const memAvg = b.sampleCount > 0 && b.memoryUsageSum > 0 ? Math.round(b.memoryUsageSum / b.sampleCount) : undefined;
+
+      const cpuUsagePct = cpuAvg !== undefined && b.cpuCapacityMillicores > 0
+        ? Math.round((cpuAvg / b.cpuCapacityMillicores) * 100)
+        : undefined;
+
+      const memUsagePct = memAvg !== undefined && b.memoryCapacityBytes > 0
+        ? Math.round((memAvg / b.memoryCapacityBytes) * 100)
+        : undefined;
+
+      points.push({
+        timestamp: b.timestamp,
+        resolution: b.resolution,
+        sampleCount: b.sampleCount,
+        cpuCapacityMillicores: b.cpuCapacityMillicores,
+        cpuRequestMillicores: b.cpuRequestMillicores,
+        cpuRequestedPercent: b.cpuRequestedPercent,
+        cpuLimitPercent: b.cpuLimitPercent,
+        cpuUsageMillicores: b.cpuUsageLatest ?? cpuAvg,
+        cpuUsageMinMillicores: b.cpuUsageMin,
+        cpuUsageMaxMillicores: b.cpuUsageMax,
+        cpuUsageAvgMillicores: cpuAvg,
+        cpuUsagePercent: cpuUsagePct,
+        memoryCapacityBytes: b.memoryCapacityBytes,
+        memoryRequestBytes: b.memoryRequestBytes,
+        memoryRequestedPercent: b.memoryRequestedPercent,
+        memoryLimitPercent: b.memoryLimitPercent,
+        memoryUsageBytes: b.memoryUsageLatest ?? memAvg,
+        memoryUsageMinBytes: b.memoryUsageMin,
+        memoryUsageMaxBytes: b.memoryUsageMax,
+        memoryUsageAvgBytes: memAvg,
+        memoryUsagePercent: memUsagePct,
+        isUsageAvailable: b.isUsageAvailable,
+        source: b.source,
+        incidentId: b.incidentId
+      });
+    }
+    return points;
+  }
+
+  /**
+   * Backwards compatible helper: returns raw/recent points directly.
+   */
+  public getRawPoints(clusterId: string, range: string = '1h', now = Date.now()): MetricHistoryPoint[] {
+    const bucket = this.clusters.get(clusterId);
+    if (!bucket || bucket.rawPoints.length === 0) return [];
+
+    let windowMs = 60 * 60 * 1000;
+    if (range === '15m') windowMs = 15 * 60 * 1000;
+    else if (range === '1h') windowMs = 60 * 60 * 1000;
+    else if (range === '6h') windowMs = 6 * 60 * 60 * 1000;
+    else if (range === '24h') windowMs = 24 * 60 * 60 * 1000;
+    else if (range === '7d') windowMs = 7 * 24 * 60 * 60 * 1000;
+
+    const cutoff = now - windowMs;
+    const inWindow = bucket.rawPoints.filter((p) => p && p.timestamp >= cutoff);
+    if (inWindow.length > 0) return inWindow;
+
+    // If unaggregated raw points are older than 2h but range is 6h/24h/7d, provide converted rollups
+    const rollups = bucket.rollups5m.size > 0 ? bucket.rollups5m : bucket.rollups1h;
+    return this.convertRollupsToPoints(rollups, cutoff);
+  }
+
+  /**
+   * Returns 5m rollup points for a specific cluster and range.
+   */
+  public get5mRollups(clusterId: string, range: string = '1h', now = Date.now()): MetricHistoryPoint[] {
+    const bucket = this.clusters.get(clusterId);
+    if (!bucket) return [];
+    let windowMs = 60 * 60 * 1000;
+    if (range === '15m') windowMs = 15 * 60 * 1000;
+    else if (range === '1h') windowMs = 60 * 60 * 1000;
+    else if (range === '6h') windowMs = 6 * 60 * 60 * 1000;
+    else if (range === '24h') windowMs = 24 * 60 * 60 * 1000;
+    else if (range === '7d') windowMs = 7 * 24 * 60 * 60 * 1000;
+
+    const cutoff = now - windowMs;
+    return this.convertRollupsToPoints(bucket.rollups5m, cutoff);
+  }
+
+  /**
+   * Pin incident telemetry window so that raw evidence is never deleted by retention prune.
+   */
+  public pinIncidentWindow(clusterId: string, incidentId: string, startedAt: number, resolvedAt?: number): void {
+    const bucket = this.clusters.get(clusterId);
+    if (!bucket) return;
+
+    const windowStart = startedAt - 15 * 60 * 1000;
+    const windowEnd = (resolvedAt || Date.now()) + 15 * 60 * 1000;
+
+    for (const point of bucket.rawPoints) {
+      if (point.timestamp >= windowStart && point.timestamp <= windowEnd) {
+        point.pinned = true;
+        point.incidentId = incidentId;
+      }
+    }
+  }
+
+  /**
+   * Calculates dynamic resource baseline for Phase 2 intelligence.
+   */
+  public calculateBaseline(clusterId: string, range = '24h', now = Date.now()): ResourceBaseline | null {
+    const bucket = this.clusters.get(clusterId);
+    if (!bucket) return null;
+
+    const query = this.getTelemetryHistory(clusterId, { range: range as any, resolution: '5m' }, now);
+    const validPoints = query.points.filter((p) => p.isUsageAvailable);
+    if (validPoints.length === 0) return null;
+
+    const cpuPercents = validPoints.map((p) => p.cpuUsagePercent).filter((v): v is number => v !== undefined);
+    const memPercents = validPoints.map((p) => p.memoryUsagePercent).filter((v): v is number => v !== undefined);
+
+    const calcStats = (vals: number[]) => {
+      if (vals.length === 0) return {};
+      const avg = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+      const max = Math.max(...vals);
+      const sorted = [...vals].sort((a, b) => a - b);
+      const p95 = sorted[Math.floor(sorted.length * 0.95)] ?? max;
+      const variance = vals.reduce((acc, val) => acc + Math.pow(val - avg, 2), 0) / vals.length;
+      const stdDev = Math.round(Math.sqrt(variance));
+      return { avgPercent: avg, maxPercent: max, p95Percent: p95, stdDevPercent: stdDev };
+    };
+
+    return {
+      clusterId,
+      calculatedAt: now,
+      windowRange: range,
+      sampleSize: validPoints.length,
+      cpu: calcStats(cpuPercents),
+      memory: calcStats(memPercents)
+    };
+  }
+
+  /**
+   * Detects real telemetry anomalies without synthetic noise.
+   */
+  public detectAnomalies(clusterId: string, now = Date.now()): TelemetryAnomaly[] {
+    const anomalies: TelemetryAnomaly[] = [];
+    const bucket = this.clusters.get(clusterId);
+    if (!bucket || bucket.rawPoints.length === 0) return anomalies;
+
+    const recent = bucket.rawPoints.slice(-10);
+    const latest = recent[recent.length - 1];
+
+    if (!latest) return anomalies;
+
+    // Check freshness: if cluster agent sent nothing for 5+ min
+    if (now - latest.timestamp > 5 * 60 * 1000) {
+      anomalies.push({
+        type: 'STALE_METRICS',
+        severity: 'WARNING',
+        message: `Telemetry collection has stalled: last observation was ${Math.round((now - latest.timestamp) / 60000)}m ago.`,
+        detectedAt: now,
+        metric: 'all',
+        currentValue: now - latest.timestamp
+      });
+    }
+
+    // Check spec overcommitment (requests > 100% of allocatable)
+    if (latest.cpuRequestedPercent !== undefined && latest.cpuRequestedPercent > 100) {
+      anomalies.push({
+        type: 'SPEC_OVERCOMMITMENT',
+        severity: 'WARNING',
+        message: `CPU requests (${latest.cpuRequestedPercent}%) exceed total cluster allocatable capacity.`,
+        detectedAt: now,
+        metric: 'cpu',
+        currentValue: latest.cpuRequestedPercent,
+        threshold: 100
+      });
+    }
+
+    if (latest.memoryRequestedPercent !== undefined && latest.memoryRequestedPercent > 100) {
+      anomalies.push({
+        type: 'SPEC_OVERCOMMITMENT',
+        severity: 'WARNING',
+        message: `Memory requests (${latest.memoryRequestedPercent}%) exceed total cluster allocatable capacity.`,
+        detectedAt: now,
+        metric: 'memory',
+        currentValue: latest.memoryRequestedPercent,
+        threshold: 100
+      });
+    }
+
+    // Check runtime spikes & near-saturation if usage is available
+    if (latest.isUsageAvailable && latest.cpuUsagePercent !== undefined) {
+      if (latest.cpuUsagePercent >= 90) {
+        anomalies.push({
+          type: 'NEAR_SATURATION',
+          severity: 'CRITICAL',
+          message: `Cluster CPU runtime utilization reached critical level (${latest.cpuUsagePercent}%).`,
+          detectedAt: now,
+          metric: 'cpu',
+          currentValue: latest.cpuUsagePercent,
+          threshold: 90
+        });
+      }
+    }
+
+    if (latest.isUsageAvailable && latest.memoryUsagePercent !== undefined) {
+      if (latest.memoryUsagePercent >= 90) {
+        anomalies.push({
+          type: 'NEAR_SATURATION',
+          severity: 'CRITICAL',
+          message: `Cluster memory runtime utilization reached critical level (${latest.memoryUsagePercent}%).`,
+          detectedAt: now,
+          metric: 'memory',
+          currentValue: latest.memoryUsagePercent,
+          threshold: 90
+        });
+      }
+    }
+
+    // Check steady memory climb across recent observations (Memory leak indicator)
+    if (recent.length >= 5) {
+      const memUsages = recent
+        .map((p) => p.memoryUsagePercent)
+        .filter((v): v is number => v !== undefined);
+
+      if (memUsages.length >= 5) {
+        let isStrictlyClimbing = true;
+        for (let i = 1; i < memUsages.length; i++) {
+          if (memUsages[i] < memUsages[i - 1]) {
+            isStrictlyClimbing = false;
+            break;
+          }
+        }
+        if (isStrictlyClimbing && memUsages[memUsages.length - 1] - memUsages[0] >= 15) {
+          anomalies.push({
+            type: 'MEMORY_LEAK_TREND',
+            severity: 'WARNING',
+            message: `Continuous memory growth detected: climbed from ${memUsages[0]}% to ${memUsages[memUsages.length - 1]}% across recent scrapes.`,
+            detectedAt: now,
+            metric: 'memory',
+            currentValue: memUsages[memUsages.length - 1]
+          });
+        }
+      }
+    }
+
+    return anomalies;
+  }
+
+  /**
+   * Serializes all cluster telemetry data for persistent store snapshotting.
+   */
+  public exportSnapshot(): Record<string, any> {
+    const data: Record<string, any> = {};
+    for (const [clusterId, bucket] of this.clusters.entries()) {
+      data[clusterId] = {
+        clusterId,
+        rawPoints: bucket.rawPoints,
+        rollups5m: Array.from(bucket.rollups5m.entries()),
+        rollups1h: Array.from(bucket.rollups1h.entries()),
+        specHistory: bucket.specHistory,
+        lastSpecSignature: bucket.lastSpecSignature
+      };
+    }
+    return data;
+  }
+
+  /**
+   * Restores telemetry data from snapshot.
+   */
+  public importSnapshot(data: Record<string, any>): void {
+    if (!data || typeof data !== 'object') return;
+    this.clusters.clear();
+
+    for (const [clusterId, rawBucket] of Object.entries(data)) {
+      if (!rawBucket) continue;
+      const roll5m = new Map<number, RollupBucket>();
+      if (Array.isArray(rawBucket.rollups5m)) {
+        for (const [k, v] of rawBucket.rollups5m) {
+          if (typeof k === 'number' && v) roll5m.set(k, v);
+        }
+      }
+      const roll1h = new Map<number, RollupBucket>();
+      if (Array.isArray(rawBucket.rollups1h)) {
+        for (const [k, v] of rawBucket.rollups1h) {
+          if (typeof k === 'number' && v) roll1h.set(k, v);
+        }
+      }
+
+      this.clusters.set(clusterId, {
+        clusterId,
+        rawPoints: Array.isArray(rawBucket.rawPoints) ? rawBucket.rawPoints : [],
+        rollups5m: roll5m,
+        rollups1h: roll1h,
+        specHistory: Array.isArray(rawBucket.specHistory) ? rawBucket.specHistory : [],
+        lastSpecSignature: rawBucket.lastSpecSignature
+      });
+    }
+  }
+}
+
+function countMemMemSafe(sum: number, count: number): number | undefined {
+  if (count <= 0) return undefined;
+  return Math.round(sum / count);
+}

@@ -1,48 +1,29 @@
 import {
   Activity,
   AlertTriangle,
-  Award,
   Boxes,
   Building2,
   CheckCircle2,
   ChevronDown,
-  Cpu,
-  Layers,
-  LayoutDashboard,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  Radio,
   Server,
   Settings,
   Shield,
-  ShieldCheck,
-  Sparkles,
   Terminal,
-  UserCheck,
-  Zap
+  UserCheck
 } from 'lucide-react';
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 
-export type NavigationTab =
-  | 'overview'
-  | 'infrastructure'
-  | 'clusters'
-  | 'incidents'
-  | 'observability'
-  | 'ai'
-  | 'actions'
-  | 'insights'
-  | 'audit'
-  | 'settings';
+export type NavigationTab = 'overview' | 'clusters' | 'incidents' | 'audit' | 'settings';
 
 interface SidebarProps {
   activeTab: NavigationTab;
   onSelectTab: (tab: NavigationTab) => void;
   openIncidentsCount?: number;
-  pendingActionsCount?: number;
   onOpenAddCluster: () => void;
   onSignOut?: () => void;
   isCollapsed?: boolean;
@@ -53,7 +34,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   onSelectTab,
   openIncidentsCount = 0,
-  pendingActionsCount = 0,
   onOpenAddCluster,
   onSignOut,
   isCollapsed = false,
@@ -83,46 +63,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
     label: string;
     icon: React.ReactNode;
     badge?: number;
-    badgeColor?: string;
   }> = [
     {
       id: 'overview',
-      label: 'Command Center',
-      icon: <LayoutDashboard className="w-4 h-4" />
+      label: 'Overview',
+      icon: <Activity className="w-4 h-4" />
     },
     {
-      id: 'infrastructure',
-      label: 'Infrastructure',
+      id: 'clusters',
+      label: 'Clusters',
       icon: <Server className="w-4 h-4" />
     },
     {
       id: 'incidents',
       label: 'Incidents',
       icon: <AlertTriangle className="w-4 h-4" />,
-      badge: openIncidentsCount,
-      badgeColor: 'bg-red-500/20 text-red-300 border-red-500/30'
-    },
-    {
-      id: 'observability',
-      label: 'Observability',
-      icon: <Radio className="w-4 h-4" />
-    },
-    {
-      id: 'ai',
-      label: 'SkyOps AI',
-      icon: <Sparkles className="w-4 h-4 text-sky-400" />
-    },
-    {
-      id: 'actions',
-      label: 'Actions Hub',
-      icon: <Zap className="w-4 h-4 text-amber-400" />,
-      badge: pendingActionsCount > 0 ? pendingActionsCount : undefined,
-      badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-    },
-    {
-      id: 'insights',
-      label: 'Insights & Hygiene',
-      icon: <Award className="w-4 h-4" />
+      badge: openIncidentsCount
     },
     {
       id: 'audit',

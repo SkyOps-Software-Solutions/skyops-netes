@@ -3,34 +3,22 @@ import {
   IncidentSeverity,
   IncidentType,
   KubernetesResource,
-  MetricHistoryPoint,
   TechnicalDetails
 } from '../../src/types/index';
-import { AnomalyDetector } from './anomaly';
-import { BaselineEngine } from './baseline';
-import { ChangeTracker } from './changes';
 import {
   buildCorrelatedTimeline,
   buildRelationshipGraph,
   extractCorrelatedSignals
 } from './correlator';
-import { EvidenceEngine } from './evidence';
-import { TemporalEngine } from './temporal';
 import {
-  ChangeCorrelation,
   CorrelatedSignal,
-  DetectedAnomaly,
   EvidencePoint,
   ExecutableActionProposal,
   ExplainabilityReport,
-  HistoricalBaseline,
   HypothesisStatus,
   IntelligenceAnalysis,
-  ResourceChangeRecord,
   ResourceRelationship,
-  RootCauseHypothesis,
-  TemporalEvent,
-  UnifiedEvidence
+  RootCauseHypothesis
 } from './types';
 
 export class SkyOpsIntelligenceEngine {
@@ -51,13 +39,7 @@ export class SkyOpsIntelligenceEngine {
     incident: Incident,
     targetResource?: KubernetesResource | null,
     allResources: KubernetesResource[] = [],
-    metrics?: any,
-    context?: {
-      baselines?: HistoricalBaseline[];
-      anomalies?: DetectedAnomaly[];
-      changes?: ResourceChangeRecord[];
-      history?: MetricHistoryPoint[];
-    }
+    metrics?: any
   ): IntelligenceAnalysis {
     const now = Date.now();
     const targetNs = incident.namespace || 'default';
@@ -98,70 +80,17 @@ export class SkyOpsIntelligenceEngine {
     // 3. Extract Correlated Signals across 7-tier model
     const signals = extractCorrelatedSignals(target, allResources, metrics);
 
-    // 4. Phase 2B: Deterministic Baselines, Anomalies & Change Tracking
-    const baselines: HistoricalBaseline[] = context?.baselines || [];
+    // 4. Build Correlated Timeline
+    const correlatedTimeline = buildCorrelatedTimeline(target, allResources, signals);
 
-    // Detect resource-level anomalies
-    const detectedResourceAnomalies = AnomalyDetector.detectResourceAnomalies({
-      orgId: incident.orgId || 'default',
-      clusterId: incident.clusterId,
-      resource: target,
-      allResources,
-      baselines,
-      now
-    });
-
-    // Merge any contextual anomalies (e.g. cluster level)
-    const allAnomalies: DetectedAnomaly[] = [
-      ...detectedResourceAnomalies,
-      ...(context?.anomalies || [])
-    ];
-
-    // Correlate antecedent and concurrent changes
-    const correlatedChanges: ChangeCorrelation[] = ChangeTracker.correlateChangesWithIncident({
-      targetResource: { kind: target.kind, name: target.name, namespace: target.namespace },
-      incidentTimestamp: incident.firstSeenAt,
-      relationships,
-      allChanges: context?.changes || []
-    });
-
-    // 5. Phase 2B: Temporal Partitioning (BEFORE / DURING / AFTER)
-    const temporalResult = TemporalEngine.partitionTimeline({
-      incident,
-      targetResource: target,
-      allResources,
-      signals,
-      anomalies: allAnomalies,
-      changes: correlatedChanges,
-      now
-    });
-
-    // 6. Phase 2B: Unified Evidence Aggregation & Explicit Unknowns
-    const evidenceResult = EvidenceEngine.buildUnifiedEvidence({
-      incident,
-      targetResource: target,
-      relationships,
-      signals,
-      anomalies: allAnomalies,
-      changes: correlatedChanges,
-      baselines,
-      metrics
-    });
-
-    // 7. Evaluate Domain-Specific Hypotheses
+    // 5. Evaluate Domain-Specific Hypotheses
     const { evaluatedHypotheses, isUnknownOrInconclusive, missingEvidence } =
       this.evaluateHypotheses(incident, target, relationships, signals, allResources);
 
-    // Combine any missing evidence declarations
-    const combinedMissingEvidence = [
-      ...missingEvidence,
-      ...evidenceResult.missingEvidence
-    ];
-
-    // 8. Select Authoritative Primary Hypothesis
+    // 6. Select Authoritative Primary Hypothesis
     const primaryHypothesis = evaluatedHypotheses.length > 0 ? evaluatedHypotheses[0] : null;
 
-    // 9. Calculate Confidence Score and Level
+    // 7. Calculate Confidence Score and Level
     let confidence = 0.25;
     let confidenceLevel: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
     let confidenceExplanation = '';
@@ -185,16 +114,16 @@ export class SkyOpsIntelligenceEngine {
       confidenceExplanation = 'All evaluated hypotheses were refuted or lacked sufficient supporting evidence.';
     }
 
-    // 10. Build Explainability Report
+    // 8. Build Explainability Report
     const explainability = this.buildExplainability(
       primaryHypothesis,
       evaluatedHypotheses,
       signals,
       isUnknownOrInconclusive,
-      combinedMissingEvidence
+      missingEvidence
     );
 
-    // 11. Formulate Recommendation and Executable Action Proposal
+    // 9. Formulate Recommendation and Executable Action Proposal
     const { recommendation, executableProposal } = this.formulateRemediation(
       incident,
       target,
@@ -226,22 +155,11 @@ export class SkyOpsIntelligenceEngine {
       evaluatedHypotheses,
       signals,
       relationships,
-      correlatedTimeline: temporalResult.allChronological,
+      correlatedTimeline,
       explainability,
       recommendation,
       executableProposal,
-      isUnknownOrInconclusive,
-      // Phase 2B additions
-      baselines,
-      anomalies: allAnomalies,
-      correlatedChanges,
-      temporalPhases: {
-        before: temporalResult.before,
-        during: temporalResult.during,
-        after: temporalResult.after
-      },
-      unifiedEvidence: evidenceResult.evidenceList,
-      unknownFactors: evidenceResult.unknownFactors
+      isUnknownOrInconclusive
     };
   }
 

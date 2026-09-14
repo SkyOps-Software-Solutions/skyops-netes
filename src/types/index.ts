@@ -495,8 +495,6 @@ export interface ResourceMetricValue {
   value: number; // millicores for CPU, bytes for memory
   unit: 'millicores' | 'bytes';
   formatted: string; // e.g. "250m" or "512 MiB"
-  /** Per-value provenance prevents runtime usage from being mistaken for specification data. */
-  source?: 'metrics-api' | 'spec-derived';
 }
 
 export interface ContainerResourceMetrics {
@@ -665,15 +663,99 @@ export interface MetricHistoryPoint {
   memoryLimitPercent?: number;
   memoryUsagePercent?: number;
   isUsageAvailable: boolean;
-  /** Observed runtime data is metrics-api; absent runtime data is explicitly unavailable. */
-  /** METRICS_SERVER is accepted only for backwards-compatible persisted snapshots. */
-  source?: 'metrics-api' | 'unavailable' | 'METRICS_SERVER';
-  resolution?: 'raw' | '5m-aggregate';
-  sampleCount?: number;
+  source?: string;
+  // Phase 2 smart rollups & intelligence annotations:
   cpuUsageMinMillicores?: number;
   cpuUsageMaxMillicores?: number;
+  cpuUsageAvgMillicores?: number;
   memoryUsageMinBytes?: number;
   memoryUsageMaxBytes?: number;
+  memoryUsageAvgBytes?: number;
+  sampleCount?: number;
+  resolution?: 'raw' | '1m' | '5m' | '1h';
+  incidentId?: string;
+  pinned?: boolean;
+}
+
+export interface SpecChangePoint {
+  timestamp: number;
+  cpuRequestMillicores: number;
+  cpuLimitMillicores?: number;
+  cpuAllocatableMillicores: number;
+  cpuCapacityMillicores: number;
+  memoryRequestBytes: number;
+  memoryLimitBytes?: number;
+  memoryAllocatableBytes: number;
+  memoryCapacityBytes: number;
+  nodeCount: number;
+  podCount: number;
+  changeReason?: string;
+}
+
+export interface TelemetryQueryOptions {
+  range?: '15m' | '1h' | '6h' | '24h' | '7d';
+  resolution?: 'auto' | 'raw' | '1m' | '5m' | '1h';
+  limit?: number;
+  includeRaw?: boolean;
+}
+
+export interface TelemetrySummary {
+  dataPointsCount: number;
+  rawObservationsCount: number;
+  specChangesCount: number;
+  avgCpuUsagePercent?: number;
+  peakCpuUsagePercent?: number;
+  avgMemoryUsagePercent?: number;
+  peakMemoryUsagePercent?: number;
+  currentCpuRequestPercent: number;
+  currentCpuLimitPercent: number;
+  currentMemoryRequestPercent: number;
+  currentMemoryLimitPercent: number;
+  unavailableReason?: string;
+}
+
+export interface TelemetryResponse {
+  clusterId: string;
+  timeRange: string;
+  resolution: string;
+  isUsageAvailable: boolean;
+  metricsSource: 'METRICS_SERVER' | 'SPEC_STATUS_ONLY' | 'UNAVAILABLE';
+  runtimeStatus: 'LIVE' | 'UNAVAILABLE' | 'STALE';
+  unavailableReason?: string;
+  summary: TelemetrySummary;
+  points: MetricHistoryPoint[];
+  rawObservations?: MetricHistoryPoint[];
+  specHistory?: SpecChangePoint[];
+  anomalies?: TelemetryAnomaly[];
+}
+
+export interface ResourceBaseline {
+  clusterId: string;
+  calculatedAt: number;
+  windowRange: string;
+  sampleSize: number;
+  cpu: {
+    avgPercent?: number;
+    p95Percent?: number;
+    maxPercent?: number;
+    stdDevPercent?: number;
+  };
+  memory: {
+    avgPercent?: number;
+    p95Percent?: number;
+    maxPercent?: number;
+    stdDevPercent?: number;
+  };
+}
+
+export interface TelemetryAnomaly {
+  type: 'CPU_SPIKE' | 'MEMORY_LEAK_TREND' | 'NEAR_SATURATION' | 'SPEC_OVERCOMMITMENT' | 'STALE_METRICS';
+  severity: 'INFO' | 'WARNING' | 'CRITICAL';
+  message: string;
+  detectedAt: number;
+  metric: 'cpu' | 'memory' | 'all';
+  currentValue?: number;
+  threshold?: number;
 }
 
 export interface OverviewMetrics {
@@ -1059,175 +1141,7 @@ export interface IntelligenceAnalysis {
   recommendation: string;
   executableProposal?: ExecutableActionProposal;
   isUnknownOrInconclusive: boolean;
-  // Phase 2B deterministic extensions
-  baselines?: HistoricalBaseline[];
-  anomalies?: DetectedAnomaly[];
-  correlatedChanges?: ChangeCorrelation[];
-  temporalPhases?: {
-    before: TemporalEvent[];
-    during: TemporalEvent[];
-    after: TemporalEvent[];
-  };
-  unifiedEvidence?: UnifiedEvidence[];
-  unknownFactors?: string[];
 }
 
-// ==========================================
-// Phase 2B: Baselines, Anomalies, Changes, Temporal & Unified Evidence
-// ==========================================
-
-export type BaselineScope = 'cluster' | 'node' | 'workload' | 'pod' | 'container';
-
-export type BaselineMetric =
-  | 'cpu_usage'
-  | 'memory_usage'
-  | 'restart_rate'
-  | 'replica_availability'
-  | 'node_pressure'
-  | 'event_frequency'
-  | 'error_frequency';
-
-export type BaselineQuality = 'HIGH' | 'MEDIUM' | 'LOW' | 'INSUFFICIENT';
-
-export interface HistoricalBaseline {
-  baselineId: string;
-  scope: BaselineScope;
-  resourceKind: string;
-  resourceName: string;
-  namespace?: string;
-  clusterId: string;
-  metric: BaselineMetric;
-  timeWindow: string; // '15m' | '1h' | '6h' | '24h' | '7d'
-  sampleCount: number;
-  centralValue: number;
-  mean: number;
-  median: number;
-  min: number;
-  max: number;
-  stdDev: number;
-  p95: number;
-  calculationMethod: 'rolling_statistics' | 'spike_preserving_percentiles';
-  quality: BaselineQuality;
-  calculatedAt: number;
-  status: 'AVAILABLE' | 'UNAVAILABLE';
-  unavailableReason?: string;
-  unit: string;
-}
-
-export type AnomalyType =
-  | 'CPU_SPIKE'
-  | 'CPU_SUSTAINED_HIGH'
-  | 'MEMORY_SPIKE'
-  | 'MEMORY_SUSTAINED_HIGH'
-  | 'MEMORY_GROWTH'
-  | 'RESTART_SPIKE'
-  | 'REPLICA_DEGRADATION'
-  | 'NODE_PRESSURE'
-  | 'EVENT_RATE_ANOMALY'
-  | 'ERROR_RATE_ANOMALY';
-
-export type AnomalyStatus = 'ACTIVE' | 'RECOVERED' | 'SUPPRESSED';
-
-export interface DetectedAnomaly {
-  id: string;
-  orgId: string;
-  clusterId: string;
-  resourceId: string;
-  resourceKind: string;
-  resourceName: string;
-  namespace?: string;
-  metric: string;
-  anomalyType: AnomalyType;
-  observedValue: number;
-  observedDisplay: string;
-  baselineValue?: number;
-  baselineDisplay?: string;
-  deviation: number;
-  deviationDisplay: string;
-  detectionWindow: string;
-  firstObservedAt: number;
-  lastObservedAt: number;
-  severity: 'INFO' | 'WARNING' | 'CRITICAL';
-  confidence: number;
-  evidenceReferences: string[];
-  status: AnomalyStatus;
-  details?: string;
-}
-
-export type ChangeType =
-  | 'IMAGE_UPDATE'
-  | 'REPLICA_COUNT'
-  | 'RESOURCE_LIMITS'
-  | 'NODE_CONDITION'
-  | 'REVISION_UPDATE'
-  | 'CONFIGURATION';
-
-export interface ResourceChangeRecord {
-  id: string;
-  orgId: string;
-  clusterId: string;
-  resourceKind: string;
-  resourceName: string;
-  namespace?: string;
-  changeType: ChangeType;
-  attribute: string;
-  oldValue: unknown;
-  newValue: unknown;
-  description: string;
-  timestamp: number;
-}
-
-export interface ChangeCorrelation {
-  change: ResourceChangeRecord;
-  targetResource: { kind: string; name: string; namespace?: string };
-  relationship: 'SAME_RESOURCE' | 'CONTROLLER' | 'HOST_NODE' | 'DEPENDENT';
-  temporalProximityMs: number;
-  temporalProximityDisplay: string;
-  correlationStrength: 'STRONG' | 'MODERATE' | 'WEAK';
-  confidence: number;
-  explanation: string;
-}
-
-export type TimelinePhase = 'BEFORE' | 'DURING' | 'AFTER';
-
-export interface TemporalPhaseSummary {
-  before: TemporalEvent[];
-  during: TemporalEvent[];
-  after: TemporalEvent[];
-}
-
-export interface TemporalEvent extends CorrelatedTimelineEvent {
-  phase: TimelinePhase;
-  relevanceScore?: number;
-  changeRef?: string;
-  anomalyRef?: string;
-}
-
-export type UnifiedEvidenceType =
-  | 'metric'
-  | 'log'
-  | 'event'
-  | 'resource_state'
-  | 'relationship'
-  | 'anomaly'
-  | 'historical_observation'
-  | 'change'
-  | 'correlation';
-
-export interface UnifiedEvidence {
-  evidenceId: string;
-  type: UnifiedEvidenceType;
-  source: string;
-  timestamp: number;
-  resourceKind: string;
-  resourceName: string;
-  namespace?: string;
-  relevance: 'SUPPORTING' | 'CONTRADICTING' | 'CONTEXTUAL';
-  confidence: number;
-  title: string;
-  description: string;
-  rawPayload?: unknown;
-  details?: Record<string, unknown>;
-}
 
 

@@ -577,25 +577,34 @@ app.get('/api/v1/clusters/:id/metrics/history', requireUserAuth, requireOrgMembe
   res.json({ history, timeRange: range });
 });
 
-// --- Phase 2B: Historical Baselines Endpoint ---
-app.get('/api/v1/clusters/:id/baselines', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
-  const range = (req.query.range as string) || '1h';
-  const baselines = store.getClusterBaselines(req.params.id, req.orgId!, range);
-  res.json({ baselines, timeRange: range });
+// Phase 2 Smart Telemetry & Historical Intelligence Endpoints
+app.get('/api/v1/clusters/:id/telemetry', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const range = (req.query.range as '15m' | '1h' | '6h' | '24h' | '7d') || '1h';
+  const resolution = (req.query.resolution as 'auto' | 'raw' | '1m' | '5m' | '1h') || 'auto';
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 25;
+  const includeRaw = req.query.includeRaw !== 'false';
+
+  const telemetry = store.getTelemetryHistory(req.params.id, req.orgId!, {
+    range,
+    resolution,
+    limit,
+    includeRaw
+  });
+
+  if (!telemetry) {
+    return res.status(404).json({ error: 'Cluster not found' });
+  }
+
+  res.json(telemetry);
 });
 
-// --- Phase 2B: Detected Anomalies Endpoint ---
-app.get('/api/v1/clusters/:id/anomalies', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
-  const anomalies = store.getClusterAnomalies(req.params.id, req.orgId!);
-  res.json({ anomalies });
-});
-
-// --- Phase 2B: Resource Changes Endpoint ---
-app.get('/api/v1/clusters/:id/changes', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
-  const lookbackHours = req.query.hours ? parseInt(req.query.hours as string, 10) : 24;
-  const lookbackMs = (isNaN(lookbackHours) ? 24 : lookbackHours) * 60 * 60 * 1000;
-  const changes = store.getClusterChanges(req.params.id, req.orgId!, lookbackMs);
-  res.json({ changes, lookbackHours });
+app.get('/api/v1/clusters/:id/telemetry/baseline', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const range = (req.query.range as string) || '24h';
+  const baseline = store.getTelemetryBaseline(req.params.id, req.orgId!, range);
+  if (!baseline) {
+    return res.status(404).json({ error: 'Baseline not available: insufficient telemetry points or cluster not found' });
+  }
+  res.json({ baseline });
 });
 
 // --- First-Class Kubernetes Events Observability Endpoint ---
@@ -1010,9 +1019,16 @@ app.get('/api/v1/incidents/:id', requireUserAuth, requireOrgMembership, (req: Au
   const remediation = store.getRemediation(incident.id, req.orgId!);
 
   // Compute or reuse authoritative deterministic intelligence analysis
+  const clusterResources = store.getClusterResources(incident.clusterId, req.orgId!);
+  const associatedResource = clusterResources.find(
+    (r) =>
+      r.kind.toLowerCase() === incident.resourceKind.toLowerCase() &&
+      r.name.toLowerCase() === incident.resourceName.toLowerCase() &&
+      (r.namespace || 'default').toLowerCase() === (incident.namespace || 'default').toLowerCase()
+  );
   const intelligence =
     aiAnalysis?.intelligence ||
-    store.analyzeIncidentWithFullContext(incident, req.orgId!);
+    SkyOpsIntelligenceEngine.analyzeIncident(incident, associatedResource, clusterResources);
   incident.intelligence = intelligence;
 
   res.json({ incident, timeline, notes, aiAnalysis, remediation, intelligence });
@@ -1025,39 +1041,15 @@ app.get('/api/v1/incidents/:id/intelligence', requireUserAuth, requireOrgMembers
     return res.status(404).json({ error: 'Incident not found' });
   }
 
-  const intelligence = store.analyzeIncidentWithFullContext(incident, req.orgId!);
+  const clusterResources = store.getClusterResources(incident.clusterId, req.orgId!);
+  const associatedResource = clusterResources.find(
+    (r) =>
+      r.kind.toLowerCase() === incident.resourceKind.toLowerCase() &&
+      r.name.toLowerCase() === incident.resourceName.toLowerCase() &&
+      (r.namespace || 'default').toLowerCase() === (incident.namespace || 'default').toLowerCase()
+  );
+  const intelligence = SkyOpsIntelligenceEngine.analyzeIncident(incident, associatedResource, clusterResources);
   res.json({ intelligence });
-});
-
-// --- Phase 2B: Unified Evidence Endpoint ---
-app.get('/api/v1/incidents/:id/evidence', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
-  const incident = store.getIncident(req.params.id, req.orgId!);
-  if (!incident) {
-    return res.status(404).json({ error: 'Incident not found' });
-  }
-
-  const intelligence = store.analyzeIncidentWithFullContext(incident, req.orgId!);
-  res.json({
-    incidentId: incident.id,
-    unifiedEvidence: intelligence.unifiedEvidence || [],
-    unknownFactors: intelligence.unknownFactors || [],
-    missingEvidence: intelligence.explainability?.missingEvidence || []
-  });
-});
-
-// --- Phase 2B: Temporal Partitioned Timeline Endpoint ---
-app.get('/api/v1/incidents/:id/temporal', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
-  const incident = store.getIncident(req.params.id, req.orgId!);
-  if (!incident) {
-    return res.status(404).json({ error: 'Incident not found' });
-  }
-
-  const intelligence = store.analyzeIncidentWithFullContext(incident, req.orgId!);
-  res.json({
-    incidentId: incident.id,
-    temporalPhases: intelligence.temporalPhases || { before: [], during: [], after: [] },
-    timeline: intelligence.correlatedTimeline || []
-  });
 });
 
 // --- SkyOps AI Incident Root-Cause Analysis Endpoints ---
@@ -1117,198 +1109,6 @@ app.post('/api/v1/incidents/:id/ai-analysis', requireUserAuth, requireOrgMembers
     console.error(`[SkyOps API] Force AI analysis error for ${req.params.id}:`, err);
     res.status(500).json({ error: err?.message || 'Failed to trigger AI analysis' });
   }
-});
-
-// --- SkyOps AI Operations Copilot ---
-const CopilotQuerySchema = z.object({
-  query: z.string().min(1).max(3000),
-  clusterId: z.string().optional(),
-  incidentId: z.string().optional(),
-  conversationHistory: z.array(
-    z.object({
-      role: z.enum(['user', 'assistant']),
-      content: z.string().max(4000)
-    })
-  ).optional()
-});
-
-app.post('/api/v1/ai/copilot', requireUserAuth, requireOrgMembership, async (req: AuthenticatedUserRequest, res) => {
-  const parseResult = CopilotQuerySchema.safeParse(req.body);
-  if (!parseResult.success) {
-    return res.status(400).json({ error: 'Invalid copilot query payload', details: parseResult.error.flatten() });
-  }
-
-  const { query, clusterId, incidentId } = parseResult.data;
-  const orgId = req.orgId!;
-
-  // 1. Gather live contextual infrastructure telemetry
-  const clusters = store.getClusters(orgId);
-  const incidents = store.getIncidents(orgId);
-  const openIncidents = incidents.filter(
-    (i) => i.status === 'OPEN' || i.status === 'IN_PROGRESS' || i.status === 'ACKNOWLEDGED'
-  );
-
-  let relevantResources: KubernetesResource[] = [];
-  const targetCluster = clusters.find((c) => c.id === clusterId);
-  if (targetCluster) {
-    relevantResources = store.getClusterResources(targetCluster.id, orgId);
-  } else if (clusters.length > 0) {
-    for (const c of clusters.slice(0, 3)) {
-      relevantResources.push(...store.getClusterResources(c.id, orgId).slice(0, 25));
-    }
-  }
-
-  const activeIncident = incidentId ? store.getIncident(incidentId, orgId) : null;
-
-  // Identify failing pods and pressure nodes from real telemetry
-  const failingPods = relevantResources.filter(
-    (r) =>
-      r.kind === 'Pod' &&
-      (r.health === 'CRITICAL' ||
-        r.status === 'CrashLoopBackOff' ||
-        r.status === 'ImagePullBackOff' ||
-        r.status === 'OOMKilled' ||
-        r.status === 'Error')
-  );
-
-  const pressureNodes = relevantResources.filter(
-    (r) =>
-      r.kind === 'Node' &&
-      (((r.conditions || []) as any[]).some(
-        (c: any) =>
-          (c.type === 'MemoryPressure' || c.type === 'DiskPressure' || c.type === 'PIDPressure') &&
-          (c.status === 'True' || c.status === true)
-      ) ||
-        r.status !== 'Ready')
-  );
-
-  // Suggested commands and actions based on context
-  const suggestedCommands: string[] = [];
-  const suggestedActions: Array<{ label: string; action: string; risk: 'LOW' | 'MEDIUM' | 'HIGH' }> = [];
-
-  if (activeIncident) {
-    suggestedCommands.push(
-      `kubectl describe ${activeIncident.resourceKind.toLowerCase()} ${activeIncident.resourceName} -n ${activeIncident.namespace}`
-    );
-    if (activeIncident.resourceKind === 'Pod') {
-      suggestedCommands.push(`kubectl logs ${activeIncident.resourceName} -n ${activeIncident.namespace} --tail=100`);
-    }
-    suggestedActions.push({
-      label: `Inspect ${activeIncident.resourceName}`,
-      action: `kubectl get ${activeIncident.resourceKind.toLowerCase()} ${activeIncident.resourceName} -n ${activeIncident.namespace} -o yaml`,
-      risk: 'LOW'
-    });
-  } else if (failingPods.length > 0) {
-    const p = failingPods[0];
-    suggestedCommands.push(`kubectl describe pod ${p.name} -n ${p.namespace || 'default'}`);
-    suggestedCommands.push(`kubectl logs ${p.name} -n ${p.namespace || 'default'} --previous --tail=50`);
-    suggestedActions.push({
-      label: `Restart ${p.name}`,
-      action: `kubectl delete pod ${p.name} -n ${p.namespace || 'default'}`,
-      risk: 'MEDIUM'
-    });
-  } else {
-    suggestedCommands.push(`kubectl get nodes -o wide`);
-    suggestedCommands.push(`kubectl get pods -A --field-selector=status.phase!=Running`);
-  }
-
-  // 2. Query Gemini if configured, otherwise deterministic engine response
-  const apiKey = process.env.GEMINI_API_KEY;
-  let replyText = '';
-
-  if (apiKey && apiKey.trim().length > 0) {
-    try {
-      const { GoogleGenAI } = await import('@google/genai');
-      const ai = new GoogleGenAI({ apiKey: apiKey.trim() });
-
-      const systemInstruction = `You are SkyOps AI, an expert autonomous Kubernetes Site Reliability Engineer and operations copilot.
-You have authoritative, real-time context on the user's live Kubernetes fleet:
-- Connected Clusters: ${clusters.map((c) => `${c.name} (${c.status}, ${c.nodeCount} nodes, ${c.podCount} pods, K8s ${c.k8sVersion || 'v1.29'})`).join(', ') || 'None connected'}
-- Open Incidents (${openIncidents.length}): ${openIncidents.map((i) => `[${i.severity}] ${i.title} on ${i.resourceKind}/${i.resourceName} in ${i.namespace}`).join('; ') || 'Zero active incidents'}
-- Failing Pods (${failingPods.length}): ${failingPods.map((p) => `${p.namespace}/${p.name} (${p.status})`).join(', ') || 'None'}
-- Pressure Nodes (${pressureNodes.length}): ${pressureNodes.map((n) => n.name).join(', ') || 'All nodes ready'}
-${activeIncident ? `Focused Active Incident: ${activeIncident.id} (${activeIncident.title}) - Status: ${activeIncident.status}, Root Cause: ${activeIncident.technicalDetails?.reason || activeIncident.rootCauseAnalysis || 'Under investigation'}` : ''}
-
-Rules:
-1. Provide accurate, production-grade Kubernetes troubleshooting guidance.
-2. NEVER fabricate non-existent cluster state, pods, or metrics.
-3. Be concise, structured, and actionable.
-4. Include exact kubectl commands with namespace and flags where helpful.
-5. Highlight safety risks (LOW/MEDIUM/HIGH) for any mutating operations.`;
-
-      const prompt = `User operational query: "${query}"\n\nPlease provide operational analysis, diagnosis, and recommended actions based on the current cluster status.`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-        config: {
-          systemInstruction,
-          temperature: 0.2
-        }
-      });
-      replyText = response.text || '';
-    } catch (err: any) {
-      console.warn('[SkyOps AI Copilot] Gemini API call notice, falling back to deterministic response:', err?.message || err);
-    }
-  }
-
-  if (!replyText) {
-    if (openIncidents.length > 0) {
-      const topInc = openIncidents[0];
-      replyText = `### SkyOps Fleet Operational Assessment
-
-**Active Cluster Status**: Evaluated **${clusters.length} cluster(s)** with **${openIncidents.length} open incident(s)** requiring attention.
-
-#### Priority Incident Detected
-- **Ticket**: \`${topInc.id}\` — **${topInc.title}**
-- **Target**: \`${topInc.resourceKind}/${topInc.resourceName}\` in namespace \`${topInc.namespace}\`
-- **Severity**: **${topInc.severity}** (Status: \`${topInc.status}\`)
-- **Observed Reason**: ${topInc.technicalDetails?.reason || topInc.rootCauseAnalysis || 'Container runtime crash or degraded workload replica state'}
-
-#### Telemetry & Pressure Summary
-- **Failing / Crashing Pods**: ${failingPods.length} detected across live scraping
-- **Nodes Under Pressure**: ${pressureNodes.length > 0 ? pressureNodes.map((n) => n.name).join(', ') : 'All nodes in Ready condition'}
-
-#### Recommended Operational Steps
-1. Inspect live container termination logs and previous crash status:
-\`\`\`bash
-kubectl logs ${topInc.resourceName} -n ${topInc.namespace} --previous --tail=100
-\`\`\`
-2. Check recent Kubernetes events in the workload namespace:
-\`\`\`bash
-kubectl get events -n ${topInc.namespace} --sort-by='.metadata.creationTimestamp'
-\`\`\`
-3. Review or dispatch verified automated remediation from the **Actions Center** or Incident detail workspace.`;
-    } else {
-      replyText = `### SkyOps Fleet Operational Assessment
-
-**Cluster Fleet Health**: **HEALTHY**
-- **Connected Clusters**: ${clusters.length} (${clusters.filter((c) => c.agentStatus === 'CONNECTED').length} agents connected)
-- **Active Incidents**: 0 critical or high severity alerts
-- **Failing Pods**: 0 detected
-- **Node Status**: All nodes reporting Ready without memory/disk pressure
-
-#### Fleet Status
-Your Kubernetes workloads are operating stably with continuous telemetry ingestion. To perform deeper cluster analysis or simulate load testing, you can use the terminal commands below or explore the **Observability** and **Infrastructure** views.`;
-    }
-  }
-
-  res.json({
-    reply: replyText,
-    suggestedCommands,
-    suggestedActions,
-    relatedIncidents: openIncidents.slice(0, 5),
-    relatedResources: failingPods.slice(0, 5)
-  });
-});
-
-// --- Actions & Remediations Hub API ---
-app.get('/api/v1/actions', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
-  const orgId = req.orgId!;
-  const remediations = store.getAllRemediations(orgId);
-  const actions = store.getAllRemediationActions(orgId);
-  const policy = store.getRemediationPolicy(orgId);
-  res.json({ remediations, actions, policy });
 });
 
 // --- Controlled AI Remediation Endpoints ---

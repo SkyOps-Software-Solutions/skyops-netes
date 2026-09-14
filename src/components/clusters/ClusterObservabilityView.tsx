@@ -25,6 +25,7 @@ import {
 } from '../../types/index';
 import { Button } from '../common/UI';
 import { ErrorBoundary } from '../common/ErrorBoundary';
+import { TelemetryIntelligenceView } from './TelemetryIntelligenceView';
 
 interface ClusterObservabilityViewProps {
   clusterId: string;
@@ -929,122 +930,7 @@ const ClusterObservabilityContent: React.FC<ClusterObservabilityViewProps> = ({
 
       {/* TELEMETRY TIMELINE & HISTORY VIEW */}
       {activeSubTab === 'history' && (
-        <div className="space-y-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-sky-400" />
-                <h4 className="font-bold text-sm text-zinc-100 font-mono">Real Historical Telemetry Foundation</h4>
-              </div>
-              <span className="text-xs font-mono text-zinc-400">
-                Data Points: <strong className="text-zinc-200">{history.length}</strong> (Collected over time)
-              </span>
-            </div>
-            <p className="text-xs text-zinc-400">
-              SkyOps captures genuine time series snapshots directly from agent scrapes. In accordance with zero-fabrication directives,
-              historical points are only recorded when real observations occur.
-            </p>
-          </div>
-
-          {history.length <= 1 ? (
-            <div className="bg-zinc-900/60 border border-dashed border-zinc-800 rounded-xl p-8 text-center space-y-3">
-              <Clock className="w-8 h-8 text-zinc-500 mx-auto animate-pulse" />
-              <div className="text-zinc-200 font-mono font-medium text-sm">
-                Collecting historical telemetry: {history.length} observation point recorded
-              </div>
-              <p className="text-xs text-zinc-500 max-w-md mx-auto">
-                Historical trends automatically accumulate as the SkyOps agent performs periodic telemetry scrapes.
-                No synthetic or interpolated mock points are generated.
-              </p>
-            </div>
-          ) : (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs font-mono">
-                  <thead className="bg-zinc-950/80 text-zinc-400 uppercase tracking-wider border-b border-zinc-800">
-                    <tr>
-                      <th className="px-4 py-3">Timestamp</th>
-                      <th className="px-4 py-3">CPU Request %</th>
-                      <th className="px-4 py-3">CPU Limit %</th>
-                      <th className="px-4 py-3">CPU Usage %</th>
-                      <th className="px-4 py-3">Memory Request %</th>
-                      <th className="px-4 py-3">Memory Limit %</th>
-                      <th className="px-4 py-3">Memory Usage %</th>
-                      <th className="px-4 py-3">Source</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-800">
-                    {history
-                      .slice()
-                      .reverse()
-                      .map((pt) => {
-                        const ptCpuReq =
-                          pt.cpuRequestedPercent ??
-                          (pt.cpuCapacityMillicores && pt.cpuRequestMillicores
-                            ? Math.round((pt.cpuRequestMillicores / pt.cpuCapacityMillicores) * 100)
-                            : undefined);
-
-                        const ptCpuLim = pt.cpuLimitPercent;
-
-                        const ptCpuUsage =
-                          pt.cpuUsagePercent ??
-                          (pt.cpuCapacityMillicores && pt.cpuUsageMillicores !== undefined
-                            ? Math.round((pt.cpuUsageMillicores / pt.cpuCapacityMillicores) * 100)
-                            : undefined);
-
-                        const ptMemReq =
-                          pt.memoryRequestedPercent ??
-                          (pt.memoryCapacityBytes && pt.memoryRequestBytes
-                            ? Math.round((pt.memoryRequestBytes / pt.memoryCapacityBytes) * 100)
-                            : undefined);
-
-                        const ptMemLim = pt.memoryLimitPercent;
-
-                        const ptMemUsage =
-                          pt.memoryUsagePercent ??
-                          (pt.memoryCapacityBytes && pt.memoryUsageBytes !== undefined
-                            ? Math.round((pt.memoryUsageBytes / pt.memoryCapacityBytes) * 100)
-                            : undefined);
-
-                        const ptSource = pt.source || (pt.isUsageAvailable ? 'metrics.k8s.io' : 'spec-derived');
-
-                        return (
-                          <tr key={pt.timestamp} className="hover:bg-zinc-850/50 transition-colors">
-                            <td className="px-4 py-3 text-zinc-300">
-                              {new Date(pt.timestamp).toLocaleTimeString()} ({formatFreshnessTime(pt.timestamp)})
-                            </td>
-                            <td className="px-4 py-3 font-bold text-sky-400">
-                              {ptCpuReq !== undefined ? `${ptCpuReq}%` : 'N/A'}
-                            </td>
-                            <td className="px-4 py-3 font-bold text-amber-400">
-                              {ptCpuLim !== undefined ? `${ptCpuLim}%` : 'N/A'}
-                            </td>
-                            <td className="px-4 py-3 font-bold text-emerald-400">
-                              {ptCpuUsage !== undefined ? `${ptCpuUsage}%` : 'Unavailable'}
-                            </td>
-                            <td className="px-4 py-3 font-bold text-violet-400">
-                              {ptMemReq !== undefined ? `${ptMemReq}%` : 'N/A'}
-                            </td>
-                            <td className="px-4 py-3 font-bold text-emerald-400">
-                              {ptMemLim !== undefined ? `${ptMemLim}%` : 'N/A'}
-                            </td>
-                            <td className="px-4 py-3 font-bold text-emerald-400">
-                              {ptMemUsage !== undefined ? `${ptMemUsage}%` : 'Unavailable'}
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-zinc-800 text-zinc-400 border border-zinc-700">
-                                {ptSource}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
+        <TelemetryIntelligenceView clusterId={clusterId} clusterName={clusterName} />
       )}
     </div>
   );

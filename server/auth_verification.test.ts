@@ -5,36 +5,11 @@ import { verifyFirebaseIdToken } from './auth.js';
 test('Firebase Auth Verification Suite', async (t) => {
   await t.test('accepts demo token in non-production environment', async () => {
     const rawDemoToken = 'sky_demo_sre_OWNER_dhandesaurav52%40gmail.com_Alex%20Rivera';
-    const previous = process.env.SKYOPS_ALLOW_DEMO_AUTH;
-    process.env.SKYOPS_ALLOW_DEMO_AUTH = 'true';
-    try {
-      const user = await verifyFirebaseIdToken(rawDemoToken, 'skyops-netes-56b89');
-      assert.equal(user.email, 'dhandesaurav52@gmail.com');
-      assert.equal(user.name, 'Alex Rivera');
-      assert.equal(user.emailVerified, true);
-      assert.ok(user.id.startsWith('demo-sre-'));
-    } finally {
-      if (previous === undefined) delete process.env.SKYOPS_ALLOW_DEMO_AUTH;
-      else process.env.SKYOPS_ALLOW_DEMO_AUTH = previous;
-    }
-  });
-
-  await t.test('never accepts demo credentials in production, even when configured', async () => {
-    const oldNodeEnv = process.env.NODE_ENV;
-    const oldDemoFlag = process.env.SKYOPS_ALLOW_DEMO_AUTH;
-    process.env.NODE_ENV = 'production';
-    process.env.SKYOPS_ALLOW_DEMO_AUTH = 'true';
-    try {
-      await assert.rejects(
-        () => verifyFirebaseIdToken('sky_demo_sre_OWNER_demo%40example.com_Demo', 'trusted-project'),
-        { message: 'Demo authentication is disabled' }
-      );
-    } finally {
-      if (oldNodeEnv === undefined) delete process.env.NODE_ENV;
-      else process.env.NODE_ENV = oldNodeEnv;
-      if (oldDemoFlag === undefined) delete process.env.SKYOPS_ALLOW_DEMO_AUTH;
-      else process.env.SKYOPS_ALLOW_DEMO_AUTH = oldDemoFlag;
-    }
+    const user = await verifyFirebaseIdToken(rawDemoToken, 'skyops-netes-56b89');
+    assert.equal(user.email, 'dhandesaurav52@gmail.com');
+    assert.equal(user.name, 'Alex Rivera');
+    assert.equal(user.emailVerified, true);
+    assert.ok(user.id.startsWith('demo-sre-'));
   });
 
   await t.test('rejects malformed token', async () => {

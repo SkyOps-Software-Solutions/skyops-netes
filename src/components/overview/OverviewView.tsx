@@ -11,11 +11,9 @@ import {
   Database,
   ExternalLink,
   Flame,
-  Globe,
   HardDrive,
   Info,
   Layers,
-  Map,
   Plus,
   RefreshCw,
   Search,
@@ -32,8 +30,6 @@ import { Cluster, Incident, KubernetesResource, OverviewMetrics } from '../../ty
 import { ClusterStatusBadge, SeverityBadge, StatusBadge } from '../common/Badges';
 import { Button, EmptyState } from '../common/UI';
 import { ErrorBoundary } from '../common/ErrorBoundary';
-import { OperatorAttentionCenter } from './OperatorAttentionCenter';
-import { GlobalInfrastructureMap } from './GlobalInfrastructureMap';
 
 interface OverviewViewProps {
   metrics: OverviewMetrics | null;
@@ -53,7 +49,6 @@ interface OverviewViewProps {
   onOpenAddCluster: () => void;
   onRefresh: () => void;
   loading: boolean;
-  onOpenAICopilot?: (prompt?: string) => void;
 }
 
 const OverviewViewContent: React.FC<OverviewViewProps> = ({
@@ -65,15 +60,13 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
   onSelectCluster,
   onOpenAddCluster,
   onRefresh,
-  loading,
-  onOpenAICopilot
+  loading
 }) => {
   const [resources, setResources] = useState<KubernetesResource[]>([]);
   const [loadingResources, setLoadingResources] = useState(false);
   const [clusterFilter, setClusterFilter] = useState<string>('all');
   const [activeIncidentTab, setActiveIncidentTab] = useState<'all' | 'critical' | 'high' | 'in_progress'>('all');
   const [inventorySearch, setInventorySearch] = useState('');
-  const [fleetViewMode, setFleetViewMode] = useState<'map' | 'list'>('map');
 
   // Fetch all resources across clusters to populate live node, pod, and workload telemetry
   useEffect(() => {
@@ -494,157 +487,107 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
         </div>
       )}
 
-      {/* 3. Operator Priority Attention Center */}
-      <OperatorAttentionCenter
-        incidents={safeIncidents}
-        clusters={safeClusters}
-        resources={safeResources}
-        onSelectIncident={onSelectIncident}
-        onSelectCluster={onSelectCluster}
-        onOpenAICopilot={onOpenAICopilot}
-      />
-
       {/* 4. Two-Column Core Layout: Connected Clusters Fleet & Active Incidents Radar */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column (7 cols): Connected Clusters Fleet & Global Topology */}
+        {/* Left Column (7 cols): Connected Clusters Fleet */}
         <div className="lg:col-span-7 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-zinc-200 font-mono uppercase tracking-wider flex items-center gap-2">
               <Server className="w-4 h-4 text-sky-400" />
               <span>Kubernetes Fleet Status ({safeClusters.length})</span>
             </h2>
-
-            <div className="flex items-center gap-2">
-              {/* Toggle between Topology Map and Cluster List */}
-              <div className="flex items-center bg-zinc-950 p-0.5 rounded-lg border border-zinc-800 text-[11px] font-mono">
-                <button
-                  onClick={() => setFleetViewMode('map')}
-                  className={`px-2 py-1 rounded transition-colors cursor-pointer flex items-center gap-1 ${
-                    fleetViewMode === 'map'
-                      ? 'bg-sky-500/20 text-sky-300 font-semibold border border-sky-500/40'
-                      : 'text-zinc-400 hover:text-zinc-200'
-                  }`}
-                >
-                  <Map className="w-3 h-3" />
-                  Map Mesh
-                </button>
-                <button
-                  onClick={() => setFleetViewMode('list')}
-                  className={`px-2 py-1 rounded transition-colors cursor-pointer flex items-center gap-1 ${
-                    fleetViewMode === 'list'
-                      ? 'bg-sky-500/20 text-sky-300 font-semibold border border-sky-500/40'
-                      : 'text-zinc-400 hover:text-zinc-200'
-                  }`}
-                >
-                  <Server className="w-3 h-3" />
-                  Cluster Cards
-                </button>
-              </div>
-
-              <button
-                onClick={onOpenAddCluster}
-                className="text-xs font-mono text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer"
-              >
-                <span>+ Connect</span>
-              </button>
-            </div>
+            <button
+              onClick={onOpenAddCluster}
+              className="text-xs font-mono text-sky-400 hover:text-sky-300 flex items-center gap-1"
+            >
+              <span>+ Connect New</span>
+            </button>
           </div>
 
-          {fleetViewMode === 'map' ? (
-            <GlobalInfrastructureMap
-              clusters={safeClusters}
-              incidents={safeIncidents}
-              onSelectCluster={onSelectCluster}
-              onSelectIncident={onSelectIncident}
+          {safeClusters.length === 0 ? (
+            <EmptyState
+              title="No Kubernetes clusters connected"
+              description="Connect your first cluster to start streaming telemetry and detecting incidents."
+              action={{ label: 'Connect Cluster', onClick: onOpenAddCluster }}
             />
           ) : (
-            <>
-              {safeClusters.length === 0 ? (
-                <EmptyState
-                  title="No Kubernetes clusters connected"
-                  description="Connect your first cluster to start streaming telemetry and detecting incidents."
-                  action={{ label: 'Connect Cluster', onClick: onOpenAddCluster }}
-                />
-              ) : (
-                <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-800/80">
-                  {safeClusters.map((cluster) => {
-                    const clusterPods = allPods.filter((p) => p.clusterId === cluster.id);
-                    const clusterCrashing = clusterPods.filter(
-                      (p) =>
-                        p.health === 'CRITICAL' ||
-                        p.status === 'CrashLoopBackOff' ||
-                        p.status === 'ImagePullBackOff' ||
-                        p.status === 'ErrImagePull' ||
-                        p.status === 'OOMKilled'
-                    );
-                    const clusterIncidents = openIncidents.filter((i) => i.clusterId === cluster.id);
+            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-800/80">
+              {safeClusters.map((cluster) => {
+                const clusterPods = allPods.filter((p) => p.clusterId === cluster.id);
+                const clusterCrashing = clusterPods.filter(
+                  (p) =>
+                    p.health === 'CRITICAL' ||
+                    p.status === 'CrashLoopBackOff' ||
+                    p.status === 'ImagePullBackOff' ||
+                    p.status === 'ErrImagePull' ||
+                    p.status === 'OOMKilled'
+                );
+                const clusterIncidents = openIncidents.filter((i) => i.clusterId === cluster.id);
 
-                    return (
-                      <div
-                        key={cluster.id}
-                        onClick={() => onSelectCluster(cluster.id)}
-                        className="p-4 hover:bg-zinc-850/60 transition-colors cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-mono text-xs"
-                      >
-                        <div className="space-y-1.5 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-sm text-zinc-100 font-mono truncate">
-                              {cluster.name}
-                            </span>
-                            {cluster.isSimulated && (
-                              <span className="text-[9px] font-mono bg-zinc-800 text-zinc-400 px-1 rounded border border-zinc-700">
-                                TEST
-                              </span>
-                            )}
-                          </div>
+                return (
+                  <div
+                    key={cluster.id}
+                    onClick={() => onSelectCluster(cluster.id)}
+                    className="p-4 hover:bg-zinc-850/60 transition-colors cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-mono text-xs"
+                  >
+                    <div className="space-y-1.5 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm text-zinc-100 font-mono truncate">
+                          {cluster.name}
+                        </span>
+                        {cluster.isSimulated && (
+                          <span className="text-[9px] font-mono bg-zinc-800 text-zinc-400 px-1 rounded border border-zinc-700">
+                            TEST
+                          </span>
+                        )}
+                      </div>
 
-                          <div className="flex flex-wrap items-center gap-2 text-zinc-400 text-[11px]">
-                            <span className="text-zinc-300 font-medium">
-                              {cluster.k8sVersion
-                                ? `K8s ${cluster.k8sVersion}`
-                                : cluster.agentStatus === 'CONNECTED'
-                                ? 'K8s (detecting)'
-                                : 'K8s —'}
-                            </span>
+                      <div className="flex flex-wrap items-center gap-2 text-zinc-400 text-[11px]">
+                        <span className="text-zinc-300 font-medium">
+                          {cluster.k8sVersion
+                            ? `K8s ${cluster.k8sVersion}`
+                            : cluster.agentStatus === 'CONNECTED'
+                            ? 'K8s (detecting)'
+                            : 'K8s —'}
+                        </span>
+                        <span className="text-zinc-600">•</span>
+                        <span>{cluster.nodeCount} Nodes</span>
+                        <span className="text-zinc-600">•</span>
+                        <span>{cluster.podCount} Pods</span>
+
+                        {clusterCrashing.length > 0 && (
+                          <>
                             <span className="text-zinc-600">•</span>
-                            <span>{cluster.nodeCount} Nodes</span>
+                            <span className="text-rose-400 font-bold animate-pulse">
+                              {clusterCrashing.length} failing
+                            </span>
+                          </>
+                        )}
+
+                        {clusterIncidents.length > 0 && (
+                          <>
                             <span className="text-zinc-600">•</span>
-                            <span>{cluster.podCount} Pods</span>
+                            <span className="text-purple-400">
+                              {clusterIncidents.length} incident(s)
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
 
-                            {clusterCrashing.length > 0 && (
-                              <>
-                                <span className="text-zinc-600">•</span>
-                                <span className="text-rose-400 font-bold animate-pulse">
-                                  {clusterCrashing.length} failing
-                                </span>
-                              </>
-                            )}
-
-                            {clusterIncidents.length > 0 && (
-                              <>
-                                <span className="text-zinc-600">•</span>
-                                <span className="text-purple-400">
-                                  {clusterIncidents.length} incident(s)
-                                </span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-4 shrink-0 sm:self-center justify-between sm:justify-end">
-                          <div className="text-left sm:text-right">
-                            <ClusterStatusBadge status={cluster.status} agentStatus={cluster.agentStatus} />
-                            <div className="text-[10px] font-mono text-zinc-500 mt-1">
-                              Heartbeat: {formatTimeAgo(cluster.lastHeartbeat || cluster.lastHeartbeatAt)}
-                            </div>
-                          </div>
-                          <ChevronRight className="w-4 h-4 text-zinc-600" />
+                    <div className="flex items-center gap-4 shrink-0 sm:self-center justify-between sm:justify-end">
+                      <div className="text-left sm:text-right">
+                        <ClusterStatusBadge status={cluster.status} agentStatus={cluster.agentStatus} />
+                        <div className="text-[10px] font-mono text-zinc-500 mt-1">
+                          Heartbeat: {formatTimeAgo(cluster.lastHeartbeat || cluster.lastHeartbeatAt)}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
+                      <ChevronRight className="w-4 h-4 text-zinc-600" />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
 

@@ -22,11 +22,9 @@ import {
   WorkloadMetricsSummary,
   K8sEvent,
   PodLogsResponse,
-  HistoricalBaseline,
-  DetectedAnomaly,
-  ChangeCorrelation,
-  TemporalPhaseSummary,
-  UnifiedEvidence
+  TelemetryResponse,
+  TelemetryQueryOptions,
+  ResourceBaseline
 } from '../types/index';
 
 /**
@@ -387,25 +385,24 @@ class ApiClient {
     return data.workloads;
   }
 
-  async getClusterMetricHistory(clusterId: string): Promise<MetricHistoryPoint[]> {
-    const data = await this.request<{ history: MetricHistoryPoint[] }>(`/api/v1/clusters/${clusterId}/metrics/history`);
+  async getClusterMetricHistory(clusterId: string, range?: string): Promise<MetricHistoryPoint[]> {
+    const query = range ? `?range=${encodeURIComponent(range)}` : '';
+    const data = await this.request<{ history: MetricHistoryPoint[] }>(`/api/v1/clusters/${clusterId}/metrics/history${query}`);
     return data.history;
   }
 
-  // --- Phase 2B: Baselines, Anomalies & Changes ---
-  async getClusterBaselines(clusterId: string): Promise<HistoricalBaseline[]> {
-    const data = await this.request<{ baselines: HistoricalBaseline[] }>(`/api/v1/clusters/${clusterId}/baselines`);
-    return Array.isArray(data.baselines) ? data.baselines : [];
+  async getTelemetryHistory(clusterId: string, options?: TelemetryQueryOptions): Promise<TelemetryResponse> {
+    const params = new URLSearchParams();
+    if (options?.range) params.set('range', options.range);
+    if (options?.resolution) params.set('resolution', options.resolution);
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.includeRaw !== undefined) params.set('includeRaw', String(options.includeRaw));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request<TelemetryResponse>(`/api/v1/clusters/${clusterId}/telemetry${qs}`);
   }
 
-  async getClusterAnomalies(clusterId: string): Promise<DetectedAnomaly[]> {
-    const data = await this.request<{ anomalies: DetectedAnomaly[] }>(`/api/v1/clusters/${clusterId}/anomalies`);
-    return Array.isArray(data.anomalies) ? data.anomalies : [];
-  }
-
-  async getClusterChanges(clusterId: string): Promise<ChangeCorrelation[]> {
-    const data = await this.request<{ changes: ChangeCorrelation[] }>(`/api/v1/clusters/${clusterId}/changes`);
-    return Array.isArray(data.changes) ? data.changes : [];
+  async getTelemetryBaseline(clusterId: string, range = '24h'): Promise<{ baseline: ResourceBaseline }> {
+    return this.request<{ baseline: ResourceBaseline }>(`/api/v1/clusters/${clusterId}/telemetry/baseline?range=${encodeURIComponent(range)}`);
   }
 
   // --- First-Class Kubernetes Events Observability ---
@@ -499,14 +496,6 @@ class ApiClient {
 
   async getIncidentIntelligence(id: string): Promise<{ intelligence: IntelligenceAnalysis }> {
     return this.request<{ intelligence: IntelligenceAnalysis }>(`/api/v1/incidents/${id}/intelligence`);
-  }
-
-  async getIncidentEvidence(id: string): Promise<{ evidence: UnifiedEvidence[]; unknownFactors: string[] }> {
-    return this.request<{ evidence: UnifiedEvidence[]; unknownFactors: string[] }>(`/api/v1/incidents/${id}/evidence`);
-  }
-
-  async getIncidentTemporal(id: string): Promise<{ temporalPhases: TemporalPhaseSummary; correlatedChanges: ChangeCorrelation[] }> {
-    return this.request<{ temporalPhases: TemporalPhaseSummary; correlatedChanges: ChangeCorrelation[] }>(`/api/v1/incidents/${id}/temporal`);
   }
 
   async getIncidentAIAnalysis(id: string): Promise<{ analysis: SkyOpsAIAnalysis; remediation?: StructuredRemediation }> {
@@ -774,34 +763,6 @@ class ApiClient {
 
   async getNotificationDeliveries(): Promise<{ deliveries: any[] }> {
     return this.request('/api/v1/settings/notifications/deliveries');
-  }
-
-  // --- SkyOps AI Operations Copilot ---
-  async askCopilot(payload: {
-    query: string;
-    clusterId?: string;
-    incidentId?: string;
-    conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
-  }): Promise<{
-    reply: string;
-    suggestedCommands?: string[];
-    suggestedActions?: Array<{ label: string; action: string; risk: 'LOW' | 'MEDIUM' | 'HIGH' }>;
-    relatedIncidents?: Incident[];
-    relatedResources?: KubernetesResource[];
-  }> {
-    return this.request('/api/v1/ai/copilot', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
-  }
-
-  // --- Actions & Remediations Center ---
-  async getActionsHub(): Promise<{
-    remediations: StructuredRemediation[];
-    actions: any[];
-    policy: any;
-  }> {
-    return this.request('/api/v1/actions');
   }
 }
 

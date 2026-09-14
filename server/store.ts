@@ -915,7 +915,11 @@ export class DataStore {
       memoryLimitPercent: memLimPct,
       memoryUsagePercent: clusterObservability.memory.utilizationPercent,
       isUsageAvailable: clusterObservability.isUsageAvailable,
-      source: clusterObservability.isUsageAvailable ? 'metrics.k8s.io' : 'spec-derived'
+      // Requests and limits remain specification data, but this history series is
+      // specifically runtime usage. Never relabel missing runtime metrics as spec data.
+      source: clusterObservability.isUsageAvailable ? 'metrics-api' : 'unavailable',
+      resolution: 'raw',
+      sampleCount: 1
     };
     this.recordMetricHistoryPoint(clusterId, newPoint);
 
@@ -2686,17 +2690,58 @@ export class DataStore {
   public recordMetricHistoryPoint(clusterId: string, point: MetricHistoryPoint): void {
     const pointWithTime: MetricHistoryPoint = {
       ...point,
-      timestamp: point.timestamp || Date.now()
+      timestamp: point.timestamp || Date.now(),
+      source: point.source === 'METRICS_SERVER' ? 'metrics-api' : point.source
     };
     const history = this.clusterMetricHistory.get(clusterId) || [];
-    history.push(pointWithTime);
-    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const bounded = history.filter((p) => p && p.timestamp >= sevenDaysAgo);
-    if (bounded.length > 2000) {
-      bounded.splice(0, bounded.length - 2000);
-    }
-    this.clusterMetricHistory.set(clusterId, bounded);
+    history.push({ ...pointWithTime, resolution: pointWithTime.resolution || 'raw', sampleCount: pointWithTime.sampleCount || 1 });
+    this.clusterMetricHistory.set(clusterId, this.compactMetricHistory(history));
     this.saveSnapshot();
+  }
+
+  /**
+   * Tiered, bounded telemetry retention. Raw 15-second observations are useful
+   * during active investigations, while older points are aggregated without
+   * hiding spikes (min/max are retained). This is deliberately storage-adapter
+   * independent so it can move from JSON persistence to a database later.
+   */
+  private compactMetricHistory(history: MetricHistoryPoint[], now = Date.now()): MetricHistoryPoint[] {
+    const rawCutoff = now - 24 * 60 * 60 * 1000;
+    const retentionCutoff = now - 7 * 24 * 60 * 60 * 1000;
+    const recent = history.filter((p) => p && p.timestamp >= rawCutoff).map((p) => ({ ...p, resolution: 'raw' as const, sampleCount: p.sampleCount || 1 }));
+    const older = history.filter((p) => p && p.timestamp >= retentionCutoff && p.timestamp < rawCutoff);
+    const buckets = new Map<number, MetricHistoryPoint[]>();
+    for (const point of older) {
+      const bucket = Math.floor(point.timestamp / (5 * 60 * 1000)) * (5 * 60 * 1000);
+      const values = buckets.get(bucket) || [];
+      values.push(point);
+      buckets.set(bucket, values);
+    }
+    const weightedAverage = (values: Array<{ value: number; count: number }>): number | undefined => {
+      const totalCount = values.reduce((sum, entry) => sum + entry.count, 0);
+      return totalCount ? Math.round(values.reduce((sum, entry) => sum + entry.value * entry.count, 0) / totalCount) : undefined;
+    };
+    const aggregates = Array.from(buckets.entries()).map(([timestamp, points]) => {
+      const latest = points.reduce((a, b) => a.timestamp >= b.timestamp ? a : b);
+      const cpu = points.flatMap((p) => Number.isFinite(p.cpuUsageMillicores) ? [{ value: p.cpuUsageMillicores!, count: p.sampleCount || 1, min: p.cpuUsageMinMillicores ?? p.cpuUsageMillicores!, max: p.cpuUsageMaxMillicores ?? p.cpuUsageMillicores! }] : []);
+      const memory = points.flatMap((p) => Number.isFinite(p.memoryUsageBytes) ? [{ value: p.memoryUsageBytes!, count: p.sampleCount || 1, min: p.memoryUsageMinBytes ?? p.memoryUsageBytes!, max: p.memoryUsageMaxBytes ?? p.memoryUsageBytes! }] : []);
+      return {
+        ...latest,
+        timestamp,
+        resolution: '5m-aggregate' as const,
+        sampleCount: points.reduce((sum, p) => sum + (p.sampleCount || 1), 0),
+        cpuUsageMillicores: weightedAverage(cpu),
+        cpuUsageMinMillicores: cpu.length ? Math.min(...cpu.map((entry) => entry.min)) : undefined,
+        cpuUsageMaxMillicores: cpu.length ? Math.max(...cpu.map((entry) => entry.max)) : undefined,
+        memoryUsageBytes: weightedAverage(memory),
+        memoryUsageMinBytes: memory.length ? Math.min(...memory.map((entry) => entry.min)) : undefined,
+        memoryUsageMaxBytes: memory.length ? Math.max(...memory.map((entry) => entry.max)) : undefined,
+        isUsageAvailable: cpu.length > 0 || memory.length > 0,
+        source: cpu.length > 0 || memory.length > 0 ? 'metrics-api' as const : 'unavailable' as const
+      };
+    });
+    // Hard cap protects storage even with malformed timestamps / unusual polling.
+    return [...aggregates, ...recent].sort((a, b) => a.timestamp - b.timestamp).slice(-10_000);
   }
 
   public getClusterMetricHistory(clusterId: string, orgId?: string, range: string = '1h'): MetricHistoryPoint[] {
@@ -2714,7 +2759,10 @@ export class DataStore {
     else if (range === '7d') windowMs = 7 * 24 * 60 * 60 * 1000;
 
     const cutoff = now - windowMs;
-    return points.filter((p) => p && p.timestamp >= cutoff);
+    // Bound API payloads: client charts receive at most 2,000 points. The 5m
+    // tier naturally keeps long ranges compact; this final cap protects new stores.
+    const filtered = points.filter((p) => p && p.timestamp >= cutoff);
+    return filtered.length > 2000 ? filtered.slice(-2000) : filtered;
   }
 
   // --- First-Class Kubernetes Events Observability ---

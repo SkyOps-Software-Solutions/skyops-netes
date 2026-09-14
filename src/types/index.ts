@@ -150,6 +150,7 @@ export interface ContainerDiagnostic {
   cpuRequest?: string;
   memoryUsage?: string;
   cpuUsage?: string;
+  logs?: string;
 }
 
 export interface ConditionDiagnostic {
@@ -422,6 +423,38 @@ export interface K8sEvent {
   namespace: string;
   message: string;
   count?: number;
+  source?: string;
+  firstObserved?: number;
+  lastObserved?: number;
+  involvedObject?: {
+    kind?: string;
+    namespace?: string;
+    name?: string;
+    uid?: string;
+    apiVersion?: string;
+  };
+}
+
+export interface PodLogLine {
+  timestamp?: string;
+  message: string;
+  raw: string;
+}
+
+export interface PodLogsResponse {
+  clusterId: string;
+  namespace: string;
+  podName: string;
+  container: string;
+  previous: boolean;
+  timestamps: boolean;
+  lines: PodLogLine[];
+  rawText: string;
+  totalLines: number;
+  source: string;
+  retrievedAt: number;
+  isTruncated?: boolean;
+  unavailableReason?: string;
 }
 
 export interface KubernetesResource {

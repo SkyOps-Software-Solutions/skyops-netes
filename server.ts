@@ -572,35 +572,107 @@ app.get('/api/v1/clusters/:id/metrics/workloads', requireUserAuth, requireOrgMem
 });
 
 app.get('/api/v1/clusters/:id/metrics/history', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
-  const history = store.getClusterMetricHistory(req.params.id, req.orgId!);
-  res.json({ history });
+  const range = (req.query.range as string) || '1h';
+  const history = store.getClusterMetricHistory(req.params.id, req.orgId!, range);
+  res.json({ history, timeRange: range });
+});
+
+// --- First-Class Kubernetes Events Observability Endpoint ---
+app.get('/api/v1/clusters/:id/events', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const cluster = store.getCluster(req.params.id, req.orgId!);
+  if (!cluster) {
+    return res.status(404).json({ error: 'Cluster not found' });
+  }
+
+  const { type, namespace, kind, resourceName, search, limit } = req.query as Record<string, string | undefined>;
+  const parsedLimit = limit ? parseInt(limit, 10) : undefined;
+  const parsedType = type === 'Warning' || type === 'Normal' ? type : undefined;
+
+  const events = store.getClusterEvents(req.params.id, req.orgId!, {
+    type: parsedType,
+    namespace,
+    kind,
+    resourceName,
+    search,
+    limit: parsedLimit
+  });
+
+  res.json({ events });
+});
+
+// --- Controlled Pod / Container Log Retrieval Endpoint ---
+app.get('/api/v1/clusters/:id/pods/:namespace/:podName/logs', requireUserAuth, requireOrgMembership, async (req: AuthenticatedUserRequest, res) => {
+  const cluster = store.getCluster(req.params.id, req.orgId!);
+  if (!cluster) {
+    return res.status(404).json({ error: 'Cluster not found' });
+  }
+
+  const { container, tailLines, previous, sinceSeconds, timestamps, filter } = req.query as Record<string, string | undefined>;
+  const parsedTailLines = tailLines ? parseInt(tailLines, 10) : 100;
+  const parsedPrevious = previous === 'true' || previous === '1';
+  const parsedSince = sinceSeconds ? parseInt(sinceSeconds, 10) : undefined;
+  const parsedTimestamps = timestamps !== 'false' && timestamps !== '0';
+
+  try {
+    const logData = await store.getPodLogs(req.params.id, req.orgId!, req.params.namespace, req.params.podName, {
+      container,
+      tailLines: parsedTailLines,
+      previous: parsedPrevious,
+      sinceSeconds: parsedSince,
+      timestamps: parsedTimestamps,
+      filter
+    });
+
+    res.json(logData);
+  } catch (err: any) {
+    res.status(404).json({ error: err?.message || 'Failed to retrieve pod logs' });
+  }
 });
 
 app.get('/api/v1/resources', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
-  const { clusterId, kind, namespace, health, search } = req.query as Record<string, string | undefined>;
-  let resources = store.getAllResources(req.orgId!);
+  const {
+    clusterId,
+    kind,
+    namespace,
+    health,
+    status,
+    nodeName,
+    search,
+    incidentId,
+    timeRange,
+    since,
+    until,
+    sortBy,
+    sortOrder,
+    page,
+    limit
+  } = req.query as Record<string, string | undefined>;
 
-  if (clusterId) {
-    resources = resources.filter((r) => r.clusterId === clusterId);
-  }
-  if (kind) {
-    const kinds = kind.split(',').map((k) => k.trim().toLowerCase());
-    resources = resources.filter((r) => kinds.includes(r.kind.toLowerCase()));
-  }
-  if (namespace) {
-    resources = resources.filter((r) => (r.namespace || 'default').toLowerCase() === namespace.toLowerCase());
-  }
-  if (health) {
-    resources = resources.filter((r) => r.health.toLowerCase() === health.toLowerCase());
-  }
-  if (search) {
-    const q = search.toLowerCase();
-    resources = resources.filter(
-      (r) => r.name.toLowerCase().includes(q) || (r.namespace && r.namespace.toLowerCase().includes(q))
-    );
-  }
+  const parsedPage = page ? parseInt(page, 10) : undefined;
+  const parsedLimit = limit ? parseInt(limit, 10) : undefined;
+  const parsedSince = since ? parseInt(since, 10) : undefined;
+  const parsedUntil = until ? parseInt(until, 10) : undefined;
+  const parsedOrder = sortOrder === 'desc' ? 'desc' : 'asc';
 
-  res.json({ resources });
+  const result = store.queryResources(req.orgId!, {
+    clusterId,
+    kind,
+    namespace,
+    health,
+    status,
+    nodeName,
+    search,
+    incidentId,
+    timeRange,
+    since: parsedSince,
+    until: parsedUntil,
+    sortBy,
+    sortOrder: parsedOrder,
+    page: parsedPage,
+    limit: parsedLimit
+  });
+
+  res.json(result);
 });
 
 // --- Agent Ingestion Endpoints (Separately Authenticated via requireAgentAuth) ---

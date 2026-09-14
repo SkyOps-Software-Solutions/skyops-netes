@@ -57,7 +57,8 @@ function normalizeContainers(value: unknown, specContainers: unknown[] = []): Co
       cpuLimit: asString(container.cpuLimit) || specRes?.cpuLimit || undefined,
       cpuRequest: asString(container.cpuRequest) || specRes?.cpuRequest || undefined,
       memoryUsage: asString(container.memoryUsage) || undefined,
-      cpuUsage: asString(container.cpuUsage) || undefined
+      cpuUsage: asString(container.cpuUsage) || undefined,
+      logs: asString(container.logs) || undefined
     };
   });
 }
@@ -66,7 +67,39 @@ function normalizeEvents(value: unknown): K8sEvent[] {
   return asList(value).map((item: unknown): K8sEvent => {
     const event = asObject(item);
     const type: K8sEvent['type'] = asString(event.type) === 'Warning' ? 'Warning' : 'Normal';
-    return { id: asString(event.id, asString(asObject(event.metadata).uid)), timestamp: asNumber(event.timestamp), type, reason: asString(event.reason), objectKind: asString(event.objectKind), objectName: asString(event.objectName), namespace: asString(event.namespace), message: asString(event.message), count: typeof event.count === 'number' ? event.count : undefined };
+    const metadata = asObject(event.metadata);
+    const involved = asObject(event.involvedObject);
+    const objectKind = asString(event.objectKind, asString(involved.kind));
+    const objectName = asString(event.objectName, asString(involved.name));
+    const namespace = asString(event.namespace, asString(involved.namespace, asString(metadata.namespace)));
+    const reason = asString(event.reason);
+    const message = asString(event.message);
+    const rawTs = asNumber(event.timestamp, asNumber(event.lastTimestamp, Date.parse(asString(event.lastTimestamp || metadata.creationTimestamp)) || 0));
+    const timestamp = rawTs > 0 ? rawTs : Date.now();
+    const sourceObj = asObject(event.source);
+    const source = asString(event.source, asString(sourceObj.component, asString(sourceObj.host)));
+
+    return {
+      id: asString(event.id, asString(metadata.uid)) || `${objectKind}-${namespace}-${objectName}-${reason}-${timestamp}`,
+      timestamp,
+      type,
+      reason,
+      objectKind,
+      objectName,
+      namespace,
+      message,
+      count: typeof event.count === 'number' ? event.count : 1,
+      source: source || undefined,
+      firstObserved: asNumber(event.firstObserved, asNumber(event.firstTimestamp, timestamp)),
+      lastObserved: asNumber(event.lastObserved, asNumber(event.lastTimestamp, timestamp)),
+      involvedObject: {
+        kind: objectKind || undefined,
+        namespace: namespace || undefined,
+        name: objectName || undefined,
+        uid: asString(involved.uid) || undefined,
+        apiVersion: asString(involved.apiVersion) || undefined
+      }
+    };
   }).filter(event => event.reason || event.message);
 }
 

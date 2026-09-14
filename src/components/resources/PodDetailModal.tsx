@@ -22,11 +22,13 @@ import { Incident, KubernetesResource } from '../../types/index';
 import { PodPhaseBadge, ResourceHealthBadge, SeverityBadge, StatusBadge, WorkloadKindBadge } from '../common/Badges';
 import { Button } from '../common/UI';
 import { ResourceRelationshipTree } from './ResourceRelationshipTree';
+import { PodLogsViewer } from '../logs/PodLogsViewer';
 
 interface PodDetailModalProps {
   pod: KubernetesResource | null;
   clusterResources?: KubernetesResource[];
   incidents?: Incident[];
+  initialSection?: 'diagnostics' | 'resources' | 'containers' | 'logs' | 'hierarchy' | 'events' | 'yaml';
   onClose: () => void;
   onSelectIncident?: (incidentId: string) => void;
   onSelectResource?: (resource: KubernetesResource) => void;
@@ -36,11 +38,12 @@ export const PodDetailModal: React.FC<PodDetailModalProps> = ({
   pod,
   clusterResources = [],
   incidents = [],
+  initialSection = 'diagnostics',
   onClose,
   onSelectIncident,
   onSelectResource
 }) => {
-  const [activeSection, setActiveSection] = useState<'diagnostics' | 'resources' | 'containers' | 'hierarchy' | 'events' | 'yaml'>('diagnostics');
+  const [activeSection, setActiveSection] = useState<'diagnostics' | 'resources' | 'containers' | 'logs' | 'hierarchy' | 'events' | 'yaml'>(initialSection);
 
   const safeClusterResources = useMemo(() => {
     return Array.isArray(clusterResources)
@@ -62,14 +65,15 @@ export const PodDetailModal: React.FC<PodDetailModalProps> = ({
   const metricsAvailable = pod.statusSummary?.metricsAvailable === true;
   const metricsObservedAt = pod.statusSummary?.metricsObservedAt as string | undefined;
 
-  // Find linked incident if any
-  const linkedIncident = safeIncidents.find(
+  // Find linked and related incidents
+  const relatedIncidents = safeIncidents.filter(
     (inc) =>
       inc &&
       inc.clusterId === pod.clusterId &&
-      inc.namespace === pod.namespace &&
-      inc.resourceName === pod.name
+      ((inc.namespace === pod.namespace && inc.resourceName === pod.name) ||
+        inc.affectedPodNames?.includes(pod.name))
   );
+  const linkedIncident = relatedIncidents[0] || null;
 
   // Check if crashing/failing
   const isCrashing =
@@ -118,12 +122,22 @@ export const PodDetailModal: React.FC<PodDetailModalProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors shrink-0"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveSection('logs')}
+              className="px-3 py-1.5 rounded-lg bg-sky-950 text-sky-300 border border-sky-800 hover:bg-sky-900 text-xs font-mono font-medium flex items-center gap-1.5 transition-colors shadow-sm"
+              title="Open real-time container log stream"
+            >
+              <Terminal className="w-3.5 h-3.5 text-sky-400" />
+              Pod Logs
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors shrink-0"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Primary Crash / Incident Alert Banner (Answers "What Pods are crashing/failing, and why?") */}
@@ -164,6 +178,15 @@ export const PodDetailModal: React.FC<PodDetailModalProps> = ({
                     )}
                   </div>
                 )}
+                <div className="pt-1 flex items-center gap-2">
+                  <button
+                    onClick={() => setActiveSection('logs')}
+                    className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold border border-zinc-700 flex items-center gap-1.5 transition-colors"
+                  >
+                    <Terminal className="w-3.5 h-3.5 text-sky-400" />
+                    Inspect Container Logs
+                  </button>
+                </div>
               </div>
             )}
 
@@ -224,6 +247,20 @@ export const PodDetailModal: React.FC<PodDetailModalProps> = ({
             Containers ({pod.containers?.length || 0})
           </button>
           <button
+            onClick={() => setActiveSection('logs')}
+            className={`px-3.5 py-2.5 text-xs font-mono font-medium border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+              activeSection === 'logs'
+                ? 'border-sky-500 text-sky-400 bg-sky-950/20'
+                : 'border-transparent text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Terminal className="w-3.5 h-3.5 text-sky-400" />
+            <span>Logs</span>
+            {failingContainer && (
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-400" title="Crash logs available" />
+            )}
+          </button>
+          <button
             onClick={() => setActiveSection('hierarchy')}
             className={`px-3.5 py-2.5 text-xs font-mono font-medium border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5 ${
               activeSection === 'hierarchy'
@@ -260,7 +297,7 @@ export const PodDetailModal: React.FC<PodDetailModalProps> = ({
           {activeSection === 'diagnostics' && (
             <div className="space-y-6">
               {/* Pod Metadata Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                 <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
                   <div className="text-[10px] text-zinc-500 uppercase">Phase / Status</div>
                   <div className="text-sm font-bold text-zinc-200 mt-1">{pod.status}</div>
@@ -274,14 +311,63 @@ export const PodDetailModal: React.FC<PodDetailModalProps> = ({
                 <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
                   <div className="text-[10px] text-zinc-500 uppercase">Scheduled Node</div>
                   <div className="text-sm font-bold text-zinc-200 mt-1 truncate">
-                    {pod.specSummary?.nodeName as string || 'Not scheduled'}
+                    {pod.nodeName || (pod.specSummary?.nodeName as string) || (pod.statusSummary?.nodeName as string) || 'Unassigned'}
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+                  <div className="text-[10px] text-zinc-500 uppercase">Pod IP</div>
+                  <div className="text-sm font-bold text-zinc-200 mt-1 truncate">
+                    {(pod.statusSummary?.podIP as string) || (pod.statusSummary?.podIPs as any)?.[0] || 'Not assigned'}
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+                  <div className="text-[10px] text-zinc-500 uppercase">QoS Class</div>
+                  <div className="text-sm font-bold text-zinc-200 mt-1">
+                    {(pod.statusSummary?.qosClass as string) || 'Not collected'}
                   </div>
                 </div>
                 <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
                   <div className="text-[10px] text-zinc-500 uppercase">Age / Created</div>
-                  <div className="text-sm font-bold text-zinc-200 mt-1">{formatTimestamp(pod.createdAt)}</div>
+                  <div className="text-sm font-bold text-zinc-200 mt-1 truncate">{formatTimestamp(pod.createdAt)}</div>
                 </div>
               </div>
+
+              {/* Correlated Incidents Card */}
+              {relatedIncidents.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 text-amber-400" />
+                    Correlated Incidents ({relatedIncidents.length})
+                  </h3>
+                  <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-950 divide-y divide-zinc-800/60">
+                    {relatedIncidents.map((inc) => (
+                      <div key={inc.id} className="p-3 flex items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <SeverityBadge severity={inc.severity} />
+                            <span className="font-bold text-zinc-200">{inc.title}</span>
+                          </div>
+                          <div className="text-[11px] text-zinc-400">
+                            Status: <span className="font-semibold text-zinc-300">{inc.status}</span> •
+                            Triggered: {new Date(inc.firstSeenAt || (inc as any).createdAt).toLocaleString()}
+                          </div>
+                        </div>
+                        {onSelectIncident && (
+                          <button
+                            onClick={() => {
+                              onClose();
+                              onSelectIncident(inc.id);
+                            }}
+                            className="px-2.5 py-1 rounded bg-sky-900/60 hover:bg-sky-800 text-sky-200 text-xs font-bold border border-sky-700 flex items-center gap-1 shrink-0 transition-colors"
+                          >
+                            Investigate Incident <ArrowRight className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Conditions Diagnostic Table */}
               <div className="space-y-3">
@@ -496,6 +582,20 @@ export const PodDetailModal: React.FC<PodDetailModalProps> = ({
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {activeSection === 'logs' && (
+            <div className="h-[520px]">
+              <PodLogsViewer
+                clusterId={pod.clusterId}
+                namespace={pod.namespace}
+                podName={pod.name}
+                containers={pod.containers}
+                initialContainer={failingContainer?.name}
+                initialPrevious={pod.status === 'CrashLoopBackOff' || (failingContainer?.restartCount || 0) > 0}
+                isEmbedded={true}
+              />
             </div>
           )}
 

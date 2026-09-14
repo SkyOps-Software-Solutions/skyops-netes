@@ -22,7 +22,8 @@ import {
   Trash2,
   TrendingUp,
   Unplug,
-  Zap
+  Zap,
+  FolderTree
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
@@ -33,9 +34,12 @@ import { ClusterStatusBadge, PodPhaseBadge, ResourceHealthBadge, SeverityBadge, 
 import { Button, CodeBlock, CopyButton, EmptyState, LoadingState, Modal } from '../common/UI';
 import { PodDetailModal } from '../resources/PodDetailModal';
 import { WorkloadDetailModal } from '../resources/WorkloadDetailModal';
+import { NodeDetailModal } from '../resources/NodeDetailModal';
+import { NamespaceDetailModal } from '../resources/NamespaceDetailModal';
 import { PodsView } from '../pods/PodsView';
 import { WorkloadsView } from '../workloads/WorkloadsView';
 import { ClusterObservabilityView } from './ClusterObservabilityView';
+import { ClusterEventsView } from '../events/ClusterEventsView';
 import { ErrorBoundary } from '../common/ErrorBoundary';
 
 interface ClusterDetailViewProps {
@@ -45,7 +49,7 @@ interface ClusterDetailViewProps {
   onDeleteCluster?: (clusterId: string) => Promise<void> | void;
 }
 
-type ResourceTab = 'overview' | 'observability' | 'workloads' | 'pods' | 'nodes' | 'pvcs' | 'events' | 'agent';
+type ResourceTab = 'overview' | 'observability' | 'workloads' | 'pods' | 'nodes' | 'namespaces' | 'pvcs' | 'events' | 'agent';
 
 const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, onBack, onSelectIncident, onDeleteCluster }) => {
   const { role, canDeleteClusters } = useAuth();
@@ -59,6 +63,7 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedResource, setSelectedResource] = useState<KubernetesResource | null>(null);
+  const [selectedNamespace, setSelectedNamespace] = useState<string | null>(null);
 
   // Handshake & Credentials modal states
   const [connectModalOpen, setConnectModalOpen] = useState(false);
@@ -246,6 +251,9 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
   const workloads = safeResources.filter((r) => r && workloadKinds.includes(r.kind));
   const pods = safeResources.filter((r) => r && r.kind === 'Pod');
   const nodes = safeResources.filter((r) => r && r.kind === 'Node');
+  const namespaces = Array.from(
+    new Set(safeResources.map((r) => r.namespace || 'default'))
+  ).sort();
   const pvcs = safeResources.filter((r) => r && (r.kind === 'PersistentVolumeClaim' || r.kind === 'PVC'));
   const crashingPods = pods.filter(
     (p) =>
@@ -304,6 +312,7 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
     { id: 'workloads', label: 'Workloads', count: workloads.length, alertCount: degradedWorkloads.length },
     { id: 'pods', label: 'Pods', count: pods.length, alertCount: crashingPods.length },
     { id: 'nodes', label: 'Nodes', count: nodes.length },
+    { id: 'namespaces', label: 'Namespaces', count: namespaces.length },
     { id: 'pvcs', label: 'Storage (PVC)', count: pvcs.length },
     { id: 'events', label: 'Cluster Events', count: allEvents.length },
     { id: 'agent', label: 'Agent Install Manifest' }
@@ -657,52 +666,13 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
           )}
         </div>
       ) : activeTab === 'events' ? (
-        <div className="space-y-3">
-          <h3 className="text-sm font-bold text-zinc-200 font-mono">Observed Kubernetes Cluster Events</h3>
-          {allEvents.length === 0 ? (
-            <div className="p-8 text-center text-xs font-mono text-zinc-500 border border-zinc-800 rounded-xl bg-zinc-900/30">
-              No warning or error events recorded in this cluster.
-            </div>
-          ) : (
-            <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-xl overflow-hidden">
-              <table className="w-full text-left text-xs font-mono">
-                <thead className="bg-zinc-900 text-zinc-400 uppercase text-[10px] border-b border-zinc-800">
-                  <tr>
-                    <th className="px-4 py-2.5">Time</th>
-                    <th className="px-4 py-2.5">Type</th>
-                    <th className="px-4 py-2.5">Reason</th>
-                    <th className="px-4 py-2.5">Object</th>
-                    <th className="px-4 py-2.5">Message</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-800/60 text-zinc-300">
-                  {allEvents.map((evt) => (
-                    <tr key={evt.id} className="hover:bg-zinc-800/40">
-                      <td className="px-4 py-2 text-zinc-500 whitespace-nowrap">{formatTimeAgo(evt.timestamp)}</td>
-                      <td className="px-4 py-2">
-                        <span
-                          className={`px-1.5 py-0.5 rounded text-[10px] ${
-                            evt.type === 'Warning'
-                              ? 'bg-rose-950/60 text-rose-300 border border-rose-800/60'
-                              : 'bg-zinc-800 text-zinc-400'
-                          }`}
-                        >
-                          {evt.type}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2 font-semibold text-zinc-200">{evt.reason}</td>
-                      <td className="px-4 py-2 text-zinc-400">
-                        {evt.objectKind}/{evt.objectName}
-                        {evt.namespace ? ` (${evt.namespace})` : ''}
-                      </td>
-                      <td className="px-4 py-2 text-zinc-300 max-w-md truncate">{evt.message}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        <ClusterEventsView
+          events={allEvents}
+          clusterResources={safeResources}
+          onSelectResource={(res) => setSelectedResource(res)}
+          onRefresh={handleManualRefresh}
+          isLoading={loading || manualRefreshing}
+        />
       ) : activeTab === 'overview' ? (
         <div className="space-y-6 font-mono text-xs">
           {/* 1. Health Status Banner (Actionable Alert or Nominal) */}
@@ -1191,6 +1161,79 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
             </table>
           </div>
         </div>
+      ) : activeTab === 'namespaces' ? (
+        <div className="space-y-4 font-mono text-xs">
+          <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-xl overflow-hidden">
+            <table className="w-full text-left">
+              <thead className="bg-zinc-900 text-zinc-400 uppercase text-[10px] border-b border-zinc-800">
+                <tr>
+                  <th className="px-4 py-2.5">Namespace</th>
+                  <th className="px-4 py-2.5">Health</th>
+                  <th className="px-4 py-2.5">Workloads</th>
+                  <th className="px-4 py-2.5">Pods</th>
+                  <th className="px-4 py-2.5">Incidents</th>
+                  <th className="px-4 py-2.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800/60 text-zinc-300">
+                {namespaces.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
+                      No namespaces found in this cluster.
+                    </td>
+                  </tr>
+                ) : (
+                  namespaces
+                    .filter((ns) => !searchTerm || ns.toLowerCase().includes(searchTerm.toLowerCase()))
+                    .map((ns) => {
+                      const nsWorkloads = workloads.filter((w) => (w.namespace || 'default') === ns);
+                      const nsPods = pods.filter((p) => (p.namespace || 'default') === ns);
+                      const nsIncidents = safeIncidents.filter((i) => (i.namespace || 'default') === ns);
+                      const hasCritical = [...nsWorkloads, ...nsPods].some((r) => r.health === 'CRITICAL');
+                      const hasWarning = [...nsWorkloads, ...nsPods].some((r) => r.health === 'WARNING');
+                      const nsHealth = hasCritical ? 'CRITICAL' : hasWarning ? 'WARNING' : 'HEALTHY';
+
+                      return (
+                        <tr
+                          key={ns}
+                          onClick={() => setSelectedNamespace(ns)}
+                          className="hover:bg-zinc-800/40 transition-colors cursor-pointer"
+                        >
+                          <td className="px-4 py-3 font-semibold text-zinc-100 flex items-center gap-2">
+                            <FolderTree className="w-3.5 h-3.5 text-indigo-400" />
+                            {ns}
+                          </td>
+                          <td className="px-4 py-3">
+                            <ResourceHealthBadge health={nsHealth} />
+                          </td>
+                          <td className="px-4 py-3 text-zinc-300">{nsWorkloads.length}</td>
+                          <td className="px-4 py-3 text-zinc-300">{nsPods.length}</td>
+                          <td className="px-4 py-3">
+                            {nsIncidents.length > 0 ? (
+                              <span className="text-amber-400 font-bold">{nsIncidents.length} open</span>
+                            ) : (
+                              <span className="text-zinc-500">0</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedNamespace(ns);
+                              }}
+                              className="px-2.5 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded font-mono"
+                            >
+                              Inspect Namespace →
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       ) : (
         /* Storage PVCs */
         <div className="space-y-4">
@@ -1246,11 +1289,39 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
           onClose={() => setSelectedResource(null)}
           onSelectPod={(pod) => setSelectedResource(pod)}
           onSelectIncident={onSelectIncident}
+          onSelectResource={(res) => setSelectedResource(res)}
         />
       )}
 
-      {/* Node & Other Resources Detail Modal */}
-      {selectedResource && selectedResource.kind !== 'Pod' && !workloadKinds.includes(selectedResource.kind) && (
+      {/* Real Node Detail Modal */}
+      {selectedResource && selectedResource.kind === 'Node' && (
+        <NodeDetailModal
+          node={selectedResource}
+          cluster={cluster}
+          clusterResources={safeResources}
+          incidents={safeIncidents}
+          onClose={() => setSelectedResource(null)}
+          onSelectPod={(pod) => setSelectedResource(pod)}
+          onSelectIncident={onSelectIncident}
+        />
+      )}
+
+      {/* Real Namespace Detail Modal */}
+      {selectedNamespace && (
+        <NamespaceDetailModal
+          namespaceName={selectedNamespace}
+          cluster={cluster}
+          clusterResources={safeResources}
+          incidents={safeIncidents}
+          onClose={() => setSelectedNamespace(null)}
+          onSelectWorkload={(w) => setSelectedResource(w)}
+          onSelectPod={(p) => setSelectedResource(p)}
+          onSelectIncident={onSelectIncident}
+        />
+      )}
+
+      {/* Other Resources Detail Modal (PVCs, etc.) */}
+      {selectedResource && selectedResource.kind !== 'Pod' && selectedResource.kind !== 'Node' && !workloadKinds.includes(selectedResource.kind) && (
         <Modal
           isOpen={!!selectedResource}
           onClose={() => setSelectedResource(null)}

@@ -302,8 +302,9 @@ export function buildNodeMetricsSummary(
   }
 
   // Actual usage from metrics.k8s.io if available
-  const cpuUsage = parseCpuQuantity(statusSummary.cpuUsage);
-  const memUsage = parseMemoryQuantity(statusSummary.memoryUsage);
+  const usageMap = (statusSummary.usage || {}) as Record<string, unknown>;
+  const cpuUsage = parseCpuQuantity(statusSummary.cpuUsage ?? usageMap.cpu);
+  const memUsage = parseMemoryQuantity(statusSummary.memoryUsage ?? usageMap.memory);
   const isUsageAvailable = cpuUsage !== null || memUsage !== null;
 
   let cpuUtilPercent: number | undefined = undefined;

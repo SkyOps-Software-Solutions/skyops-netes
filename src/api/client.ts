@@ -19,7 +19,9 @@ import {
   ClusterObservabilityMetrics,
   MetricHistoryPoint,
   NodeMetricsSummary,
-  WorkloadMetricsSummary
+  WorkloadMetricsSummary,
+  K8sEvent,
+  PodLogsResponse
 } from '../types/index';
 
 /**
@@ -273,18 +275,95 @@ class ApiClient {
     kind?: string;
     namespace?: string;
     health?: string;
+    status?: string;
+    nodeName?: string;
     search?: string;
+    incidentId?: string;
+    timeRange?: string;
+    since?: number;
+    until?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+    page?: number;
+    limit?: number;
   }): Promise<KubernetesResource[]> {
     const params = new URLSearchParams();
     if (filters?.clusterId) params.set('clusterId', filters.clusterId);
     if (filters?.kind) params.set('kind', filters.kind);
     if (filters?.namespace) params.set('namespace', filters.namespace);
     if (filters?.health) params.set('health', filters.health);
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.nodeName) params.set('nodeName', filters.nodeName);
     if (filters?.search) params.set('search', filters.search);
+    if (filters?.incidentId) params.set('incidentId', filters.incidentId);
+    if (filters?.timeRange) params.set('timeRange', filters.timeRange);
+    if (filters?.since) params.set('since', String(filters.since));
+    if (filters?.until) params.set('until', String(filters.until));
+    if (filters?.sortBy) params.set('sortBy', filters.sortBy);
+    if (filters?.sortOrder) params.set('sortOrder', filters.sortOrder);
+    if (filters?.page) params.set('page', String(filters.page));
+    if (filters?.limit) params.set('limit', String(filters.limit));
 
     const url = `/api/v1/resources${params.toString() ? `?${params.toString()}` : ''}`;
     const data = await this.request<unknown>(url);
     return normalizeClusterResourcesResponse(data);
+  }
+
+  async queryResources(filters?: {
+    clusterId?: string;
+    kind?: string;
+    namespace?: string;
+    health?: string;
+    status?: string;
+    nodeName?: string;
+    search?: string;
+    incidentId?: string;
+    timeRange?: string;
+    since?: number;
+    until?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    resources: KubernetesResource[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const params = new URLSearchParams();
+    if (filters?.clusterId) params.set('clusterId', filters.clusterId);
+    if (filters?.kind) params.set('kind', filters.kind);
+    if (filters?.namespace) params.set('namespace', filters.namespace);
+    if (filters?.health) params.set('health', filters.health);
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.nodeName) params.set('nodeName', filters.nodeName);
+    if (filters?.search) params.set('search', filters.search);
+    if (filters?.incidentId) params.set('incidentId', filters.incidentId);
+    if (filters?.timeRange) params.set('timeRange', filters.timeRange);
+    if (filters?.since) params.set('since', String(filters.since));
+    if (filters?.until) params.set('until', String(filters.until));
+    if (filters?.sortBy) params.set('sortBy', filters.sortBy);
+    if (filters?.sortOrder) params.set('sortOrder', filters.sortOrder);
+    if (filters?.page) params.set('page', String(filters.page));
+    if (filters?.limit) params.set('limit', String(filters.limit));
+
+    const url = `/api/v1/resources${params.toString() ? `?${params.toString()}` : ''}`;
+    const data = await this.request<{
+      resources: KubernetesResource[];
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+    }>(url);
+    return {
+      resources: Array.isArray(data?.resources) ? data.resources : [],
+      total: typeof data?.total === 'number' ? data.total : (Array.isArray(data?.resources) ? data.resources.length : 0),
+      page: data?.page || 1,
+      limit: data?.limit || 50,
+      totalPages: data?.totalPages || 1
+    };
   }
 
   // --- Observability & Resource Metrics Foundation ---
@@ -306,6 +385,57 @@ class ApiClient {
   async getClusterMetricHistory(clusterId: string): Promise<MetricHistoryPoint[]> {
     const data = await this.request<{ history: MetricHistoryPoint[] }>(`/api/v1/clusters/${clusterId}/metrics/history`);
     return data.history;
+  }
+
+  // --- First-Class Kubernetes Events Observability ---
+  async getClusterEvents(
+    clusterId: string,
+    filters?: {
+      type?: string;
+      namespace?: string;
+      kind?: string;
+      resourceName?: string;
+      search?: string;
+      limit?: number;
+    }
+  ): Promise<K8sEvent[]> {
+    const params = new URLSearchParams();
+    if (filters?.type) params.set('type', filters.type);
+    if (filters?.namespace) params.set('namespace', filters.namespace);
+    if (filters?.kind) params.set('kind', filters.kind);
+    if (filters?.resourceName) params.set('resourceName', filters.resourceName);
+    if (filters?.search) params.set('search', filters.search);
+    if (filters?.limit) params.set('limit', filters.limit.toString());
+
+    const url = `/api/v1/clusters/${clusterId}/events${params.toString() ? `?${params.toString()}` : ''}`;
+    const data = await this.request<{ events: K8sEvent[] }>(url);
+    return Array.isArray(data.events) ? data.events : [];
+  }
+
+  // --- Real Kubernetes Pod/Container Log Access ---
+  async getPodLogs(
+    clusterId: string,
+    namespace: string,
+    podName: string,
+    options?: {
+      container?: string;
+      tailLines?: number;
+      previous?: boolean;
+      sinceSeconds?: number;
+      timestamps?: boolean;
+      filter?: string;
+    }
+  ): Promise<PodLogsResponse> {
+    const params = new URLSearchParams();
+    if (options?.container) params.set('container', options.container);
+    if (options?.tailLines) params.set('tailLines', options.tailLines.toString());
+    if (options?.previous) params.set('previous', 'true');
+    if (options?.sinceSeconds) params.set('sinceSeconds', options.sinceSeconds.toString());
+    if (options?.timestamps !== undefined) params.set('timestamps', options.timestamps ? 'true' : 'false');
+    if (options?.filter) params.set('filter', options.filter);
+
+    const url = `/api/v1/clusters/${clusterId}/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/logs${params.toString() ? `?${params.toString()}` : ''}`;
+    return await this.request<PodLogsResponse>(url);
   }
 
   // --- Incidents ---

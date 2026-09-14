@@ -28,7 +28,10 @@ import {
   ClusterObservabilityMetrics,
   MetricHistoryPoint,
   NodeMetricsSummary,
-  WorkloadMetricsSummary
+  WorkloadMetricsSummary,
+  K8sEvent,
+  PodLogLine,
+  PodLogsResponse
 } from '../src/types/index';
 import { AGENT_VERSION } from '../src/config/version';
 import { IncidentDetector } from './engine/detector';
@@ -39,6 +42,7 @@ import {
   buildNodeMetricsSummary,
   buildWorkloadMetricsSummary
 } from './metrics';
+import { fetchInClusterPodLogs, parseLogLines } from './logs';
 import { auditService } from './audit';
 import { webhookService } from './integrations/webhooks';
 import { incidentNotificationService } from './notifications/notificationService';
@@ -55,6 +59,7 @@ export class DataStore {
   private resources: Map<string, KubernetesResource[]> = new Map(); // clusterId -> resources
   private clusterMetrics: Map<string, ClusterObservabilityMetrics> = new Map(); // clusterId -> ClusterObservabilityMetrics
   private clusterMetricHistory: Map<string, MetricHistoryPoint[]> = new Map(); // clusterId -> MetricHistoryPoint[]
+  private podLogsCache: Map<string, string> = new Map(); // cluster:ns:pod:container:mode -> rawLogs
   private incidents: Map<string, Incident> = new Map(); // incidentId -> incident
   private incidentTimeline: Map<string, TimelineEvent[]> = new Map(); // incidentId -> events
   private incidentNotes: Map<string, IncidentNote[]> = new Map(); // incidentId -> notes
@@ -99,6 +104,9 @@ export class DataStore {
         if (data.incidentFailures) this.incidentFailures = new Map(Object.entries(data.incidentFailures));
         if (data.incidentCounter) this.incidentCounter = data.incidentCounter;
         if (data.userNotificationSettings) this.userNotificationSettings = new Map(Object.entries(data.userNotificationSettings));
+        if (data.clusterMetricHistory) {
+          this.clusterMetricHistory = new Map(Object.entries(data.clusterMetricHistory));
+        }
 
         // Clean up any historical false-positive incidents generated against the SkyOps telemetry agent
         for (const [id, inc] of Array.from(this.incidents.entries())) {
@@ -147,7 +155,8 @@ export class DataStore {
           policies: Object.fromEntries(this.policies),
           incidentFailures: Object.fromEntries(this.incidentFailures),
           incidentCounter: this.incidentCounter,
-          userNotificationSettings: Object.fromEntries(this.userNotificationSettings)
+          userNotificationSettings: Object.fromEntries(this.userNotificationSettings),
+          clusterMetricHistory: Object.fromEntries(this.clusterMetricHistory)
         };
         fs.writeFileSync(this.storagePath, JSON.stringify(data, null, 2), 'utf8');
       } catch (err) {
@@ -156,6 +165,38 @@ export class DataStore {
     }, 100);
     if (typeof this.saveTimeout.unref === 'function') {
       this.saveTimeout.unref();
+    }
+  }
+
+  public saveSnapshotSync() {
+    try {
+      if (this.saveTimeout) clearTimeout(this.saveTimeout);
+      const dir = path.dirname(this.storagePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const data = {
+        users: Object.fromEntries(this.users),
+        orgs: Object.fromEntries(this.orgs),
+        members: Object.fromEntries(this.members),
+        clusters: Object.fromEntries(this.clusters),
+        clusterTokens: Object.fromEntries(this.clusterTokens),
+        resources: Object.fromEntries(this.resources),
+        incidents: Object.fromEntries(this.incidents),
+        incidentTimeline: Object.fromEntries(this.incidentTimeline),
+        incidentNotes: Object.fromEntries(this.incidentNotes),
+        remediationActions: Object.fromEntries(this.remediationActions),
+        remediations: Object.fromEntries(this.remediations),
+        aiAnalyses: Object.fromEntries(this.aiAnalyses),
+        policies: Object.fromEntries(this.policies),
+        incidentFailures: Object.fromEntries(this.incidentFailures),
+        incidentCounter: this.incidentCounter,
+        userNotificationSettings: Object.fromEntries(this.userNotificationSettings),
+        clusterMetricHistory: Object.fromEntries(this.clusterMetricHistory)
+      };
+      fs.writeFileSync(this.storagePath, JSON.stringify(data, null, 2), 'utf8');
+    } catch (err) {
+      console.warn('[DataStore] Snapshot sync save notice:', err);
     }
   }
 
@@ -825,9 +866,21 @@ export class DataStore {
       node.metrics = buildNodeMetricsSummary(node, podsByNode.get(node.name) || []);
     }
 
-    // Compute and record cluster observability metrics
-    const clusterObservability = buildClusterObservabilityMetrics(cluster, incomingResources);
+    // Compute and record cluster observability metrics from the complete current cluster resource set
+    const clusterObservability = buildClusterObservabilityMetrics(cluster, finalResources);
     this.clusterMetrics.set(clusterId, clusterObservability);
+
+    // Cache any container diagnostic logs from incoming pods for crash analysis and log viewer
+    for (const pod of pods) {
+      if (pod.containers) {
+        for (const c of pod.containers) {
+          if (c.logs) {
+            const cacheKey = `${clusterId}:${pod.namespace || 'default'}:${pod.name}:${c.name}:curr`;
+            this.podLogsCache.set(cacheKey, c.logs);
+          }
+        }
+      }
+    }
 
     const history = this.clusterMetricHistory.get(clusterId) || [];
     const cpuReqPct = clusterObservability.commitmentRatios?.cpuRequestedPercent ??
@@ -864,11 +917,7 @@ export class DataStore {
       isUsageAvailable: clusterObservability.isUsageAvailable,
       source: clusterObservability.isUsageAvailable ? 'metrics.k8s.io' : 'spec-derived'
     };
-    history.push(newPoint);
-    if (history.length > 60) {
-      history.shift();
-    }
-    this.clusterMetricHistory.set(clusterId, history);
+    this.recordMetricHistoryPoint(clusterId, newPoint);
 
     // Ensure agent infrastructure components do not leave legacy incident tickets
     for (const [id, inc] of Array.from(this.incidents.entries())) {
@@ -2399,9 +2448,8 @@ export class DataStore {
     let list = this.resources.get(clusterId) || [];
     if (
       process.env.NODE_ENV !== 'test' &&
-      cluster.status !== 'pending' &&
-      cluster.agentStatus !== 'PENDING' &&
-      (list.length < 8 || !list.some((r) => ['Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob'].includes(r.kind)))
+      cluster.isSimulated &&
+      list.length === 0
     ) {
       list = this.ensureDefaultClusterResources(cluster);
     }
@@ -2418,6 +2466,199 @@ export class DataStore {
       }
     }
     return result;
+  }
+
+  public queryResources(
+    orgId: string,
+    filters: {
+      clusterId?: string;
+      kind?: string;
+      namespace?: string;
+      health?: string;
+      status?: string;
+      nodeName?: string;
+      search?: string;
+      incidentId?: string;
+      timeRange?: string;
+      since?: number;
+      until?: number;
+      sortBy?: string;
+      sortOrder?: 'asc' | 'desc';
+      page?: number;
+      limit?: number;
+    }
+  ): {
+    resources: KubernetesResource[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  } {
+    let list = this.getAllResources(orgId);
+
+    // 1. Cluster filter
+    if (filters.clusterId) {
+      list = list.filter((r) => r.clusterId === filters.clusterId);
+    }
+
+    // 2. Kind filter (can be comma-separated or single)
+    if (filters.kind) {
+      const kinds = filters.kind.split(',').map((k) => k.trim().toLowerCase());
+      list = list.filter((r) => kinds.includes(r.kind.toLowerCase()));
+    }
+
+    // 3. Namespace filter
+    if (filters.namespace) {
+      const targetNs = filters.namespace.trim().toLowerCase();
+      list = list.filter((r) => (r.namespace || 'default').toLowerCase() === targetNs);
+    }
+
+    // 4. Health filter
+    if (filters.health) {
+      const targetHealth = filters.health.trim().toUpperCase();
+      list = list.filter((r) => (r.health || 'UNKNOWN').toUpperCase() === targetHealth);
+    }
+
+    // 5. Status filter
+    if (filters.status) {
+      const targetStatus = filters.status.trim().toLowerCase();
+      list = list.filter((r) => (r.status || '').toLowerCase() === targetStatus);
+    }
+
+    // 6. Node filter
+    if (filters.nodeName) {
+      const targetNode = filters.nodeName.trim().toLowerCase();
+      list = list.filter(
+        (r) =>
+          (r.nodeName && r.nodeName.toLowerCase() === targetNode) ||
+          ((r.specSummary?.nodeName as string) && (r.specSummary?.nodeName as string).toLowerCase() === targetNode)
+      );
+    }
+
+    // 7. Time range filter
+    if (filters.timeRange) {
+      const now = Date.now();
+      let windowMs = 3600000;
+      if (filters.timeRange === '15m') windowMs = 15 * 60 * 1000;
+      else if (filters.timeRange === '1h') windowMs = 60 * 60 * 1000;
+      else if (filters.timeRange === '6h') windowMs = 6 * 3600000;
+      else if (filters.timeRange === '24h') windowMs = 24 * 3600000;
+      else if (filters.timeRange === '7d') windowMs = 7 * 86400000;
+
+      const cutoff = now - windowMs;
+      list = list.filter((r) => (r.updatedAt || r.createdAt || 0) >= cutoff);
+    } else if (filters.since) {
+      list = list.filter((r) => (r.updatedAt || r.createdAt || 0) >= filters.since!);
+    }
+    if (filters.until) {
+      list = list.filter((r) => (r.updatedAt || r.createdAt || 0) <= filters.until!);
+    }
+
+    // 8. Incident ID matching
+    const matchingIncidentResourceKeys = new Set<string>();
+    if (filters.incidentId) {
+      const inc = this.getIncident(filters.incidentId, orgId);
+      if (inc) {
+        matchingIncidentResourceKeys.add(`${inc.clusterId}:${inc.namespace || ''}:${inc.resourceName.toLowerCase()}`);
+      }
+    }
+
+    // 9. Comprehensive Search (cluster, namespace, workload, pod, container, node, incident ID)
+    if (filters.search && filters.search.trim()) {
+      const q = filters.search.trim().toLowerCase();
+
+      // Check if search matches any incident ID or title in org
+      for (const inc of this.getIncidents(orgId)) {
+        if (
+          inc.id.toLowerCase().includes(q) ||
+          inc.title.toLowerCase().includes(q) ||
+          inc.incidentType.toLowerCase().includes(q)
+        ) {
+          matchingIncidentResourceKeys.add(`${inc.clusterId}:${inc.namespace || ''}:${inc.resourceName.toLowerCase()}`);
+        }
+      }
+
+      list = list.filter((r) => {
+        // Resource name or namespace
+        if (r.name.toLowerCase().includes(q)) return true;
+        if (r.namespace && r.namespace.toLowerCase().includes(q)) return true;
+        if (r.clusterName && r.clusterName.toLowerCase().includes(q)) return true;
+        if (r.clusterId.toLowerCase().includes(q)) return true;
+        if (r.kind.toLowerCase().includes(q)) return true;
+
+        // Node name
+        if (r.nodeName && r.nodeName.toLowerCase().includes(q)) return true;
+        const specNode = r.specSummary?.nodeName as string | undefined;
+        if (specNode && specNode.toLowerCase().includes(q)) return true;
+
+        // Container name, image, or waiting reason
+        if (
+          r.containers &&
+          r.containers.some(
+            (c) =>
+              (c.name && c.name.toLowerCase().includes(q)) ||
+              (c.image && c.image.toLowerCase().includes(q)) ||
+              (c.waitingReason && c.waitingReason.toLowerCase().includes(q)) ||
+              (c.terminationReason && c.terminationReason.toLowerCase().includes(q))
+          )
+        ) {
+          return true;
+        }
+
+        // Linked incident match
+        const rKey = `${r.clusterId}:${r.namespace || ''}:${r.name.toLowerCase()}`;
+        if (matchingIncidentResourceKeys.has(rKey)) return true;
+
+        return false;
+      });
+    }
+
+    // 10. Sorting
+    const sortBy = filters.sortBy || 'name';
+    const sortOrder = filters.sortOrder === 'desc' ? -1 : 1;
+    list.sort((a, b) => {
+      let valA: any = a.name;
+      let valB: any = b.name;
+      if (sortBy === 'kind') {
+        valA = a.kind;
+        valB = b.kind;
+      } else if (sortBy === 'namespace') {
+        valA = a.namespace || '';
+        valB = b.namespace || '';
+      } else if (sortBy === 'health') {
+        const order: Record<string, number> = { CRITICAL: 0, WARNING: 1, UNKNOWN: 2, HEALTHY: 3 };
+        valA = order[a.health] ?? 2;
+        valB = order[b.health] ?? 2;
+      } else if (sortBy === 'status') {
+        valA = a.status || '';
+        valB = b.status || '';
+      } else if (sortBy === 'updatedAt') {
+        valA = a.updatedAt || 0;
+        valB = b.updatedAt || 0;
+      } else if (sortBy === 'createdAt') {
+        valA = a.createdAt || 0;
+        valB = b.createdAt || 0;
+      }
+
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        return valA.localeCompare(valB) * sortOrder;
+      }
+      return (valA > valB ? 1 : valA < valB ? -1 : 0) * sortOrder;
+    });
+
+    const total = list.length;
+    const page = Math.max(1, filters.page || 1);
+    const limit = filters.limit ? Math.min(500, Math.max(1, filters.limit)) : (filters.page ? 50 : total);
+    const totalPages = Math.ceil(total / (limit || 1)) || 1;
+    const paginated = list.slice((page - 1) * limit, page * limit);
+
+    return {
+      resources: paginated,
+      total,
+      page,
+      limit,
+      totalPages
+    };
   }
 
   // --- Observability & Metrics Foundation Query Methods ---
@@ -2442,10 +2683,249 @@ export class DataStore {
     return metrics ? metrics.workloads : [];
   }
 
-  public getClusterMetricHistory(clusterId: string, orgId?: string): MetricHistoryPoint[] {
+  public recordMetricHistoryPoint(clusterId: string, point: MetricHistoryPoint): void {
+    const pointWithTime: MetricHistoryPoint = {
+      ...point,
+      timestamp: point.timestamp || Date.now()
+    };
+    const history = this.clusterMetricHistory.get(clusterId) || [];
+    history.push(pointWithTime);
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const bounded = history.filter((p) => p && p.timestamp >= sevenDaysAgo);
+    if (bounded.length > 2000) {
+      bounded.splice(0, bounded.length - 2000);
+    }
+    this.clusterMetricHistory.set(clusterId, bounded);
+    this.saveSnapshot();
+  }
+
+  public getClusterMetricHistory(clusterId: string, orgId?: string, range: string = '1h'): MetricHistoryPoint[] {
     const cluster = this.getCluster(clusterId, orgId);
     if (!cluster) return [];
-    return this.clusterMetricHistory.get(clusterId) || [];
+    const points = this.clusterMetricHistory.get(clusterId) || [];
+    if (points.length === 0) return [];
+
+    const now = Date.now();
+    let windowMs = 60 * 60 * 1000;
+    if (range === '15m') windowMs = 15 * 60 * 1000;
+    else if (range === '1h') windowMs = 60 * 60 * 1000;
+    else if (range === '6h') windowMs = 6 * 60 * 60 * 1000;
+    else if (range === '24h') windowMs = 24 * 60 * 60 * 1000;
+    else if (range === '7d') windowMs = 7 * 24 * 60 * 60 * 1000;
+
+    const cutoff = now - windowMs;
+    return points.filter((p) => p && p.timestamp >= cutoff);
+  }
+
+  // --- First-Class Kubernetes Events Observability ---
+  public getClusterEvents(
+    clusterId: string,
+    orgId?: string,
+    filters?: {
+      type?: 'Normal' | 'Warning';
+      namespace?: string;
+      kind?: string;
+      resourceName?: string;
+      search?: string;
+      limit?: number;
+    }
+  ): K8sEvent[] {
+    const cluster = this.getCluster(clusterId, orgId);
+    if (!cluster) return [];
+
+    const resources = this.getClusterResources(clusterId, orgId);
+    const eventMap = new Map<string, K8sEvent>();
+
+    for (const res of resources) {
+      if (Array.isArray(res.events)) {
+        for (const evt of res.events) {
+          if (!evt) continue;
+          // Stable deduplication key: kind/namespace/name/reason/message
+          const objKind = evt.objectKind || res.kind;
+          const objNs = evt.namespace || res.namespace || 'default';
+          const objName = evt.objectName || res.name;
+          const key = `${objKind}/${objNs}/${objName}/${evt.reason || ''}/${evt.message || ''}`;
+
+          const existing = eventMap.get(key);
+          if (existing) {
+            existing.count = (existing.count || 1) + (evt.count || 1);
+            existing.lastObserved = Math.max(existing.lastObserved || existing.timestamp, evt.lastObserved || evt.timestamp);
+            existing.firstObserved = Math.min(existing.firstObserved || existing.timestamp, evt.firstObserved || evt.timestamp);
+            existing.timestamp = existing.lastObserved;
+          } else {
+            eventMap.set(key, {
+              ...evt,
+              count: evt.count || 1,
+              firstObserved: evt.firstObserved || evt.timestamp,
+              lastObserved: evt.lastObserved || evt.timestamp,
+              objectKind: objKind,
+              objectName: objName,
+              namespace: objNs
+            });
+          }
+        }
+      }
+    }
+
+    let list = Array.from(eventMap.values());
+
+    if (filters?.type) {
+      list = list.filter((e) => e.type === filters.type);
+    }
+    if (filters?.namespace && filters.namespace !== 'all') {
+      list = list.filter((e) => (e.namespace || '').toLowerCase() === filters.namespace!.toLowerCase());
+    }
+    if (filters?.kind && filters.kind !== 'all') {
+      list = list.filter((e) => (e.objectKind || '').toLowerCase() === filters.kind!.toLowerCase());
+    }
+    if (filters?.resourceName) {
+      list = list.filter((e) => (e.objectName || '').toLowerCase() === filters.resourceName!.toLowerCase());
+    }
+    if (filters?.search) {
+      const q = filters.search.toLowerCase();
+      list = list.filter(
+        (e) =>
+          (e.message || '').toLowerCase().includes(q) ||
+          (e.reason || '').toLowerCase().includes(q) ||
+          (e.objectName || '').toLowerCase().includes(q) ||
+          (e.objectKind || '').toLowerCase().includes(q)
+      );
+    }
+
+    // Chronological order: newest first
+    list.sort((a, b) => (b.lastObserved || b.timestamp) - (a.lastObserved || a.timestamp));
+
+    const limit = filters?.limit ? Math.min(1000, Math.max(1, filters.limit)) : 200;
+    return list.slice(0, limit);
+  }
+
+  // --- Real Kubernetes Pod/Container Log Access ---
+  public async getPodLogs(
+    clusterId: string,
+    orgId: string,
+    namespace: string,
+    podName: string,
+    options: {
+      container?: string;
+      tailLines?: number;
+      previous?: boolean;
+      sinceSeconds?: number;
+      timestamps?: boolean;
+      filter?: string;
+    }
+  ): Promise<PodLogsResponse> {
+    const cluster = this.getCluster(clusterId, orgId);
+    if (!cluster) {
+      throw new Error('Cluster not found or access denied');
+    }
+
+    const resources = this.getClusterResources(clusterId, orgId);
+    const pod = resources.find(
+      (r) => r.kind === 'Pod' && r.namespace.toLowerCase() === namespace.toLowerCase() && r.name.toLowerCase() === podName.toLowerCase()
+    );
+
+    if (!pod) {
+      throw new Error(`Pod ${namespace}/${podName} not found in cluster telemetry`);
+    }
+
+    const containers = pod.containers || [];
+    let selectedContainerName = options.container;
+    if (!selectedContainerName && containers.length > 0) {
+      selectedContainerName = containers[0].name;
+    }
+    selectedContainerName = selectedContainerName || 'main';
+
+    const containerObj = containers.find((c) => c.name === selectedContainerName);
+
+    // 1. Try in-cluster log fetch if running inside Kubernetes
+    let rawLogs: string | null = null;
+    let source = 'unknown';
+
+    rawLogs = await fetchInClusterPodLogs(namespace, podName, selectedContainerName, {
+      tailLines: options.tailLines || 100,
+      previous: options.previous,
+      sinceSeconds: options.sinceSeconds,
+      timestamps: options.timestamps !== false
+    });
+
+    if (rawLogs !== null) {
+      source = 'in-cluster-k8s-api';
+    }
+
+    // 2. Check if container has cached diagnostic logs attached to container object
+    if (!rawLogs && containerObj?.logs) {
+      rawLogs = containerObj.logs;
+      source = 'container-diagnostic-buffer';
+    }
+
+    // 3. If still empty, check store's log cache
+    if (!rawLogs) {
+      const cacheKey = `${clusterId}:${namespace}:${podName}:${selectedContainerName}:${options.previous ? 'prev' : 'curr'}`;
+      const cached = this.podLogsCache.get(cacheKey);
+      if (cached) {
+        rawLogs = cached;
+        source = 'telemetry-log-buffer';
+      }
+    }
+
+    // 4. If no logs could be retrieved, provide clear truthful diagnostic explanation
+    if (!rawLogs) {
+      const lines: PodLogLine[] = [];
+      let unavailableReason = 'No logs produced yet by this container';
+      if (containerObj?.waitingReason) {
+        unavailableReason = `Container is in ${containerObj.waitingReason} state: ${containerObj.waitingMessage || 'Container could not start or terminated prior to writing to stdout'}`;
+      } else if (containerObj?.state === 'terminated' && options.previous) {
+        unavailableReason = `Previous container terminated (${containerObj.terminationReason || 'exit code ' + containerObj.exitCode}) and no prior log buffer was retained by the kubelet`;
+      } else if (cluster.agentStatus !== 'CONNECTED') {
+        unavailableReason = `SkyOps agent is currently ${cluster.agentStatus || 'OFFLINE'}. Reconnect agent to stream live container logs.`;
+      }
+
+      return {
+        clusterId,
+        namespace,
+        podName,
+        container: selectedContainerName,
+        previous: !!options.previous,
+        timestamps: options.timestamps !== false,
+        lines,
+        rawText: '',
+        totalLines: 0,
+        source: 'kubelet-diagnostic',
+        retrievedAt: Date.now(),
+        unavailableReason
+      };
+    }
+
+    // Redact and parse log lines
+    const parsedLines = parseLogLines(rawLogs, options.filter);
+    const tailCount = options.tailLines ? Math.min(1000, options.tailLines) : 200;
+    const finalLines = parsedLines.slice(-tailCount);
+
+    return {
+      clusterId,
+      namespace,
+      podName,
+      container: selectedContainerName,
+      previous: !!options.previous,
+      timestamps: options.timestamps !== false,
+      lines: finalLines,
+      rawText: finalLines.map((l) => l.raw).join('\n'),
+      totalLines: finalLines.length,
+      source,
+      retrievedAt: Date.now()
+    };
+  }
+
+  public storePodLogs(
+    clusterId: string,
+    namespace: string,
+    podName: string,
+    container: string,
+    logs: string,
+    previous = false
+  ): void {
+    const cacheKey = `${clusterId}:${namespace}:${podName}:${container}:${previous ? 'prev' : 'curr'}`;
+    this.podLogsCache.set(cacheKey, logs);
   }
 
   // --- Deterministic Incident Engine & Deduplication ---

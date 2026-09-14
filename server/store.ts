@@ -48,6 +48,16 @@ import { webhookService } from './integrations/webhooks';
 import { incidentNotificationService } from './notifications/notificationService';
 import { systemObservability } from './observability/metrics';
 import { OrgUsageSummary } from './repositories/types';
+import { BaselineEngine } from './engine/baseline';
+import { AnomalyDetector } from './engine/anomaly';
+import { ChangeTracker } from './engine/changes';
+import { SkyOpsIntelligenceEngine } from './engine/intelligence';
+import {
+  DetectedAnomaly,
+  HistoricalBaseline,
+  IntelligenceAnalysis,
+  ResourceChangeRecord
+} from './engine/types';
 
 export class DataStore {
   private users: Map<string, User> = new Map();
@@ -59,6 +69,8 @@ export class DataStore {
   private resources: Map<string, KubernetesResource[]> = new Map(); // clusterId -> resources
   private clusterMetrics: Map<string, ClusterObservabilityMetrics> = new Map(); // clusterId -> ClusterObservabilityMetrics
   private clusterMetricHistory: Map<string, MetricHistoryPoint[]> = new Map(); // clusterId -> MetricHistoryPoint[]
+  private clusterChanges: Map<string, ResourceChangeRecord[]> = new Map(); // clusterId -> ResourceChangeRecord[]
+  private clusterAnomalies: Map<string, DetectedAnomaly[]> = new Map(); // clusterId -> DetectedAnomaly[]
   private podLogsCache: Map<string, string> = new Map(); // cluster:ns:pod:container:mode -> rawLogs
   private incidents: Map<string, Incident> = new Map(); // incidentId -> incident
   private incidentTimeline: Map<string, TimelineEvent[]> = new Map(); // incidentId -> events
@@ -106,6 +118,9 @@ export class DataStore {
         if (data.userNotificationSettings) this.userNotificationSettings = new Map(Object.entries(data.userNotificationSettings));
         if (data.clusterMetricHistory) {
           this.clusterMetricHistory = new Map(Object.entries(data.clusterMetricHistory));
+        }
+        if (data.clusterChanges) {
+          this.clusterChanges = new Map(Object.entries(data.clusterChanges));
         }
 
         // Clean up any historical false-positive incidents generated against the SkyOps telemetry agent
@@ -156,7 +171,8 @@ export class DataStore {
           incidentFailures: Object.fromEntries(this.incidentFailures),
           incidentCounter: this.incidentCounter,
           userNotificationSettings: Object.fromEntries(this.userNotificationSettings),
-          clusterMetricHistory: Object.fromEntries(this.clusterMetricHistory)
+          clusterMetricHistory: Object.fromEntries(this.clusterMetricHistory),
+          clusterChanges: Object.fromEntries(this.clusterChanges)
         };
         fs.writeFileSync(this.storagePath, JSON.stringify(data, null, 2), 'utf8');
       } catch (err) {
@@ -192,7 +208,8 @@ export class DataStore {
         incidentFailures: Object.fromEntries(this.incidentFailures),
         incidentCounter: this.incidentCounter,
         userNotificationSettings: Object.fromEntries(this.userNotificationSettings),
-        clusterMetricHistory: Object.fromEntries(this.clusterMetricHistory)
+        clusterMetricHistory: Object.fromEntries(this.clusterMetricHistory),
+        clusterChanges: Object.fromEntries(this.clusterChanges)
       };
       fs.writeFileSync(this.storagePath, JSON.stringify(data, null, 2), 'utf8');
     } catch (err) {
@@ -799,6 +816,29 @@ export class DataStore {
     const cluster = this.clusters.get(clusterId);
     if (!cluster) return;
 
+    // Detect resource changes between prior observations and incoming resources
+    const prevResources = this.resources.get(clusterId) || [];
+    if (prevResources.length > 0) {
+      const prevMap = new Map<string, KubernetesResource>();
+      for (const p of prevResources) {
+        prevMap.set(p.id || `${p.kind}-${p.namespace || 'default'}-${p.name}`, p);
+      }
+      const detectedChanges: ResourceChangeRecord[] = [];
+      for (const curr of incomingResources) {
+        const key = curr.id || `${curr.kind}-${curr.namespace || 'default'}-${curr.name}`;
+        const prev = prevMap.get(key);
+        if (prev) {
+          const chgs = ChangeTracker.detectResourceChanges(prev, curr);
+          if (chgs.length > 0) {
+            detectedChanges.push(...chgs);
+          }
+        }
+      }
+      if (detectedChanges.length > 0) {
+        this.recordResourceChanges(clusterId, detectedChanges);
+      }
+    }
+
     let finalResources: KubernetesResource[] = incomingResources;
     if (!snapshotComplete) {
       const existing = this.resources.get(clusterId) || [];
@@ -1304,6 +1344,21 @@ export class DataStore {
       if (!inc || inc.orgId !== orgId) return null;
     }
     return rem;
+  }
+
+  public getAllRemediations(orgId: string): StructuredRemediation[] {
+    const orgIncidents = new Set(
+      Array.from(this.incidents.values())
+        .filter((i) => i.orgId === orgId)
+        .map((i) => i.id)
+    );
+    return Array.from(this.remediations.values()).filter(
+      (rem) => rem.orgId === orgId || orgIncidents.has(rem.incidentId)
+    );
+  }
+
+  public getAllRemediationActions(orgId: string): RemediationAction[] {
+    return Array.from(this.remediationActions.values()).filter((a) => a.orgId === orgId);
   }
 
   public getRemediationPolicy(orgId: string, clusterId?: string): RemediationPolicy {
@@ -2763,6 +2818,97 @@ export class DataStore {
     // tier naturally keeps long ranges compact; this final cap protects new stores.
     const filtered = points.filter((p) => p && p.timestamp >= cutoff);
     return filtered.length > 2000 ? filtered.slice(-2000) : filtered;
+  }
+
+  // --- Phase 2B: Changes, Baselines & Anomalies ---
+  public recordResourceChanges(clusterId: string, changes: ResourceChangeRecord[]): void {
+    if (!changes || changes.length === 0) return;
+    const existing = this.clusterChanges.get(clusterId) || [];
+    const updated = [...existing, ...changes];
+    // Bound to at most 1,000 historical change records per cluster
+    this.clusterChanges.set(clusterId, updated.length > 1000 ? updated.slice(-1000) : updated);
+    this.saveSnapshot();
+  }
+
+  public getClusterChanges(clusterId: string, orgId?: string, lookbackMs: number = 7 * 24 * 60 * 60 * 1000): ResourceChangeRecord[] {
+    const cluster = this.getCluster(clusterId, orgId);
+    if (!cluster) return [];
+    const changes = this.clusterChanges.get(clusterId) || [];
+    const cutoff = Date.now() - lookbackMs;
+    return changes.filter((c) => c.timestamp >= cutoff);
+  }
+
+  public getClusterBaselines(clusterId: string, orgId?: string, range: string = '1h'): HistoricalBaseline[] {
+    const cluster = this.getCluster(clusterId, orgId);
+    if (!cluster) return [];
+    const history = this.getClusterMetricHistory(clusterId, orgId, range);
+    return BaselineEngine.calculateClusterBaselines(clusterId, history, range);
+  }
+
+  public getClusterAnomalies(clusterId: string, orgId?: string): DetectedAnomaly[] {
+    const cluster = this.getCluster(clusterId, orgId);
+    if (!cluster) return [];
+    const baselines = this.getClusterBaselines(clusterId, orgId, '1h');
+    const history = this.getClusterMetricHistory(clusterId, orgId, '1h');
+    const clusterAnomalies = AnomalyDetector.detectClusterAnomalies({
+      orgId: cluster.orgId,
+      clusterId,
+      history,
+      baselines
+    });
+
+    const resources = this.getClusterResources(clusterId, orgId);
+    const resourceAnomalies: DetectedAnomaly[] = [];
+    for (const res of resources) {
+      const detected = AnomalyDetector.detectResourceAnomalies({
+        orgId: cluster.orgId,
+        clusterId,
+        resource: res,
+        allResources: resources,
+        baselines
+      });
+      resourceAnomalies.push(...detected);
+    }
+
+    const recorded = this.clusterAnomalies.get(clusterId) || [];
+    const combined = [...clusterAnomalies, ...resourceAnomalies, ...recorded];
+    const seen = new Set<string>();
+    const result: DetectedAnomaly[] = [];
+    for (const anom of combined) {
+      if (!seen.has(anom.id)) {
+        seen.add(anom.id);
+        result.push(anom);
+      }
+    }
+    return result;
+  }
+
+  public analyzeIncidentWithFullContext(incident: Incident, orgId?: string): IntelligenceAnalysis {
+    const clusterResources = this.getClusterResources(incident.clusterId, orgId);
+    const associatedResource = clusterResources.find(
+      (r) =>
+        r.kind.toLowerCase() === incident.resourceKind.toLowerCase() &&
+        r.name.toLowerCase() === incident.resourceName.toLowerCase() &&
+        (r.namespace || 'default').toLowerCase() === (incident.namespace || 'default').toLowerCase()
+    );
+
+    const baselines = this.getClusterBaselines(incident.clusterId, orgId, '1h');
+    const anomalies = this.getClusterAnomalies(incident.clusterId, orgId);
+    const changes = this.getClusterChanges(incident.clusterId, orgId);
+    const history = this.getClusterMetricHistory(incident.clusterId, orgId, '1h');
+
+    return SkyOpsIntelligenceEngine.analyzeIncident(
+      incident,
+      associatedResource,
+      clusterResources,
+      undefined,
+      {
+        baselines,
+        anomalies,
+        changes,
+        history
+      }
+    );
   }
 
   // --- First-Class Kubernetes Events Observability ---

@@ -731,6 +731,7 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
             aiAnalysis={aiAnalysis}
             incidentType={incident.incidentType}
             incident={incident}
+            intelligence={intelligence}
           />
 
           {/* ========================================================================= */}

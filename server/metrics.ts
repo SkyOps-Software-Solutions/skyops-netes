@@ -29,6 +29,7 @@ export function parseCpuQuantity(raw: unknown): number | null {
   }
   const str = String(raw).trim();
   if (!str) return null;
+  if (!/^(?:\d+(?:\.\d+)?|\.\d+)(?:n|u|m)?$/.test(str)) return null;
 
   // Nanocores: e.g. "500000000n"
   if (str.endsWith('n')) {
@@ -71,6 +72,7 @@ export function parseMemoryQuantity(raw: unknown): number | null {
   }
   const str = String(raw).trim();
   if (!str) return null;
+  if (!/^(?:\d+(?:\.\d+)?|\.\d+)(?:Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$/.test(str)) return null;
 
   const binaryUnits: Record<string, number> = {
     Ki: 1024,

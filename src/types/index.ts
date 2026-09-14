@@ -495,6 +495,8 @@ export interface ResourceMetricValue {
   value: number; // millicores for CPU, bytes for memory
   unit: 'millicores' | 'bytes';
   formatted: string; // e.g. "250m" or "512 MiB"
+  /** Per-value provenance prevents runtime usage from being mistaken for specification data. */
+  source?: 'metrics-api' | 'spec-derived';
 }
 
 export interface ContainerResourceMetrics {
@@ -663,7 +665,15 @@ export interface MetricHistoryPoint {
   memoryLimitPercent?: number;
   memoryUsagePercent?: number;
   isUsageAvailable: boolean;
-  source?: string;
+  /** Observed runtime data is metrics-api; absent runtime data is explicitly unavailable. */
+  /** METRICS_SERVER is accepted only for backwards-compatible persisted snapshots. */
+  source?: 'metrics-api' | 'unavailable' | 'METRICS_SERVER';
+  resolution?: 'raw' | '5m-aggregate';
+  sampleCount?: number;
+  cpuUsageMinMillicores?: number;
+  cpuUsageMaxMillicores?: number;
+  memoryUsageMinBytes?: number;
+  memoryUsageMaxBytes?: number;
 }
 
 export interface OverviewMetrics {
@@ -1050,6 +1060,4 @@ export interface IntelligenceAnalysis {
   executableProposal?: ExecutableActionProposal;
   isUnknownOrInconclusive: boolean;
 }
-
-
 

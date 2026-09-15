@@ -11,6 +11,7 @@ import { IncidentDetailView } from '../incidents/IncidentDetailView';
 import { IncidentsView } from '../incidents/IncidentsView';
 import { OverviewView } from '../overview/OverviewView';
 import { InfrastructureView } from '../infrastructure/InfrastructureView';
+import { ServicesView } from '../services/ServicesView';
 import { ObservabilityHubView } from '../observability/ObservabilityHubView';
 import { SkyOpsAICopilotView } from '../ai/SkyOpsAICopilotView';
 import { ActionsCenterView } from '../actions/ActionsCenterView';
@@ -341,6 +342,31 @@ export const AppShell: React.FC<AppShellProps> = ({
                 />
               )}
             </>
+          )}
+
+          {activeTab === 'services' && (
+            <div className="p-6 max-w-7xl mx-auto space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-xl font-bold text-zinc-100">Kubernetes Services</h1>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/30">
+                      Service Mesh & Ingress
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 mt-1">
+                    First-class observability for ClusterIP, NodePort, LoadBalancer services, backing pods, and endpoint slices.
+                  </p>
+                </div>
+              </div>
+              <ServicesView
+                clusters={clusters}
+                loading={loading || isRefreshing}
+                onRefresh={handleManualRefresh}
+                onSelectCluster={handleSelectCluster}
+                onSelectIncident={handleSelectIncident}
+              />
+            </div>
           )}
 
           {activeTab === 'incidents' && (

@@ -10,6 +10,7 @@ import {
   Layers,
   LayoutDashboard,
   LogOut,
+  Network,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -29,6 +30,7 @@ import { useAuth } from '../../context/AuthContext';
 export type NavigationTab =
   | 'overview'
   | 'infrastructure'
+  | 'services'
   | 'clusters'
   | 'incidents'
   | 'observability'
@@ -94,6 +96,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'infrastructure',
       label: 'Infrastructure',
       icon: <Server className="w-4 h-4" />
+    },
+    {
+      id: 'services',
+      label: 'Services',
+      icon: <Network className="w-4 h-4" />
     },
     {
       id: 'incidents',

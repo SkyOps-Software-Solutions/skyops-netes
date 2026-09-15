@@ -21,6 +21,7 @@ import { Cluster, Incident, K8sEvent, KubernetesResource, NodeMetricsSummary } f
 import { api } from '../../api/client';
 import { Button } from '../common/UI';
 import { StatusBadge, SeverityBadge } from '../common/Badges';
+import { formatEventTimestamp } from '../../utils/date';
 
 interface NodeDetailModalProps {
   node: KubernetesResource | null;
@@ -541,7 +542,7 @@ export const NodeDetailModal: React.FC<NodeDetailModalProps> = ({
                         </div>
                         <span className="text-zinc-500 text-[10px] flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          {new Date(evt.lastTimestamp).toLocaleTimeString()}
+                          {formatEventTimestamp(evt.lastObserved ?? evt.timestamp ?? evt.lastTimestamp)}
                         </span>
                       </div>
                       <p className="text-zinc-300 text-[11px] leading-relaxed">{evt.message}</p>

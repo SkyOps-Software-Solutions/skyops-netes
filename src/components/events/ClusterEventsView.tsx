@@ -17,6 +17,7 @@ import React, { useMemo, useState } from 'react';
 import { K8sEvent, KubernetesResource } from '../../types/index';
 import { WorkloadKindBadge } from '../common/Badges';
 import { Button } from '../common/UI';
+import { formatEventTimestamp, formatTimeAgo, safeEventTimestamp } from '../../utils/date';
 
 interface ClusterEventsViewProps {
   events: K8sEvent[];
@@ -102,22 +103,6 @@ export const ClusterEventsView: React.FC<ClusterEventsViewProps> = ({
         r.name.toLowerCase() === name.toLowerCase() &&
         (!namespace || (r.namespace || '').toLowerCase() === namespace.toLowerCase())
     );
-  };
-
-  const formatTimestamp = (ts?: number) => {
-    if (!ts) return 'Unknown';
-    const d = new Date(ts);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  };
-
-  const formatTimeAgo = (ts?: number) => {
-    if (!ts) return 'Unknown';
-    const diff = Math.floor((Date.now() - ts) / 1000);
-    if (diff < 5) return 'just now';
-    if (diff < 60) return `${diff}s ago`;
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    return `${Math.floor(diff / 86400)}d ago`;
   };
 
   const handleExportJSON = () => {
@@ -375,15 +360,15 @@ export const ClusterEventsView: React.FC<ClusterEventsViewProps> = ({
                       {/* Timestamp & Count */}
                       <td className="px-4 py-3 whitespace-nowrap align-top">
                         <div className="text-zinc-200 font-semibold">
-                          {formatTimeAgo(evt.lastObserved || evt.timestamp)}
+                          {formatTimeAgo(safeEventTimestamp(evt))}
                         </div>
                         <div className="text-[10px] text-zinc-500">
-                          {formatTimestamp(evt.lastObserved || evt.timestamp)}
+                          {formatEventTimestamp(safeEventTimestamp(evt))}
                         </div>
                         {count > 1 && (
                           <span
                             className="mt-1 inline-block px-1.5 py-0.2 rounded bg-amber-950/80 text-amber-300 border border-amber-800 text-[10px] font-bold"
-                            title={`Repeated ${count} times between ${formatTimestamp(evt.firstObserved)} and ${formatTimestamp(evt.lastObserved)}`}
+                            title={`Repeated ${count} times (last: ${formatEventTimestamp(safeEventTimestamp(evt))})`}
                           >
                             {count}x
                           </span>

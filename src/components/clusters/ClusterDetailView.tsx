@@ -23,7 +23,8 @@ import {
   TrendingUp,
   Unplug,
   Zap,
-  FolderTree
+  FolderTree,
+  Network
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
@@ -38,6 +39,8 @@ import { NodeDetailModal } from '../resources/NodeDetailModal';
 import { NamespaceDetailModal } from '../resources/NamespaceDetailModal';
 import { PodsView } from '../pods/PodsView';
 import { WorkloadsView } from '../workloads/WorkloadsView';
+import { ServicesView } from '../services/ServicesView';
+import { ServiceDetailModal } from '../resources/ServiceDetailModal';
 import { ClusterObservabilityView } from './ClusterObservabilityView';
 import { ClusterEventsView } from '../events/ClusterEventsView';
 import { ErrorBoundary } from '../common/ErrorBoundary';
@@ -49,7 +52,7 @@ interface ClusterDetailViewProps {
   onDeleteCluster?: (clusterId: string) => Promise<void> | void;
 }
 
-type ResourceTab = 'overview' | 'observability' | 'workloads' | 'pods' | 'nodes' | 'namespaces' | 'pvcs' | 'events' | 'agent';
+type ResourceTab = 'overview' | 'observability' | 'workloads' | 'pods' | 'services' | 'nodes' | 'namespaces' | 'pvcs' | 'events' | 'agent';
 
 const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, onBack, onSelectIncident, onDeleteCluster }) => {
   const { role, canDeleteClusters } = useAuth();
@@ -255,6 +258,8 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
     new Set(safeResources.map((r) => r.namespace || 'default'))
   ).sort();
   const pvcs = safeResources.filter((r) => r && (r.kind === 'PersistentVolumeClaim' || r.kind === 'PVC'));
+  const services = safeResources.filter((r) => r && r.kind === 'Service');
+  const degradedServices = services.filter((s) => s && (s.health === 'CRITICAL' || s.health === 'WARNING'));
   const crashingPods = pods.filter(
     (p) =>
       p &&
@@ -311,6 +316,7 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
     { id: 'observability', label: 'Observability & Metrics' },
     { id: 'workloads', label: 'Workloads', count: workloads.length, alertCount: degradedWorkloads.length },
     { id: 'pods', label: 'Pods', count: pods.length, alertCount: crashingPods.length },
+    { id: 'services', label: 'Services', count: services.length, alertCount: degradedServices.length },
     { id: 'nodes', label: 'Nodes', count: nodes.length },
     { id: 'namespaces', label: 'Namespaces', count: namespaces.length },
     { id: 'pvcs', label: 'Storage (PVC)', count: pvcs.length },
@@ -1091,6 +1097,19 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
           loading={manualRefreshing || loading}
           isEmbedded={true}
         />
+      ) : activeTab === 'services' ? (
+        <ServicesView
+          services={services}
+          clusterResources={safeResources}
+          incidents={safeIncidents}
+          cluster={cluster}
+          clusters={cluster ? [cluster] : []}
+          onSelectService={(s) => setSelectedResource(s)}
+          onSelectIncident={onSelectIncident}
+          onRefresh={handleManualRefresh}
+          loading={manualRefreshing || loading}
+          isEmbedded={true}
+        />
       ) : activeTab === 'nodes' ? (
         <div className="space-y-4">
           <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-xl overflow-hidden font-mono text-xs">
@@ -1320,8 +1339,21 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
         />
       )}
 
+      {/* Service Detail Modal */}
+      {selectedResource && selectedResource.kind === 'Service' && (
+        <ServiceDetailModal
+          service={selectedResource}
+          cluster={cluster}
+          clusterResources={safeResources}
+          incidents={safeIncidents}
+          onClose={() => setSelectedResource(null)}
+          onSelectPod={(pod) => setSelectedResource(pod)}
+          onSelectResource={(res) => setSelectedResource(res)}
+        />
+      )}
+
       {/* Other Resources Detail Modal (PVCs, etc.) */}
-      {selectedResource && selectedResource.kind !== 'Pod' && selectedResource.kind !== 'Node' && !workloadKinds.includes(selectedResource.kind) && (
+      {selectedResource && selectedResource.kind !== 'Pod' && selectedResource.kind !== 'Node' && selectedResource.kind !== 'Service' && !workloadKinds.includes(selectedResource.kind) && (
         <Modal
           isOpen={!!selectedResource}
           onClose={() => setSelectedResource(null)}

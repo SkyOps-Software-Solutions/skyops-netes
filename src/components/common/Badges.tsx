@@ -323,12 +323,13 @@ export const WorkloadKindBadge: React.FC<{ kind: string; size?: 'sm' | 'md' }> =
 };
 
 export const PodPhaseBadge: React.FC<{
-  phaseOrStatus: string;
+  phaseOrStatus?: string;
+  phase?: string;
   restarts?: number;
   ready?: boolean;
   size?: 'sm' | 'md';
-}> = ({ phaseOrStatus, restarts, ready, size = 'sm' }) => {
-  const s = phaseOrStatus || 'Unknown';
+}> = ({ phaseOrStatus, phase, restarts, ready, size = 'sm' }) => {
+  const s = phaseOrStatus || phase || 'Unknown';
   const padding = size === 'sm' ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-xs';
 
   const isCrashing =
@@ -369,6 +370,33 @@ export const PodPhaseBadge: React.FC<{
           {restarts}r
         </span>
       )}
+    </span>
+  );
+};
+
+export const ServiceTypeBadge: React.FC<{
+  type: string;
+  size?: 'sm' | 'md';
+}> = ({ type, size = 'sm' }) => {
+  const padding = size === 'sm' ? 'px-2 py-0.5 text-[10px]' : 'px-2.5 py-1 text-xs';
+  const t = (type || 'ClusterIP').trim();
+
+  let style = 'bg-zinc-900 text-zinc-300 border-zinc-700';
+  if (t === 'ClusterIP') {
+    style = 'bg-sky-950/70 text-sky-300 border-sky-800/70';
+  } else if (t === 'NodePort') {
+    style = 'bg-amber-950/70 text-amber-300 border-amber-800/70';
+  } else if (t === 'LoadBalancer') {
+    style = 'bg-emerald-950/70 text-emerald-300 border-emerald-800/70';
+  } else if (t === 'ExternalName') {
+    style = 'bg-purple-950/70 text-purple-300 border-purple-800/70';
+  } else if (t.toLowerCase() === 'headless') {
+    style = 'bg-zinc-800 text-zinc-400 border-zinc-700';
+  }
+
+  return (
+    <span className={`inline-flex items-center font-mono font-semibold rounded border ${style} ${padding}`}>
+      {t}
     </span>
   );
 };

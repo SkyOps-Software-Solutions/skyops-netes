@@ -23,6 +23,7 @@ import { PodPhaseBadge, ResourceHealthBadge, SeverityBadge, StatusBadge, Workloa
 import { Button } from '../common/UI';
 import { ResourceRelationshipTree } from './ResourceRelationshipTree';
 import { PodLogsViewer } from '../logs/PodLogsViewer';
+import { formatEventDateTime, safeEventTimestamp } from '../../utils/date';
 
 interface PodDetailModalProps {
   pod: KubernetesResource | null;
@@ -638,7 +639,7 @@ export const PodDetailModal: React.FC<PodDetailModalProps> = ({
                             <span className="text-[10px] text-zinc-500 font-mono">({evt.count}x)</span>
                           )}
                         </div>
-                        <span className="text-zinc-500 text-[10px]">{formatTimestamp(evt.lastTimestamp)}</span>
+                        <span className="text-zinc-500 text-[10px]">{formatEventDateTime(safeEventTimestamp(evt))}</span>
                       </div>
                       <div className="text-zinc-300 text-xs pl-2 border-l border-zinc-800">{evt.message}</div>
                     </div>

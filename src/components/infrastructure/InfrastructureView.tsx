@@ -25,6 +25,7 @@ import {
 import { api } from '../../api/client';
 import { Cluster, Incident, KubernetesResource } from '../../types/index';
 import { ClusterStatusBadge } from '../common/Badges';
+import { ServicesView } from '../services/ServicesView';
 
 interface InfrastructureViewProps {
   clusters: Cluster[];
@@ -121,6 +122,10 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
   );
   const pods = useMemo(
     () => filteredResources.filter((r) => r.kind === 'Pod'),
+    [filteredResources]
+  );
+  const services = useMemo(
+    () => filteredResources.filter((r) => r.kind === 'Service'),
     [filteredResources]
   );
   const servicesAndStorage = useMemo(
@@ -227,7 +232,7 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
             }`}
           >
             <Network className="w-3.5 h-3.5" />
-            Services & Storage ({servicesAndStorage.length})
+            Services ({services.length})
           </button>
         </div>
 
@@ -605,60 +610,21 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
         </div>
       )}
 
-      {/* Services & Storage Tab */}
+      {/* Services Tab */}
       {subTab === 'services' && (
-        <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-950/80 text-[11px] font-mono text-zinc-400">
-                  <th className="py-3 px-4">Resource Name</th>
-                  <th className="py-3 px-4">Kind</th>
-                  <th className="py-3 px-4">Namespace</th>
-                  <th className="py-3 px-4">Cluster</th>
-                  <th className="py-3 px-4">Type / Capacity</th>
-                  <th className="py-3 px-4">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800/60 font-sans">
-                {servicesAndStorage.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-8 text-center text-zinc-500">
-                      No services or persistent volume claims found for the selected filter.
-                    </td>
-                  </tr>
-                ) : (
-                  servicesAndStorage.map((item) => {
-                    const cluster = safeClusters.find((c) => c.id === item.clusterId);
-                    return (
-                      <tr key={`${item.clusterId}-${item.namespace}-${item.name}`} className="hover:bg-zinc-800/40 transition-colors">
-                        <td className="py-3 px-4 font-semibold text-zinc-100 flex items-center gap-2">
-                          {item.kind === 'Service' ? (
-                            <Network className="w-3.5 h-3.5 text-sky-400" />
-                          ) : (
-                            <Database className="w-3.5 h-3.5 text-amber-400" />
-                          )}
-                          {item.name}
-                        </td>
-                        <td className="py-3 px-4 font-mono text-zinc-400">{item.kind}</td>
-                        <td className="py-3 px-4 font-mono text-zinc-300">{item.namespace || 'default'}</td>
-                        <td className="py-3 px-4 font-mono text-zinc-400">{cluster?.name || item.clusterId}</td>
-                        <td className="py-3 px-4 font-mono text-zinc-300">
-                          {item.kind === 'Service' ? 'ClusterIP' : '10 GiB (ReadWriteOnce)'}
-                        </td>
-                        <td className="py-3 px-4 font-mono text-zinc-300">
-                          <span className="text-emerald-400 flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" /> Active
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <ServicesView
+          services={services}
+          resources={safeResources}
+          clusters={safeClusters}
+          loading={loading || loadingResources}
+          onRefresh={() => {
+            onRefresh();
+            fetchResources();
+          }}
+          onSelectCluster={onSelectCluster}
+          onSelectIncident={onSelectIncident}
+          isEmbedded
+        />
       )}
     </div>
   );

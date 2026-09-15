@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import {
   AgentStatus,
@@ -72,6 +73,7 @@ export class DataStore {
   private supportTickets: Map<string, SupportTicket> = new Map(); // ticketId -> SupportTicket
   private clusters: Map<string, Cluster> = new Map(); // clusterId -> cluster
   private clusterTokens: Map<string, { clusterId: string; orgId: string }> = new Map(); // tokenHash -> info
+  private activeAgentTokens: Map<string, string> = new Map(); // clusterId -> raw token, process memory only
   private resources: Map<string, KubernetesResource[]> = new Map(); // clusterId -> resources
   private clusterMetrics: Map<string, ClusterObservabilityMetrics> = new Map(); // clusterId -> ClusterObservabilityMetrics
   private clusterMetricHistory: Map<string, MetricHistoryPoint[]> = new Map(); // clusterId -> MetricHistoryPoint[]
@@ -89,7 +91,9 @@ export class DataStore {
   private telemetryBatchCounts: Map<string, number> = new Map(); // orgId -> count
   private telemetryResourceCounts: Map<string, number> = new Map(); // orgId -> count
   private incidentCounter = 1001;
-  private storagePath = path.join(process.cwd(), 'data', 'skyops_store.json');
+  private storagePath = process.env.NODE_ENV === 'test'
+    ? path.join(os.tmpdir(), `skyops-store-${process.pid}.json`)
+    : path.join(process.cwd(), 'data', 'skyops_store.json');
   private saveTimeout: NodeJS.Timeout | null = null;
 
   constructor() {
@@ -110,7 +114,12 @@ export class DataStore {
         if (data.members) this.members = new Map(Object.entries(data.members));
         if (data.invitations) this.invitations = new Map(Object.entries(data.invitations));
         if (data.supportTickets) this.supportTickets = new Map(Object.entries(data.supportTickets));
-        if (data.clusters) this.clusters = new Map(Object.entries(data.clusters));
+        if (data.clusters) {
+          this.clusters = new Map(Object.entries(data.clusters));
+          for (const cluster of this.clusters.values()) {
+            delete (cluster as Cluster & { agentToken?: string }).agentToken;
+          }
+        }
         if (data.clusterTokens) this.clusterTokens = new Map(Object.entries(data.clusterTokens));
         if (data.resources) this.resources = new Map(Object.entries(data.resources));
         if (data.incidents) this.incidents = new Map(Object.entries(data.incidents));
@@ -1122,20 +1131,14 @@ export class DataStore {
   public getClusters(orgId: string): Cluster[] {
     return Array.from(this.clusters.values())
       .filter((c) => c.orgId === orgId)
-      .map((c) => {
-        // Do not expose raw agentToken in generic cluster list
-        const { agentToken, ...sanitized } = c;
-        return sanitized as Cluster;
-      });
+      .map((c) => ({ ...c }));
   }
 
   public getCluster(clusterId: string, orgId?: string, includeToken = false): Cluster | null {
     const cluster = this.clusters.get(clusterId);
     if (!cluster) return null;
     if (orgId && cluster.orgId !== orgId) return null;
-    if (includeToken) return cluster;
-    const { agentToken, ...sanitized } = cluster;
-    return sanitized as Cluster;
+    return { ...cluster };
   }
 
   public getClusterByIdInternal(clusterId: string): Cluster | null {
@@ -1200,11 +1203,11 @@ export class DataStore {
       podCount: 0,
       openIncidentCount: 0,
       createdAt: Date.now(),
-      agentToken: rawToken
     };
 
     this.clusters.set(clusterId, cluster);
     this.clusterTokens.set(tokenHash, { clusterId, orgId });
+    this.activeAgentTokens.set(clusterId, rawToken);
     this.resources.set(clusterId, []);
     this.saveSnapshot();
 
@@ -1279,7 +1282,6 @@ export class DataStore {
     const installKey = `sky_inst_${crypto.randomBytes(20).toString('hex')}`;
     const installKeyExpiresAt = Date.now() + 60 * 60 * 1000;
 
-    cluster.agentToken = rawToken;
     cluster.connectionCode = connectionCode;
     cluster.connectionCodeExpiresAt = connectionCodeExpiresAt;
     cluster.installKey = installKey;
@@ -1290,6 +1292,7 @@ export class DataStore {
     cluster.agentDetectedAt = undefined;
 
     this.clusterTokens.set(tokenHash, { clusterId, orgId });
+    this.activeAgentTokens.set(clusterId, rawToken);
     this.saveSnapshot();
 
     return { cluster, rawToken, connectionCode, installKey };
@@ -1348,7 +1351,7 @@ export class DataStore {
       }
     }
 
-    cluster.agentToken = undefined;
+    this.activeAgentTokens.delete(clusterId);
     cluster.status = 'AGENT_OFFLINE';
     cluster.agentStatus = 'OFFLINE';
     cluster.connectionState = 'offline';
@@ -1368,6 +1371,7 @@ export class DataStore {
     }
 
     this.clusters.delete(clusterId);
+    this.activeAgentTokens.delete(clusterId);
     this.resources.delete(clusterId);
 
     // Delete associated incidents
@@ -1401,6 +1405,10 @@ export class DataStore {
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
     const entry = this.clusterTokens.get(tokenHash);
     return entry || null;
+  }
+
+  public getActiveAgentToken(clusterId: string): string | null {
+    return this.activeAgentTokens.get(clusterId) || null;
   }
 
   public registerAgent(

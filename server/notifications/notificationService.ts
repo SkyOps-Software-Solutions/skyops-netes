@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { Incident, SkyOpsAIAnalysis } from '../../src/types/index';
 import { generateIncidentEmail } from './emailTemplate';
@@ -36,7 +37,9 @@ export class IncidentNotificationService {
     this.senderEmail = options?.senderEmail || process.env.SKYOPS_NOTIFICATION_SENDER_EMAIL || 'skyopsnetes2000@gmail.com';
     this.senderName = options?.senderName || process.env.SKYOPS_NOTIFICATION_SENDER_NAME || 'SkyOps';
     this.appUrl = options?.appUrl || process.env.APP_URL || process.env.SKYOPS_SERVER_URL || 'http://localhost:3000';
-    this.storagePath = options?.storagePath || path.join(process.cwd(), 'data', 'skyops_notification_logs.json');
+    this.storagePath = options?.storagePath || (process.env.NODE_ENV === 'test'
+      ? path.join(os.tmpdir(), `skyops-notifications-${process.pid}.json`)
+      : path.join(process.cwd(), 'data', 'skyops_notification_logs.json'));
 
     if (options?.provider) {
       this.provider = options.provider;

@@ -1133,9 +1133,9 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
                   </tr>
                 ) : (
                   getFilteredResources().map((res) => {
-                    const kubeletVer = (res.statusSummary?.kubeletVersion as string) || (res.specSummary?.kubeletVersion as string) || cluster.k8sVersion || 'v1.35.1';
-                    const allocMem = (res.statusSummary?.allocatable as any)?.memory || res.statusSummary?.allocatableMemory || (res.statusSummary?.capacity as any)?.memory || '32Gi';
-                    const allocCpu = (res.statusSummary?.allocatable as any)?.cpu || res.statusSummary?.allocatableCpu || (res.statusSummary?.capacity as any)?.cpu || '8 cores';
+                    const kubeletVer = (res.statusSummary?.kubeletVersion as string) || (res.specSummary?.kubeletVersion as string) || cluster.k8sVersion || 'Unavailable';
+                    const allocMem = (res.statusSummary?.allocatable as any)?.memory || res.statusSummary?.allocatableMemory || (res.statusSummary?.capacity as any)?.memory || 'Unavailable';
+                    const allocCpu = (res.statusSummary?.allocatable as any)?.cpu || res.statusSummary?.allocatableCpu || (res.statusSummary?.capacity as any)?.cpu || 'Unavailable';
                     return (
                       <tr
                         key={res.id}

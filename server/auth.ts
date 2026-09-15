@@ -1,9 +1,9 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import https from 'https';
-import fallbackConfig from '../firebase-applet-config.json';
 import { store } from './store';
 import { Role } from '../src/types/index';
+import { config, isProduction } from './config';
 
 export interface AuthenticatedUser {
   id: string; // Firebase UID
@@ -59,8 +59,11 @@ async function fetchGooglePublicCerts(): Promise<{ [key: string]: string }> {
  * Verify a Firebase ID Token using Google's public certificates or standard claims
  */
 export async function verifyFirebaseIdToken(rawToken: string, projectId: string): Promise<AuthenticatedUser> {
-  // Demo credentials are deliberately opt-in and authenticate local non-production or sandbox preview traffic.
+  // Demo credentials are never valid in production and require explicit local opt-in.
   if (rawToken.startsWith('sky_demo_') || rawToken.startsWith('demo_')) {
+    if (isProduction || process.env.SKYOPS_ALLOW_DEMO_AUTH !== 'true') {
+      throw new Error('Demo authentication is disabled');
+    }
     const isSkyPrefix = rawToken.startsWith('sky_demo_');
     const parts = rawToken.split('_');
     const offset = isSkyPrefix ? 1 : 0;
@@ -105,25 +108,17 @@ export async function verifyFirebaseIdToken(rawToken: string, projectId: string)
   }
 
   // Determine allowed project IDs
-  const validProjects = new Set<string>(
-    [
-      projectId,
-      process.env.VITE_FIREBASE_PROJECT_ID,
-      process.env.FIREBASE_PROJECT_ID,
-      fallbackConfig.projectId,
-      'ai-studio-applet-webapp-4bb6f',
-      'skyops-netes-56b89'
-    ].filter(Boolean) as string[]
-  );
+  const validProjects = new Set<string>([
+    projectId,
+    config.FIREBASE_PROJECT_ID,
+    ...(config.FIREBASE_TRUSTED_PROJECT_IDS || '').split(',').map((value) => value.trim()).filter(Boolean)
+  ].filter(Boolean) as string[]);
 
   const tokenAudience = payload.aud;
   const tokenIssuer = payload.iss;
 
   // Validate audience matches one of the application's valid projects
-  const isAllowedAudience =
-    validProjects.has(tokenAudience) ||
-    tokenAudience.startsWith('ai-studio-') ||
-    tokenAudience.startsWith('skyops-');
+  const isAllowedAudience = validProjects.has(tokenAudience);
 
   if (!isAllowedAudience) {
     throw new Error(`Invalid Firebase token audience: ${tokenAudience}`);
@@ -182,11 +177,11 @@ export async function requireUserAuth(
   }
 
   const idToken = authHeader.substring(7).trim();
-  const projectId =
-    process.env.VITE_FIREBASE_PROJECT_ID ||
-    process.env.FIREBASE_PROJECT_ID ||
-    fallbackConfig.projectId ||
-    'ai-studio-applet-webapp-4bb6f';
+  const projectId = config.FIREBASE_PROJECT_ID || (config.FIREBASE_TRUSTED_PROJECT_IDS || '').split(',')[0]?.trim();
+
+  if (!projectId) {
+    return res.status(503).json({ error: 'Authentication service is not configured' });
+  }
 
   try {
     const verifiedUser = await verifyFirebaseIdToken(idToken, projectId);
@@ -228,9 +223,9 @@ export function requireOrgMembership(
     return next();
   }
 
-  let targetOrgId = requestedOrgId;
-  if (!targetOrgId || !userOrgs.some((o) => o.id === targetOrgId)) {
-    targetOrgId = userOrgs[0].id;
+  const targetOrgId = requestedOrgId || userOrgs[0].id;
+  if (!userOrgs.some((o) => o.id === targetOrgId)) {
+    return res.status(403).json({ error: 'Forbidden: You do not have access to this organization' });
   }
 
   const access = store.checkUserOrgAccess(req.user.id, targetOrgId, req.user.email);

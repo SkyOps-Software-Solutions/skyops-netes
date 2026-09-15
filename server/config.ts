@@ -10,6 +10,9 @@ const ConfigSchema = z.object({
   SKYOPS_API_URL: z.string().optional(),
   APP_URL: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
+  FIREBASE_PROJECT_ID: z.string().optional(),
+  FIREBASE_TRUSTED_PROJECT_IDS: z.string().optional(),
+  CORS_ORIGINS: z.string().optional(),
   ENABLE_DEV_SIMULATION: z
     .string()
     .optional()
@@ -33,6 +36,18 @@ const ConfigSchema = z.object({
     .transform((val) => val === 'true' || val === '1'),
   SKYOPS_SMTP_USER: z.string().optional(),
   SKYOPS_SMTP_PASS: z.string().optional()
+}).superRefine((values, ctx) => {
+  if (values.NODE_ENV === 'production') {
+    if (!values.FIREBASE_PROJECT_ID && !values.FIREBASE_TRUSTED_PROJECT_IDS) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['FIREBASE_PROJECT_ID'], message: 'FIREBASE_PROJECT_ID or FIREBASE_TRUSTED_PROJECT_IDS is required in production' });
+    }
+    if (!values.APP_URL || !/^https:\/\//.test(values.APP_URL)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['APP_URL'], message: 'APP_URL must be an HTTPS URL in production' });
+    }
+    if (!values.CORS_ORIGINS) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['CORS_ORIGINS'], message: 'CORS_ORIGINS is required in production' });
+    }
+  }
 });
 
 export type SkyOpsConfig = z.infer<typeof ConfigSchema>;
@@ -47,6 +62,9 @@ try {
     SKYOPS_API_URL: process.env.SKYOPS_API_URL,
     APP_URL: process.env.APP_URL,
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+    FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
+    FIREBASE_TRUSTED_PROJECT_IDS: process.env.FIREBASE_TRUSTED_PROJECT_IDS,
+    CORS_ORIGINS: process.env.CORS_ORIGINS,
     ENABLE_DEV_SIMULATION: process.env.ENABLE_DEV_SIMULATION,
     SKYOPS_ALLOW_DEMO_AUTH: process.env.SKYOPS_ALLOW_DEMO_AUTH,
     AGENT_MIN_COMPATIBLE_VERSION: process.env.AGENT_MIN_COMPATIBLE_VERSION,
@@ -64,7 +82,9 @@ try {
   });
 } catch (err) {
   console.error('[SkyOps Configuration] Fatal Configuration Validation Error:', err);
-  // Safe defaults if parsing fails
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('SkyOps production configuration is invalid; refusing to start');
+  }
   parsedConfig = {
     NODE_ENV: 'development',
     PORT: 3000,
@@ -76,7 +96,8 @@ try {
     MAX_PAGE_SIZE: 100,
     LOG_LEVEL: 'info',
     SKYOPS_NOTIFICATION_SENDER_EMAIL: 'skyopsnetes2000@gmail.com',
-    SKYOPS_NOTIFICATION_SENDER_NAME: 'SkyOps'
+    SKYOPS_NOTIFICATION_SENDER_NAME: 'SkyOps',
+    CORS_ORIGINS: undefined
   };
 }
 

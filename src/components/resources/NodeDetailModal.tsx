@@ -127,19 +127,19 @@ export const NodeDetailModal: React.FC<NodeDetailModalProps> = ({
     (statusSummary.kubeletVersion as string) ||
     (specSummary.kubeletVersion as string) ||
     cluster.k8sVersion ||
-    'v1.35.1';
+    'Unavailable';
 
-  const osImage = nodeInfo.osImage || (statusSummary.osImage as string) || 'Linux (Container-Optimized OS)';
-  const architecture = nodeInfo.architecture || (statusSummary.architecture as string) || 'amd64';
-  const containerRuntime = nodeInfo.containerRuntimeVersion || (statusSummary.containerRuntimeVersion as string) || 'containerd://1.7.15';
-  const kernelVersion = nodeInfo.kernelVersion || (statusSummary.kernelVersion as string) || '6.6.137+';
+  const osImage = nodeInfo.osImage || (statusSummary.osImage as string) || 'Unavailable';
+  const architecture = nodeInfo.architecture || (statusSummary.architecture as string) || 'Unavailable';
+  const containerRuntime = nodeInfo.containerRuntimeVersion || (statusSummary.containerRuntimeVersion as string) || 'Unavailable';
+  const kernelVersion = nodeInfo.kernelVersion || (statusSummary.kernelVersion as string) || 'Unavailable';
 
   // Capacity & Allocatable
   const capacity = (statusSummary.capacity as Record<string, string>) || {};
   const allocatable = (statusSummary.allocatable as Record<string, string>) || {};
 
-  const cpuCapacity = capacity.cpu || allocatable.cpu || (statusSummary.allocatableCpu as string) || '8 cores';
-  const memoryCapacity = capacity.memory || allocatable.memory || (statusSummary.allocatableMemory as string) || '32Gi';
+  const cpuCapacity = capacity.cpu || allocatable.cpu || (statusSummary.allocatableCpu as string) || 'Unavailable';
+  const memoryCapacity = capacity.memory || allocatable.memory || (statusSummary.allocatableMemory as string) || 'Unavailable';
 
   // Real Usage from metrics summary (No fabrication)
   const cpuUsage = nodeMetrics?.cpuUsage;

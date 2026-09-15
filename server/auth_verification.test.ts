@@ -4,12 +4,24 @@ import { verifyFirebaseIdToken } from './auth.js';
 
 test('Firebase Auth Verification Suite', async (t) => {
   await t.test('accepts demo token in non-production environment', async () => {
+    const previous = process.env.SKYOPS_ALLOW_DEMO_AUTH;
+    process.env.SKYOPS_ALLOW_DEMO_AUTH = 'true';
     const rawDemoToken = 'sky_demo_sre_OWNER_dhandesaurav52%40gmail.com_Alex%20Rivera';
     const user = await verifyFirebaseIdToken(rawDemoToken, 'skyops-netes-56b89');
     assert.equal(user.email, 'dhandesaurav52@gmail.com');
     assert.equal(user.name, 'Alex Rivera');
     assert.equal(user.emailVerified, true);
     assert.ok(user.id.startsWith('demo-sre-'));
+    if (previous === undefined) delete process.env.SKYOPS_ALLOW_DEMO_AUTH;
+    else process.env.SKYOPS_ALLOW_DEMO_AUTH = previous;
+  });
+
+  await t.test('rejects demo token when explicit opt-in is disabled', async () => {
+    const previous = process.env.SKYOPS_ALLOW_DEMO_AUTH;
+    process.env.SKYOPS_ALLOW_DEMO_AUTH = 'false';
+    await assert.rejects(() => verifyFirebaseIdToken('sky_demo_sre_OWNER_test%40example.com_Test', 'skyops-netes-56b89'), { message: 'Demo authentication is disabled' });
+    if (previous === undefined) delete process.env.SKYOPS_ALLOW_DEMO_AUTH;
+    else process.env.SKYOPS_ALLOW_DEMO_AUTH = previous;
   });
 
   await t.test('rejects malformed token', async () => {

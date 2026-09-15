@@ -40,7 +40,9 @@ const PORT = 3000;
 // Security & Parsing Middlewares
 app.use(
   cors({
-    origin: true,
+    origin: isProduction
+      ? (config.CORS_ORIGINS || '').split(',').map((origin) => origin.trim()).filter(Boolean)
+      : true,
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-org-id', 'x-request-id', 'x-skyops-agent-version']
@@ -114,7 +116,7 @@ function getPublicServerUrl(req?: Request): string {
       return `${forwardedProto}://${forwardedHost}`.replace(/\/+$/, '');
     }
   }
-  return process.env.APP_URL || 'https://ais-dev-ippvl3vbmeyhxnyp4m36nk-811563557432.asia-southeast1.run.app';
+  return process.env.APP_URL || (isProduction ? '' : 'http://localhost:3000');
 }
 
 // ==========================================
@@ -518,7 +520,7 @@ const CreateClusterSchema = z.object({
   description: z.string().max(300).optional()
 });
 
-app.post('/api/v1/clusters', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+app.post('/api/v1/clusters', requireUserAuth, requireOrgMembership, requirePermission('cluster.manage'), (req: AuthenticatedUserRequest, res) => {
   const parsed = CreateClusterSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid cluster payload' });
@@ -545,7 +547,7 @@ const ConnectClusterSchema = z.object({
   connectionCode: z.string().min(4, 'Connection code is required')
 });
 
-app.post('/api/v1/clusters/:id/connect', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+app.post('/api/v1/clusters/:id/connect', requireUserAuth, requireOrgMembership, requirePermission('cluster.manage'), (req: AuthenticatedUserRequest, res) => {
   const parsed = ConnectClusterSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid connection code' });
@@ -641,14 +643,17 @@ app.delete(
 );
 
 // Get manifests for cluster
-app.get('/api/v1/clusters/:id/manifests', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+app.get('/api/v1/clusters/:id/manifests', requireUserAuth, requireOrgMembership, requirePermission('cluster.manage'), (req: AuthenticatedUserRequest, res) => {
   const cluster = store.getCluster(req.params.id, req.orgId!, true);
   if (!cluster) {
     return res.status(404).json({ error: 'Cluster not found' });
   }
 
   const serverUrl = getPublicServerUrl(req);
-  const token = cluster.agentToken || 'sky_agent_configured_token';
+  const token = store.getActiveAgentToken(cluster.id);
+  if (!token) {
+    return res.status(410).json({ error: 'Installation credential is no longer available; rotate the agent token to generate a new manifest' });
+  }
 
   const manifest = generateKubernetesManifest({
     clusterId: cluster.id,
@@ -712,7 +717,10 @@ const handleScriptInstall = (req: Request, res: Response) => {
   }
 
   const serverUrl = getPublicServerUrl(req);
-  const token = cluster.agentToken || 'sky_agent_configured_token';
+  const token = store.getActiveAgentToken(cluster.id);
+  if (!token) {
+    return res.status(410).type('text/plain').send('# Installation credential is no longer available. Generate a new agent token from the SkyOps Dashboard.\n');
+  }
 
   const script = generateInstallScript({
     clusterId: cluster.id,
@@ -747,7 +755,10 @@ const handleManifestBySession = (req: Request, res: Response) => {
   }
 
   const serverUrl = getPublicServerUrl(req);
-  const token = cluster.agentToken || 'sky_agent_configured_token';
+  const token = store.getActiveAgentToken(cluster.id);
+  if (!token) {
+    return res.status(410).type('text/plain').send('# Installation credential is no longer available. Generate a new agent token from the SkyOps Dashboard.\n');
+  }
 
   const manifest = generateKubernetesManifest({
     clusterId: cluster.id,
@@ -799,7 +810,10 @@ app.get('/api/v1/clusters/:id/install.sh', (req: Request, res: Response) => {
   }
 
   const serverUrl = getPublicServerUrl(req);
-  const token = cluster.agentToken || 'sky_agent_configured_token';
+  const token = store.getActiveAgentToken(cluster.id);
+  if (!token) {
+    return res.status(410).type('text/plain').send('# Installation credential is no longer available. Generate a new agent token from the SkyOps Dashboard.\n');
+  }
 
   const script = generateInstallScript({
     clusterId: cluster.id,
@@ -852,7 +866,10 @@ const handleManifestDownload = (req: Request, res: Response) => {
   }
 
   const serverUrl = getPublicServerUrl(req);
-  const token = cluster.agentToken || 'sky_agent_configured_token';
+  const token = store.getActiveAgentToken(cluster.id);
+  if (!token) {
+    return res.status(410).type('text/plain').send('# Installation credential is no longer available. Generate a new agent token from the SkyOps Dashboard.\n');
+  }
 
   const manifest = generateKubernetesManifest({
     clusterId: cluster.id,
@@ -1490,7 +1507,7 @@ app.post(
   '/api/v1/incidents/:id/remediation/approve',
   requireUserAuth,
   requireOrgMembership,
-  requireRole(['OWNER', 'ADMIN', 'ENGINEER']),
+  requirePermission('remediation.approve'),
   (req: AuthenticatedUserRequest, res) => {
     const parsed = ApproveRemediationSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -1525,7 +1542,7 @@ app.post(
   '/api/v1/incidents/:id/remediation/reject',
   requireUserAuth,
   requireOrgMembership,
-  requireRole(['OWNER', 'ADMIN', 'ENGINEER']),
+  requirePermission('remediation.approve'),
   (req: AuthenticatedUserRequest, res) => {
     const parsed = RejectRemediationSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -1622,7 +1639,7 @@ app.post(
   '/api/v1/incidents/:id/remediation/cancel',
   requireUserAuth,
   requireOrgMembership,
-  requireRole(['OWNER', 'ADMIN', 'ENGINEER']),
+  requirePermission('remediation.execute'),
   (req: AuthenticatedUserRequest, res) => {
     const parsed = CancelRemediationSchema.safeParse(req.body);
     if (!parsed.success) {

@@ -277,13 +277,12 @@ export class IncidentDetector {
         events.some((e) => e.reason === 'ResourceExhaustion' || /cpu throttling|cpu exhaustion|high cpu/i.test(e.message));
 
       if (hasHighCpu) {
-        const title = resource.name.includes('payments-api')
-          ? 'High CPU on payments-api'
-          : `High CPU on ${resource.name} (${c.name || 'container'})`;
+        const title = `High CPU on ${resource.name} (${c.name || 'container'})`;
+        const observedUsage = c.cpuUsage && c.cpuLimit ? `CPU usage ${c.cpuUsage} of limit ${c.cpuLimit}.` : 'Kubernetes reported CPU resource exhaustion.';
 
         return {
           detected: true,
-          incidentType: 'CrashLoopBackOff',
+          incidentType: 'HighCPU',
           title,
           severity: 'HIGH',
           technicalDetails: {
@@ -292,12 +291,12 @@ export class IncidentDetector {
             image: c.image,
             restartCount: c.restartCount || 0,
             reason: 'ResourceExhaustion',
-            message: `Container ${c.name} CPU usage reached 99.0% of limit (495m/500m). CPU throttling throttled 84% of execution periods.`,
+            message: `Container ${c.name || resource.name}: ${observedUsage}`,
             nodeName: String(resource.specSummary?.nodeName || 'unknown'),
             containers,
             conditions: resource.conditions,
             events,
-            impact: `Payment transaction latency increased by 350ms with 4.2% timeout rate due to CPU throttling.`,
+            impact: 'Impact is unavailable until corroborating workload telemetry is reported.',
             rootCause: `Under-provisioned CPU limits during traffic surge; container experiencing CPU throttling and starvation.`
           }
         };

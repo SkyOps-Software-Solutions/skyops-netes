@@ -208,6 +208,7 @@ export type IncidentType =
   | 'OOMKilled'
   | 'PodPending'
   | 'PodFailed'
+  | 'HighCPU'
   | 'ExcessiveRestarts'
   | 'ContainerCreatingStuck'
   | 'NodeNotReady'

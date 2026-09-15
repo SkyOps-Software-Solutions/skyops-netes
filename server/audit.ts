@@ -1,10 +1,13 @@
 import { AuditEvent, AuditQueryFilters, PaginatedResult } from './repositories/types';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 class AuditService {
   private events: AuditEvent[] = [];
-  private readonly dataFilePath = path.join(process.cwd(), 'data', 'skyops_audit.json');
+  private readonly dataFilePath = process.env.NODE_ENV === 'test'
+    ? path.join(os.tmpdir(), `skyops-audit-${process.pid}.json`)
+    : path.join(process.cwd(), 'data', 'skyops_audit.json');
 
   constructor() {
     this.loadEvents();

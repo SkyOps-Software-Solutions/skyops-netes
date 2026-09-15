@@ -24,6 +24,7 @@ describe('Service & Workload Correlation - techgenx vs techgenx1 Regression Test
       selector: { matchLabels: { app: 'techgenx' } }
     },
     statusSummary: { readyReplicas: 1, replicas: 1 },
+    createdAt: Date.now(),
     updatedAt: Date.now()
   };
 
@@ -47,6 +48,7 @@ describe('Service & Workload Correlation - techgenx vs techgenx1 Regression Test
     specSummary: {
       selector: { matchLabels: { app: 'techgenx' } }
     },
+    createdAt: Date.now(),
     updatedAt: Date.now()
   };
 
@@ -65,6 +67,7 @@ describe('Service & Workload Correlation - techgenx vs techgenx1 Regression Test
       selector: { matchLabels: { app: 'techgenx1' } }
     },
     statusSummary: { readyReplicas: 1, replicas: 1 },
+    createdAt: Date.now(),
     updatedAt: Date.now()
   };
 
@@ -88,6 +91,7 @@ describe('Service & Workload Correlation - techgenx vs techgenx1 Regression Test
     specSummary: {
       selector: { matchLabels: { app: 'techgenx1' } }
     },
+    createdAt: Date.now(),
     updatedAt: Date.now()
   };
 
@@ -115,6 +119,7 @@ describe('Service & Workload Correlation - techgenx vs techgenx1 Regression Test
       labels: { app: 'techgenx', tier: 'backend' }
     },
     statusSummary: { phase: 'Running', podIP: '10.244.1.42' },
+    createdAt: Date.now(),
     updatedAt: Date.now()
   };
 
@@ -142,6 +147,7 @@ describe('Service & Workload Correlation - techgenx vs techgenx1 Regression Test
       labels: { app: 'techgenx1', tier: 'backend' }
     },
     statusSummary: { phase: 'Running', podIP: '10.244.2.88' },
+    createdAt: Date.now(),
     updatedAt: Date.now()
   };
 
@@ -161,6 +167,7 @@ describe('Service & Workload Correlation - techgenx vs techgenx1 Regression Test
       ports: [{ port: 80, targetPort: 8080, protocol: 'TCP' }],
       selector: { app: 'techgenx' }
     },
+    createdAt: Date.now(),
     updatedAt: Date.now()
   };
 
@@ -179,6 +186,7 @@ describe('Service & Workload Correlation - techgenx vs techgenx1 Regression Test
       ports: [{ port: 80, targetPort: 8081, protocol: 'TCP' }],
       selector: { app: 'techgenx1' }
     },
+    createdAt: Date.now(),
     updatedAt: Date.now()
   };
 
@@ -197,6 +205,7 @@ describe('Service & Workload Correlation - techgenx vs techgenx1 Regression Test
       endpoints: [{ addresses: ['10.244.1.42'], conditions: { ready: true } }],
       ports: [{ port: 8080, name: 'http' }]
     },
+    createdAt: Date.now(),
     updatedAt: Date.now()
   };
 
@@ -214,6 +223,7 @@ describe('Service & Workload Correlation - techgenx vs techgenx1 Regression Test
       endpoints: [{ addresses: ['10.244.2.88'], conditions: { ready: true } }],
       ports: [{ port: 8081, name: 'http' }]
     },
+    createdAt: Date.now(),
     updatedAt: Date.now()
   };
 

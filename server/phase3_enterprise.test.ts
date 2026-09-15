@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { store } from './store';
 import { auditService } from './audit';
-import { OrgMemberStatus, Role, TicketCategory, TicketSeverity } from '../types/index';
+import { OrgMemberStatus, Role, TicketCategory, TicketSeverity } from '../src/types/index';
 
 test('Phase 3 Enterprise Foundation: Multi-Tenancy, RBAC, Invitations, and Support', async (t) => {
   const testRunId = Date.now().toString();
@@ -55,7 +55,7 @@ test('Phase 3 Enterprise Foundation: Multi-Tenancy, RBAC, Invitations, and Suppo
           security: { enforceMfa: true, sessionTimeoutMinutes: 720 }
         }
       },
-      userOwnerA.id
+      { id: userOwnerA.id, name: userOwnerA.name }
     );
     assert.equal(updatedOrgA.name, 'Acme Alpha Enterprise');
     assert.equal(updatedOrgA.settings?.security?.enforceMfa, true);

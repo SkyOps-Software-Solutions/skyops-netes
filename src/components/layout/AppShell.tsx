@@ -13,9 +13,6 @@ import { OverviewView } from '../overview/OverviewView';
 import { InfrastructureView } from '../infrastructure/InfrastructureView';
 import { ServicesView } from '../services/ServicesView';
 import { ObservabilityHubView } from '../observability/ObservabilityHubView';
-import { SkyOpsAICopilotView } from '../ai/SkyOpsAICopilotView';
-import { ActionsCenterView } from '../actions/ActionsCenterView';
-import { InsightsView } from '../insights/InsightsView';
 import { SettingsView } from '../settings/SettingsView';
 import { AuditView } from '../audit/AuditView';
 import { NavigationTab, Sidebar } from './Sidebar';
@@ -33,7 +30,6 @@ export const AppShell: React.FC<AppShellProps> = ({
   const [activeTab, setActiveTab] = useState<NavigationTab>('overview');
   const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
-  const [copilotInitialPrompt, setCopilotInitialPrompt] = useState<string>('');
   const [targetLogPod, setTargetLogPod] = useState<{ clusterId: string; namespace: string; name: string } | null>(null);
   const [isAddClusterOpen, setIsAddClusterOpen] = useState(initialOpenAddCluster);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
@@ -147,11 +143,6 @@ export const AppShell: React.FC<AppShellProps> = ({
     setSelectedClusterId(id);
     setSelectedIncidentId(null);
     setActiveTab('infrastructure');
-  };
-
-  const handleOpenAICopilot = (prompt?: string) => {
-    if (prompt) setCopilotInitialPrompt(prompt);
-    setActiveTab('ai');
   };
 
   const handleOpenLogs = (clusterId: string, namespace: string, podName: string) => {
@@ -309,7 +300,6 @@ export const AppShell: React.FC<AppShellProps> = ({
               onOpenAddCluster={() => setIsAddClusterOpen(true)}
               onRefresh={handleManualRefresh}
               loading={loading || isRefreshing}
-              onOpenAICopilot={handleOpenAICopilot}
             />
           )}
 
@@ -396,34 +386,6 @@ export const AppShell: React.FC<AppShellProps> = ({
               initialPod={
                 targetLogPod ? { namespace: targetLogPod.namespace, name: targetLogPod.name } : undefined
               }
-              onRefresh={handleManualRefresh}
-            />
-          )}
-
-          {activeTab === 'ai' && (
-            <SkyOpsAICopilotView
-              clusters={clusters}
-              incidents={incidents}
-              onSelectIncident={handleSelectIncident}
-              onSelectCluster={handleSelectCluster}
-              initialPrompt={copilotInitialPrompt}
-            />
-          )}
-
-          {activeTab === 'actions' && (
-            <ActionsCenterView
-              incidents={incidents}
-              onSelectIncident={handleSelectIncident}
-              onRefresh={handleManualRefresh}
-            />
-          )}
-
-          {activeTab === 'insights' && (
-            <InsightsView
-              clusters={clusters}
-              incidents={incidents}
-              onSelectIncident={handleSelectIncident}
-              onSelectCluster={handleSelectCluster}
               onRefresh={handleManualRefresh}
             />
           )}

@@ -376,6 +376,106 @@
       "slug": "persistent-history-org",
       "createdAt": 1789470692037,
       "membersCount": 1
+    },
+    "org-88159b8d0258": {
+      "id": "org-88159b8d0258",
+      "name": "Event Org",
+      "slug": "event-org",
+      "status": "ACTIVE",
+      "createdAt": 1789473625432,
+      "updatedAt": 1789473625432,
+      "membersCount": 1,
+      "ownerUserId": "user-test-obs",
+      "settings": {
+        "general": {
+          "name": "Event Org",
+          "timezone": "UTC"
+        },
+        "notifications": {
+          "incidentEmailEnabled": true,
+          "digestEmailEnabled": false,
+          "alertSeverityThreshold": "HIGH"
+        },
+        "security": {
+          "enforceMfa": false,
+          "sessionTimeoutMinutes": 1440
+        }
+      }
+    },
+    "org-a04cc286cbce": {
+      "id": "org-a04cc286cbce",
+      "name": "Empty Metrics Org",
+      "slug": "empty-metrics-org",
+      "status": "ACTIVE",
+      "createdAt": 1789473625454,
+      "updatedAt": 1789473625454,
+      "membersCount": 1,
+      "ownerUserId": "user-test-obs",
+      "settings": {
+        "general": {
+          "name": "Empty Metrics Org",
+          "timezone": "UTC"
+        },
+        "notifications": {
+          "incidentEmailEnabled": true,
+          "digestEmailEnabled": false,
+          "alertSeverityThreshold": "HIGH"
+        },
+        "security": {
+          "enforceMfa": false,
+          "sessionTimeoutMinutes": 1440
+        }
+      }
+    },
+    "org-710c08a005d0": {
+      "id": "org-710c08a005d0",
+      "name": "No Live Metrics Org",
+      "slug": "no-live-metrics-org",
+      "status": "ACTIVE",
+      "createdAt": 1789473625456,
+      "updatedAt": 1789473625456,
+      "membersCount": 1,
+      "ownerUserId": "user-test-obs",
+      "settings": {
+        "general": {
+          "name": "No Live Metrics Org",
+          "timezone": "UTC"
+        },
+        "notifications": {
+          "incidentEmailEnabled": true,
+          "digestEmailEnabled": false,
+          "alertSeverityThreshold": "HIGH"
+        },
+        "security": {
+          "enforceMfa": false,
+          "sessionTimeoutMinutes": 1440
+        }
+      }
+    },
+    "org-776a3cea2e0b": {
+      "id": "org-776a3cea2e0b",
+      "name": "Persistent History Org",
+      "slug": "persistent-history-org",
+      "status": "ACTIVE",
+      "createdAt": 1789473625458,
+      "updatedAt": 1789473625458,
+      "membersCount": 1,
+      "ownerUserId": "user-test-obs",
+      "settings": {
+        "general": {
+          "name": "Persistent History Org",
+          "timezone": "UTC"
+        },
+        "notifications": {
+          "incidentEmailEnabled": true,
+          "digestEmailEnabled": false,
+          "alertSeverityThreshold": "HIGH"
+        },
+        "security": {
+          "enforceMfa": false,
+          "sessionTimeoutMinutes": 1440
+        }
+      }
     }
   },
   "members": {
@@ -824,8 +924,66 @@
         "role": "OWNER",
         "joinedAt": 1789470692037
       }
+    ],
+    "org-88159b8d0258": [
+      {
+        "userId": "user-test-obs",
+        "orgId": "org-88159b8d0258",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "status": "ACTIVE",
+        "joinedAt": 1789473625432,
+        "createdAt": 1789473625432,
+        "updatedAt": 1789473625432,
+        "lastActiveAt": 1789473625432
+      }
+    ],
+    "org-a04cc286cbce": [
+      {
+        "userId": "user-test-obs",
+        "orgId": "org-a04cc286cbce",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "status": "ACTIVE",
+        "joinedAt": 1789473625454,
+        "createdAt": 1789473625454,
+        "updatedAt": 1789473625454,
+        "lastActiveAt": 1789473625454
+      }
+    ],
+    "org-710c08a005d0": [
+      {
+        "userId": "user-test-obs",
+        "orgId": "org-710c08a005d0",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "status": "ACTIVE",
+        "joinedAt": 1789473625456,
+        "createdAt": 1789473625456,
+        "updatedAt": 1789473625456,
+        "lastActiveAt": 1789473625456
+      }
+    ],
+    "org-776a3cea2e0b": [
+      {
+        "userId": "user-test-obs",
+        "orgId": "org-776a3cea2e0b",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "status": "ACTIVE",
+        "joinedAt": 1789473625458,
+        "createdAt": 1789473625458,
+        "updatedAt": 1789473625458,
+        "lastActiveAt": 1789473625458
+      }
     ]
   },
+  "invitations": {},
+  "supportTickets": {},
   "clusters": {
     "cls-5a6532fb1d5f": {
       "id": "cls-5a6532fb1d5f",
@@ -1929,6 +2087,88 @@
       "openIncidentCount": 0,
       "createdAt": 1789470692037,
       "agentToken": "sky_agent_45822a813fde1b111b3d14c85d58f39f085ddabc2a2dc88b"
+    },
+    "cls-3e2d79361aa2": {
+      "id": "cls-3e2d79361aa2",
+      "orgId": "org-88159b8d0258",
+      "name": "event-cluster",
+      "description": "",
+      "status": "WARNING",
+      "agentStatus": "CONNECTED",
+      "connectionState": "connected",
+      "connectionCode": "SKYOPS-Z9BT-W7UQ",
+      "connectionCodeExpiresAt": 1789474525433,
+      "installKey": "sky_inst_1b496b54b03e1aa77fad4a7e6af780d05998fe76",
+      "installKeyExpiresAt": 1789477225433,
+      "nodeCount": 0,
+      "podCount": 1,
+      "openIncidentCount": 1,
+      "createdAt": 1789473625433,
+      "agentToken": "sky_agent_3b7f93e4989c17d9358db2179106288d82b3d25934a13d93",
+      "lastSeenAt": 1789473625448,
+      "lastHeartbeat": 1789473625448,
+      "lastHeartbeatAt": 1789473625448,
+      "connectedAt": 1789473625448,
+      "connectionStatus": "connected"
+    },
+    "cls-ab416920b691": {
+      "id": "cls-ab416920b691",
+      "orgId": "org-a04cc286cbce",
+      "name": "empty-cluster",
+      "description": "",
+      "status": "pending",
+      "agentStatus": "PENDING",
+      "connectionState": "pending",
+      "connectionCode": "SKYOPS-LEUQ-EFDV",
+      "connectionCodeExpiresAt": 1789474525455,
+      "installKey": "sky_inst_6fe2765005af9917db80dc7faca7bf23244c0345",
+      "installKeyExpiresAt": 1789477225455,
+      "nodeCount": 0,
+      "podCount": 0,
+      "openIncidentCount": 0,
+      "createdAt": 1789473625455,
+      "agentToken": "sky_agent_f32f7e2fc6bf5b4d6e952775af1782de570910aeda547954"
+    },
+    "cls-e22c12edce6a": {
+      "id": "cls-e22c12edce6a",
+      "orgId": "org-710c08a005d0",
+      "name": "no-live-metrics-cluster",
+      "description": "",
+      "status": "HEALTHY",
+      "agentStatus": "CONNECTED",
+      "connectionState": "connected",
+      "connectionCode": "SKYOPS-TGT3-4GL8",
+      "connectionCodeExpiresAt": 1789474525457,
+      "installKey": "sky_inst_740c60c1f5b07a6e82355f793e91d30c79a33066",
+      "installKeyExpiresAt": 1789477225457,
+      "nodeCount": 0,
+      "podCount": 1,
+      "openIncidentCount": 0,
+      "createdAt": 1789473625457,
+      "agentToken": "sky_agent_38cb79305929cadf3370435aa5c64c813ac773649a411ca2",
+      "lastSeenAt": 1789473625457,
+      "lastHeartbeat": 1789473625457,
+      "lastHeartbeatAt": 1789473625457,
+      "connectedAt": 1789473625457,
+      "connectionStatus": "connected"
+    },
+    "cls-4de6564b27e3": {
+      "id": "cls-4de6564b27e3",
+      "orgId": "org-776a3cea2e0b",
+      "name": "history-cluster",
+      "description": "",
+      "status": "pending",
+      "agentStatus": "PENDING",
+      "connectionState": "pending",
+      "connectionCode": "SKYOPS-KFLG-8WGJ",
+      "connectionCodeExpiresAt": 1789474525459,
+      "installKey": "sky_inst_52f3b2712ede1b9220f1697ead8d9cd293d47acb",
+      "installKeyExpiresAt": 1789477225459,
+      "nodeCount": 0,
+      "podCount": 0,
+      "openIncidentCount": 0,
+      "createdAt": 1789473625459,
+      "agentToken": "sky_agent_234b9f967ca76f14afe623f242af26b4ac6b6925acf9663e"
     }
   },
   "clusterTokens": {
@@ -2143,6 +2383,22 @@
     "95aa885345088e9e034ce5be68ce5ee8fc68332a150c704157fe37507707a465": {
       "clusterId": "cls-5c132a82f538",
       "orgId": "org-ea69bc4de6ea"
+    },
+    "03b17ca41a6aad180fe1ad1ea7d331d6896d3a4e8af6fa49abe79889eba86625": {
+      "clusterId": "cls-3e2d79361aa2",
+      "orgId": "org-88159b8d0258"
+    },
+    "486c3dfa998fb423a3ddee9880c26fd9b765f1d331ba3b8b3fc60c3a12a78563": {
+      "clusterId": "cls-ab416920b691",
+      "orgId": "org-a04cc286cbce"
+    },
+    "478cf6e34c237f64b99e5783c77f7c2f20217f51ff4b67a569e459f45fe8cfbd": {
+      "clusterId": "cls-e22c12edce6a",
+      "orgId": "org-710c08a005d0"
+    },
+    "a683609ad6bae5996786a5a4da3cfddd9a2c9e842cb0a1003e3736c3061efab5": {
+      "clusterId": "cls-4de6564b27e3",
+      "orgId": "org-776a3cea2e0b"
     }
   },
   "resources": {
@@ -3756,7 +4012,74 @@
         ]
       }
     ],
-    "cls-5c132a82f538": []
+    "cls-5c132a82f538": [],
+    "cls-3e2d79361aa2": [
+      {
+        "id": "cls-3e2d79361aa2-pod-nginx-test",
+        "clusterId": "cls-3e2d79361aa2",
+        "kind": "Pod",
+        "name": "nginx-test",
+        "namespace": "default",
+        "status": "Pending",
+        "health": "WARNING",
+        "createdAt": 1789473565433,
+        "updatedAt": 1789473625433,
+        "events": [
+          {
+            "id": "evt-1",
+            "timestamp": 1700000000000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 1,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000000000
+          },
+          {
+            "id": "evt-2",
+            "timestamp": 1700000060000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 2,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000060000
+          }
+        ]
+      }
+    ],
+    "cls-ab416920b691": [],
+    "cls-e22c12edce6a": [
+      {
+        "id": "cls-e22c12edce6a-pod-simple-app",
+        "clusterId": "cls-e22c12edce6a",
+        "kind": "Pod",
+        "name": "simple-app",
+        "namespace": "default",
+        "status": "Running",
+        "health": "HEALTHY",
+        "createdAt": 1789473565457,
+        "updatedAt": 1789473625457,
+        "containers": [
+          {
+            "name": "app",
+            "image": "app:v1",
+            "restartCount": 0,
+            "ready": true,
+            "state": "running",
+            "cpuRequest": "100m",
+            "memoryRequest": "128Mi"
+          }
+        ]
+      }
+    ],
+    "cls-4de6564b27e3": []
   },
   "incidents": {
     "SKY-1001": {
@@ -4805,6 +5128,88 @@
         ]
       },
       "updatedAt": 1789470692032
+    },
+    "SKY-1014": {
+      "id": "SKY-1014",
+      "fingerprint": "5a31dbd582e6605d87f13fb39a13e3f17326e4cfe9693f01f5da804eba15d36b",
+      "orgId": "org-88159b8d0258",
+      "clusterId": "cls-3e2d79361aa2",
+      "clusterName": "event-cluster",
+      "namespace": "default",
+      "resourceKind": "Pod",
+      "resourceName": "nginx-test",
+      "incidentType": "PodSchedulingFailed",
+      "title": "Pod nginx-test cannot be scheduled",
+      "severity": "MEDIUM",
+      "confidence": "HIGH",
+      "status": "OPEN",
+      "occurrenceCount": 1,
+      "firstSeenAt": 1789473625451,
+      "lastSeenAt": 1789473625451,
+      "technicalDetails": {
+        "podName": "nginx-test",
+        "reason": "FailedScheduling",
+        "message": "0/3 nodes are available: insufficient cpu",
+        "nodeName": "unknown",
+        "containers": [],
+        "events": [
+          {
+            "id": "evt-1",
+            "timestamp": 1700000000000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 1,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000000000
+          },
+          {
+            "id": "evt-2",
+            "timestamp": 1700000060000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 2,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000060000
+          }
+        ],
+        "resourceUid": "cls-3e2d79361aa2-pod-nginx-test",
+        "observedState": "Pending",
+        "rootCause": "Pod cannot be scheduled because the cluster has insufficient CPU.",
+        "rootCauseCategory": "SCHEDULING",
+        "impact": "A localized component is degraded.",
+        "recommendation": "Adjust workload requests or scheduling constraints, or add compatible cluster capacity.",
+        "recommendedAction": "Adjust workload requests or scheduling constraints, or add compatible cluster capacity.",
+        "confidence": "HIGH",
+        "relatedResources": [],
+        "evidence": [
+          {
+            "source": "kubernetes-status",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu"
+          },
+          {
+            "source": "kubernetes-event",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "timestamp": 1700000000000
+          },
+          {
+            "source": "kubernetes-event",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "timestamp": 1700000060000
+          }
+        ]
+      },
+      "updatedAt": 1789473625451
     }
   },
   "incidentTimeline": {
@@ -5004,6 +5409,19 @@
         },
         "description": "Incident created: Pod nginx-test cannot be scheduled"
       }
+    ],
+    "SKY-1014": [
+      {
+        "id": "evt-8565d3444d8e",
+        "incidentId": "SKY-1014",
+        "timestamp": 1789473625451,
+        "type": "DETECTION",
+        "actor": {
+          "type": "SYSTEM",
+          "name": "SkyOps Engine"
+        },
+        "description": "Incident created: Pod nginx-test cannot be scheduled"
+      }
     ]
   },
   "incidentNotes": {
@@ -5019,14 +5437,15 @@
     "SKY-1010": [],
     "SKY-1011": [],
     "SKY-1012": [],
-    "SKY-1013": []
+    "SKY-1013": [],
+    "SKY-1014": []
   },
   "remediationActions": {},
   "remediations": {},
   "aiAnalyses": {},
   "policies": {},
   "incidentFailures": {},
-  "incidentCounter": 1014,
+  "incidentCounter": 1015,
   "userNotificationSettings": {
     "user_test_123": {
       "incidentEmailEnabled": true,
@@ -5575,7 +5994,2025 @@
         "resolution": "raw",
         "sampleCount": 1
       }
+    ],
+    "cls-3e2d79361aa2": [
+      {
+        "timestamp": 1789473625433,
+        "cpuRequestMillicores": 0,
+        "cpuCapacityMillicores": 0,
+        "cpuRequestedPercent": 0,
+        "cpuLimitPercent": 0,
+        "memoryRequestBytes": 0,
+        "memoryCapacityBytes": 0,
+        "memoryRequestedPercent": 0,
+        "memoryLimitPercent": 0,
+        "isUsageAvailable": false,
+        "source": "spec-derived"
+      }
+    ],
+    "cls-e22c12edce6a": [
+      {
+        "timestamp": 1789473625457,
+        "cpuRequestMillicores": 0,
+        "cpuCapacityMillicores": 0,
+        "cpuRequestedPercent": 0,
+        "cpuLimitPercent": 0,
+        "memoryRequestBytes": 0,
+        "memoryCapacityBytes": 0,
+        "memoryRequestedPercent": 0,
+        "memoryLimitPercent": 0,
+        "isUsageAvailable": false,
+        "source": "spec-derived"
+      }
+    ],
+    "cls-4de6564b27e3": [
+      {
+        "timestamp": 1789473625459,
+        "cpuUsageMillicores": 1500,
+        "cpuRequestMillicores": 2000,
+        "cpuCapacityMillicores": 4000,
+        "memoryUsageBytes": 536870912,
+        "memoryRequestBytes": 1073741824,
+        "memoryCapacityBytes": 2147483648,
+        "isUsageAvailable": true,
+        "source": "METRICS_SERVER"
+      }
     ]
   },
-  "clusterChanges": {}
+  "telemetryStore": {
+    "cls-cb8b31f9d77f": {
+      "clusterId": "cls-cb8b31f9d77f",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789304700000,
+          {
+            "timestamp": 1789304700000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789304400000,
+          {
+            "timestamp": 1789304400000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-8a6a8d376c3c": {
+      "clusterId": "cls-8a6a8d376c3c",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789304700000,
+          {
+            "timestamp": 1789304700000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789304400000,
+          {
+            "timestamp": 1789304400000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-a42ea6a600f7": {
+      "clusterId": "cls-a42ea6a600f7",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789304700000,
+          {
+            "timestamp": 1789304700000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "memoryRequestBytes": 1073741824,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789304400000,
+          {
+            "timestamp": 1789304400000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "memoryRequestBytes": 1073741824,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-d1d91efa4ca1": {
+      "clusterId": "cls-d1d91efa4ca1",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789371600000,
+          {
+            "timestamp": 1789371600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789369200000,
+          {
+            "timestamp": 1789369200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-c4bb04130076": {
+      "clusterId": "cls-c4bb04130076",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789371600000,
+          {
+            "timestamp": 1789371600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789369200000,
+          {
+            "timestamp": 1789369200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-cc4e2a0ffb7a": {
+      "clusterId": "cls-cc4e2a0ffb7a",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789371600000,
+          {
+            "timestamp": 1789371600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789369200000,
+          {
+            "timestamp": 1789369200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-861d673351e0": {
+      "clusterId": "cls-861d673351e0",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789406100000,
+          {
+            "timestamp": 1789406100000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789405200000,
+          {
+            "timestamp": 1789405200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-053f7c974020": {
+      "clusterId": "cls-053f7c974020",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789406100000,
+          {
+            "timestamp": 1789406100000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789405200000,
+          {
+            "timestamp": 1789405200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-c3d1ee6eacb0": {
+      "clusterId": "cls-c3d1ee6eacb0",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789406100000,
+          {
+            "timestamp": 1789406100000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "metrics-api"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789405200000,
+          {
+            "timestamp": 1789405200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "metrics-api"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-4bf121297924": {
+      "clusterId": "cls-4bf121297924",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789407000000,
+          {
+            "timestamp": 1789407000000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789405200000,
+          {
+            "timestamp": 1789405200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-3a95af37df1d": {
+      "clusterId": "cls-3a95af37df1d",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789407000000,
+          {
+            "timestamp": 1789407000000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789405200000,
+          {
+            "timestamp": 1789405200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-c6049ca86817": {
+      "clusterId": "cls-c6049ca86817",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789407000000,
+          {
+            "timestamp": 1789407000000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "metrics-api"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789405200000,
+          {
+            "timestamp": 1789405200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "metrics-api"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-1fbf31ba69f9": {
+      "clusterId": "cls-1fbf31ba69f9",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789410300000,
+          {
+            "timestamp": 1789410300000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789408800000,
+          {
+            "timestamp": 1789408800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-4dd30f14f330": {
+      "clusterId": "cls-4dd30f14f330",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789410300000,
+          {
+            "timestamp": 1789410300000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789408800000,
+          {
+            "timestamp": 1789408800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-c44e17e9e990": {
+      "clusterId": "cls-c44e17e9e990",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789410300000,
+          {
+            "timestamp": 1789410300000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "metrics-api"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789408800000,
+          {
+            "timestamp": 1789408800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "metrics-api"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-8794807941c3": {
+      "clusterId": "cls-8794807941c3",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789410600000,
+          {
+            "timestamp": 1789410600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789408800000,
+          {
+            "timestamp": 1789408800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-5964882b1802": {
+      "clusterId": "cls-5964882b1802",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789410600000,
+          {
+            "timestamp": 1789410600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789408800000,
+          {
+            "timestamp": 1789408800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-8f0cc6591ce1": {
+      "clusterId": "cls-8f0cc6591ce1",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789410600000,
+          {
+            "timestamp": 1789410600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "metrics-api"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789408800000,
+          {
+            "timestamp": 1789408800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "metrics-api"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-70868ab274f7": {
+      "clusterId": "cls-70868ab274f7",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789410600000,
+          {
+            "timestamp": 1789410600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789408800000,
+          {
+            "timestamp": 1789408800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-c08c91c75f8e": {
+      "clusterId": "cls-c08c91c75f8e",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789410600000,
+          {
+            "timestamp": 1789410600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789408800000,
+          {
+            "timestamp": 1789408800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-399a42897c69": {
+      "clusterId": "cls-399a42897c69",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789410600000,
+          {
+            "timestamp": 1789410600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "metrics-api"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789408800000,
+          {
+            "timestamp": 1789408800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "metrics-api"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-f372da6f42ae": {
+      "clusterId": "cls-f372da6f42ae",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789410600000,
+          {
+            "timestamp": 1789410600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789408800000,
+          {
+            "timestamp": 1789408800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-3d1868ae2d35": {
+      "clusterId": "cls-3d1868ae2d35",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789410600000,
+          {
+            "timestamp": 1789410600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789408800000,
+          {
+            "timestamp": 1789408800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-368acf2ab147": {
+      "clusterId": "cls-368acf2ab147",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789410600000,
+          {
+            "timestamp": 1789410600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "metrics-api"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789408800000,
+          {
+            "timestamp": 1789408800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "metrics-api"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-ed50d309c884": {
+      "clusterId": "cls-ed50d309c884",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789410900000,
+          {
+            "timestamp": 1789410900000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789408800000,
+          {
+            "timestamp": 1789408800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-1443202fe64a": {
+      "clusterId": "cls-1443202fe64a",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789410900000,
+          {
+            "timestamp": 1789410900000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789408800000,
+          {
+            "timestamp": 1789408800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-35eba067f127": {
+      "clusterId": "cls-35eba067f127",
+      "rawPoints": [],
+      "rollups5m": [
+        [
+          1789410900000,
+          {
+            "timestamp": 1789410900000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "metrics-api"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789408800000,
+          {
+            "timestamp": 1789408800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "metrics-api"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-ba3aaf11849a": {
+      "clusterId": "cls-ba3aaf11849a",
+      "rawPoints": [
+        {
+          "timestamp": 1789470102913,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "unavailable",
+          "resolution": "raw",
+          "sampleCount": 1,
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789470000000,
+          {
+            "timestamp": 1789470000000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789470000000,
+          {
+            "timestamp": 1789470000000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-ef95336e8935": {
+      "clusterId": "cls-ef95336e8935",
+      "rawPoints": [
+        {
+          "timestamp": 1789470102920,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "unavailable",
+          "resolution": "raw",
+          "sampleCount": 1,
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789470000000,
+          {
+            "timestamp": 1789470000000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789470000000,
+          {
+            "timestamp": 1789470000000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-16d84c23e77b": {
+      "clusterId": "cls-16d84c23e77b",
+      "rawPoints": [
+        {
+          "timestamp": 1789470102922,
+          "cpuUsageMillicores": 1500,
+          "cpuRequestMillicores": 2000,
+          "cpuCapacityMillicores": 4000,
+          "memoryUsageBytes": 536870912,
+          "memoryRequestBytes": 1073741824,
+          "memoryCapacityBytes": 2147483648,
+          "isUsageAvailable": true,
+          "source": "metrics-api",
+          "resolution": "raw",
+          "sampleCount": 1,
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789470000000,
+          {
+            "timestamp": 1789470000000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "metrics-api"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789470000000,
+          {
+            "timestamp": 1789470000000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "metrics-api"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-f224a39ccf75": {
+      "clusterId": "cls-f224a39ccf75",
+      "rawPoints": [
+        {
+          "timestamp": 1789470692029,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "unavailable",
+          "resolution": "raw",
+          "sampleCount": 1,
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789470600000,
+          {
+            "timestamp": 1789470600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789470000000,
+          {
+            "timestamp": 1789470000000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-6a9b88067cfd": {
+      "clusterId": "cls-6a9b88067cfd",
+      "rawPoints": [
+        {
+          "timestamp": 1789470692036,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "unavailable",
+          "resolution": "raw",
+          "sampleCount": 1,
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789470600000,
+          {
+            "timestamp": 1789470600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789470000000,
+          {
+            "timestamp": 1789470000000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "unavailable"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-5c132a82f538": {
+      "clusterId": "cls-5c132a82f538",
+      "rawPoints": [
+        {
+          "timestamp": 1789470692037,
+          "cpuUsageMillicores": 1500,
+          "cpuRequestMillicores": 2000,
+          "cpuCapacityMillicores": 4000,
+          "memoryUsageBytes": 536870912,
+          "memoryRequestBytes": 1073741824,
+          "memoryCapacityBytes": 2147483648,
+          "isUsageAvailable": true,
+          "source": "metrics-api",
+          "resolution": "raw",
+          "sampleCount": 1,
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789470600000,
+          {
+            "timestamp": 1789470600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "metrics-api"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789470000000,
+          {
+            "timestamp": 1789470000000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "metrics-api"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-3e2d79361aa2": {
+      "clusterId": "cls-3e2d79361aa2",
+      "rawPoints": [
+        {
+          "timestamp": 1789473625433,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "spec-derived",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789473600000,
+          {
+            "timestamp": 1789473600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789473600000,
+          {
+            "timestamp": 1789473600000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": [
+        {
+          "timestamp": 1789473625433,
+          "cpuRequestMillicores": 0,
+          "cpuLimitMillicores": 0,
+          "cpuAllocatableMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "memoryRequestBytes": 0,
+          "memoryLimitBytes": 0,
+          "memoryAllocatableBytes": 0,
+          "memoryCapacityBytes": 0,
+          "nodeCount": 0,
+          "podCount": 1
+        }
+      ],
+      "lastSpecSignature": "0:0:0:0:0:0:0:1"
+    },
+    "cls-e22c12edce6a": {
+      "clusterId": "cls-e22c12edce6a",
+      "rawPoints": [
+        {
+          "timestamp": 1789473625457,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "spec-derived",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789473600000,
+          {
+            "timestamp": 1789473600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789473600000,
+          {
+            "timestamp": 1789473600000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": [
+        {
+          "timestamp": 1789473625457,
+          "cpuRequestMillicores": 0,
+          "cpuLimitMillicores": 0,
+          "cpuAllocatableMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "memoryRequestBytes": 0,
+          "memoryLimitBytes": 0,
+          "memoryAllocatableBytes": 0,
+          "memoryCapacityBytes": 0,
+          "nodeCount": 0,
+          "podCount": 1
+        }
+      ],
+      "lastSpecSignature": "0:0:0:0:0:0:0:1"
+    },
+    "cls-4de6564b27e3": {
+      "clusterId": "cls-4de6564b27e3",
+      "rawPoints": [
+        {
+          "timestamp": 1789473625459,
+          "cpuUsageMillicores": 1500,
+          "cpuRequestMillicores": 2000,
+          "cpuCapacityMillicores": 4000,
+          "memoryUsageBytes": 536870912,
+          "memoryRequestBytes": 1073741824,
+          "memoryCapacityBytes": 2147483648,
+          "isUsageAvailable": true,
+          "source": "METRICS_SERVER",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789473600000,
+          {
+            "timestamp": 1789473600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789473600000,
+          {
+            "timestamp": 1789473600000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "specHistory": []
+    }
+  }
 }

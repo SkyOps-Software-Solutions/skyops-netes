@@ -1030,7 +1030,7 @@ export class DataStore {
       if (clusterIds.has(inc.clusterId) || inc.orgId === orgId) {
         totalDetected++;
         if (inc.status === 'RESOLVED') {
-          if ((inc.resolvedAt && inc.resolvedAt >= thirtyDaysAgo) || (inc.lastSeen && inc.lastSeen >= thirtyDaysAgo)) {
+          if ((inc.resolvedAt && inc.resolvedAt >= thirtyDaysAgo) || (inc.lastSeenAt && inc.lastSeenAt >= thirtyDaysAgo)) {
             resolvedLast30Days++;
           }
         } else {
@@ -1047,7 +1047,7 @@ export class DataStore {
     for (const rem of this.remediations.values()) {
       if (clusterIds.has(rem.clusterId) || rem.orgId === orgId) {
         proposalsGenerated++;
-        if (rem.status === 'EXECUTED' || rem.status === 'RESOLVED') {
+        if (rem.status === 'EXECUTED' || rem.status === 'VERIFIED_RESOLVED') {
           proposalsExecuted++;
         } else if (rem.status === 'REJECTED') {
           proposalsRejected++;

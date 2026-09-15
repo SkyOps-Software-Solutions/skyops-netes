@@ -2409,5 +2409,576 @@
     },
     "id": "aud-1789445224421-g6cqrun",
     "timestamp": 1789445224421
+  },
+  {
+    "orgId": "org-f50a0b002923",
+    "actorId": "usr-auto-test",
+    "actorName": "Auto Tester",
+    "actorType": "USER",
+    "action": "organization.create",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "org-f50a0b002923",
+    "result": "SUCCESS",
+    "details": {
+      "name": "Autonomous Test Org",
+      "slug": "autonomous-test-org"
+    },
+    "id": "aud-1789473622123-tw58io5",
+    "timestamp": 1789473622123
+  },
+  {
+    "orgId": "org-31c4677bd0ee",
+    "actorId": "usr-cb-test",
+    "actorName": "CB Tester",
+    "actorType": "USER",
+    "action": "organization.create",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "org-31c4677bd0ee",
+    "result": "SUCCESS",
+    "details": {
+      "name": "CB Org",
+      "slug": "cb-org"
+    },
+    "id": "aud-1789473622135-i1uy021",
+    "timestamp": 1789473622135
+  },
+  {
+    "orgId": "org-b6fe6e763d78",
+    "actorId": "usr-cancel-test",
+    "actorName": "Cancel Tester",
+    "actorType": "USER",
+    "action": "organization.create",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "org-b6fe6e763d78",
+    "result": "SUCCESS",
+    "details": {
+      "name": "Cancel Org",
+      "slug": "cancel-org"
+    },
+    "id": "aud-1789473622141-k41fbjy",
+    "timestamp": 1789473622141
+  },
+  {
+    "orgId": "org-34f1d010a11f",
+    "actorId": "usr-expire-test",
+    "actorName": "Expire Tester",
+    "actorType": "USER",
+    "action": "organization.create",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "org-34f1d010a11f",
+    "result": "SUCCESS",
+    "details": {
+      "name": "Expire Org",
+      "slug": "expire-org"
+    },
+    "id": "aud-1789473622145-hp9mlnl",
+    "timestamp": 1789473622145
+  },
+  {
+    "orgId": "org-88159b8d0258",
+    "actorId": "user-test-obs",
+    "actorName": "Workspace Owner",
+    "actorType": "USER",
+    "action": "organization.create",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "org-88159b8d0258",
+    "result": "SUCCESS",
+    "details": {
+      "name": "Event Org",
+      "slug": "event-org"
+    },
+    "id": "aud-1789473625432-sb4roum",
+    "timestamp": 1789473625432
+  },
+  {
+    "orgId": "org-a04cc286cbce",
+    "actorId": "user-test-obs",
+    "actorName": "Workspace Owner",
+    "actorType": "USER",
+    "action": "organization.create",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "org-a04cc286cbce",
+    "result": "SUCCESS",
+    "details": {
+      "name": "Empty Metrics Org",
+      "slug": "empty-metrics-org"
+    },
+    "id": "aud-1789473625454-oncc4u9",
+    "timestamp": 1789473625454
+  },
+  {
+    "orgId": "org-710c08a005d0",
+    "actorId": "user-test-obs",
+    "actorName": "Workspace Owner",
+    "actorType": "USER",
+    "action": "organization.create",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "org-710c08a005d0",
+    "result": "SUCCESS",
+    "details": {
+      "name": "No Live Metrics Org",
+      "slug": "no-live-metrics-org"
+    },
+    "id": "aud-1789473625456-52vhd4e",
+    "timestamp": 1789473625456
+  },
+  {
+    "orgId": "org-776a3cea2e0b",
+    "actorId": "user-test-obs",
+    "actorName": "Workspace Owner",
+    "actorType": "USER",
+    "action": "organization.create",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "org-776a3cea2e0b",
+    "result": "SUCCESS",
+    "details": {
+      "name": "Persistent History Org",
+      "slug": "persistent-history-org"
+    },
+    "id": "aud-1789473625458-qxzqpgm",
+    "timestamp": 1789473625458
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "owner-a-1789473626144",
+    "actorName": "Owner A",
+    "actorType": "USER",
+    "action": "organization.create",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "org-5e6dc4a80508",
+    "result": "SUCCESS",
+    "details": {
+      "name": "Acme Alpha Corp",
+      "slug": "acme-alpha-corp"
+    },
+    "id": "aud-1789473626145-3ax3fk9",
+    "timestamp": 1789473626145
+  },
+  {
+    "orgId": "org-7e2296a5f1b4",
+    "actorId": "owner-b-1789473626144",
+    "actorName": "Owner B",
+    "actorType": "USER",
+    "action": "organization.create",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "org-7e2296a5f1b4",
+    "result": "SUCCESS",
+    "details": {
+      "name": "Beta Dynamics",
+      "slug": "beta-dynamics"
+    },
+    "id": "aud-1789473626146-6wez857",
+    "timestamp": 1789473626146
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "owner-a-1789473626144",
+    "actorName": "Owner A",
+    "actorType": "USER",
+    "action": "organization.update",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "org-5e6dc4a80508",
+    "result": "SUCCESS",
+    "details": {
+      "name": "Acme Alpha Enterprise",
+      "settings": {
+        "general": {
+          "name": "Acme Alpha Enterprise",
+          "timezone": "America/New_York"
+        },
+        "security": {
+          "enforceMfa": true,
+          "sessionTimeoutMinutes": 720
+        }
+      }
+    },
+    "id": "aud-1789473626148-mwpo7kb",
+    "timestamp": 1789473626148
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "owner-a-1789473626144",
+    "actorName": "Owner A",
+    "actorType": "USER",
+    "action": "member.invite",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "inv-b0b8c66ef2ca61c9",
+    "result": "SUCCESS",
+    "details": {
+      "email": "admin-a@corp.com",
+      "role": "ADMIN"
+    },
+    "id": "aud-1789473626151-5zti0if",
+    "timestamp": 1789473626151
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "admin-a-1789473626144",
+    "actorName": "Admin A",
+    "actorType": "USER",
+    "action": "invitation.accept",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "inv-b0b8c66ef2ca61c9",
+    "result": "SUCCESS",
+    "details": {
+      "email": "admin-a@corp.com",
+      "role": "ADMIN"
+    },
+    "id": "aud-1789473626151-94qnvwn",
+    "timestamp": 1789473626151
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "admin-a-1789473626144",
+    "actorName": "Admin A",
+    "actorType": "USER",
+    "action": "member.invite",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "inv-e3e2ead319611522",
+    "result": "SUCCESS",
+    "details": {
+      "email": "operator-a@corp.com",
+      "role": "OPERATOR"
+    },
+    "id": "aud-1789473626152-7wl7gfg",
+    "timestamp": 1789473626152
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "op-a-1789473626144",
+    "actorName": "Operator A",
+    "actorType": "USER",
+    "action": "invitation.accept",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "inv-e3e2ead319611522",
+    "result": "SUCCESS",
+    "details": {
+      "email": "operator-a@corp.com",
+      "role": "OPERATOR"
+    },
+    "id": "aud-1789473626153-cyv1nkn",
+    "timestamp": 1789473626153
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "admin-a-1789473626144",
+    "actorName": "Admin A",
+    "actorType": "USER",
+    "action": "member.invite",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "inv-71d4593701297d02",
+    "result": "SUCCESS",
+    "details": {
+      "email": "eng-a@corp.com",
+      "role": "ENGINEER"
+    },
+    "id": "aud-1789473626153-li87pio",
+    "timestamp": 1789473626153
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "eng-a-1789473626144",
+    "actorName": "Engineer A",
+    "actorType": "USER",
+    "action": "invitation.accept",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "inv-71d4593701297d02",
+    "result": "SUCCESS",
+    "details": {
+      "email": "eng-a@corp.com",
+      "role": "ENGINEER"
+    },
+    "id": "aud-1789473626154-zj72oju",
+    "timestamp": 1789473626154
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "admin-a-1789473626144",
+    "actorName": "Admin A",
+    "actorType": "USER",
+    "action": "member.invite",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "inv-c99938f39fd39fa9",
+    "result": "SUCCESS",
+    "details": {
+      "email": "view-a@corp.com",
+      "role": "VIEWER"
+    },
+    "id": "aud-1789473626155-q331uy7",
+    "timestamp": 1789473626155
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "view-a-1789473626144",
+    "actorName": "Viewer A",
+    "actorType": "USER",
+    "action": "invitation.accept",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "inv-c99938f39fd39fa9",
+    "result": "SUCCESS",
+    "details": {
+      "email": "view-a@corp.com",
+      "role": "VIEWER"
+    },
+    "id": "aud-1789473626155-6a5ngne",
+    "timestamp": 1789473626155
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "admin-a-1789473626144",
+    "actorName": "Admin A",
+    "actorType": "USER",
+    "action": "member.role_change",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "eng-a-1789473626144",
+    "result": "SUCCESS",
+    "details": {
+      "previousRole": "ENGINEER",
+      "newRole": "OPERATOR",
+      "memberEmail": "eng-a@corp.com"
+    },
+    "id": "aud-1789473626156-ew3l11k",
+    "timestamp": 1789473626156
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "admin-a-1789473626144",
+    "actorName": "Admin A",
+    "actorType": "USER",
+    "action": "member.status_change",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "view-a-1789473626144",
+    "result": "SUCCESS",
+    "details": {
+      "previousStatus": "ACTIVE",
+      "newStatus": "SUSPENDED",
+      "memberEmail": "view-a@corp.com"
+    },
+    "id": "aud-1789473626157-1k5b4t4",
+    "timestamp": 1789473626157
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "admin-a-1789473626144",
+    "actorName": "Admin A",
+    "actorType": "USER",
+    "action": "member.status_change",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "view-a-1789473626144",
+    "result": "SUCCESS",
+    "details": {
+      "previousStatus": "SUSPENDED",
+      "newStatus": "ACTIVE",
+      "memberEmail": "view-a@corp.com"
+    },
+    "id": "aud-1789473626158-3r22b7a",
+    "timestamp": 1789473626158
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "admin-a-1789473626144",
+    "actorName": "Admin A",
+    "actorType": "USER",
+    "action": "member.remove",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "op-a-1789473626144",
+    "result": "SUCCESS",
+    "details": {
+      "memberEmail": "operator-a@corp.com"
+    },
+    "id": "aud-1789473626158-b0pkk2p",
+    "timestamp": 1789473626158
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "admin-a-1789473626144",
+    "actorName": "Admin A",
+    "actorType": "USER",
+    "action": "member.invite",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "inv-c444fbd5e626cb40",
+    "result": "SUCCESS",
+    "details": {
+      "email": "newbie-1789473626144@corp.com",
+      "role": "ENGINEER"
+    },
+    "id": "aud-1789473626160-bze7zez",
+    "timestamp": 1789473626160
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "admin-a-1789473626144",
+    "actorName": "Admin A",
+    "actorType": "USER",
+    "action": "invitation.resend",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "inv-c444fbd5e626cb40",
+    "result": "SUCCESS",
+    "details": {
+      "email": "newbie-1789473626144@corp.com"
+    },
+    "id": "aud-1789473626161-w5u6g0r",
+    "timestamp": 1789473626161
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "joined-1789473626144",
+    "actorName": "Newbie Engineer",
+    "actorType": "USER",
+    "action": "invitation.accept",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "inv-c444fbd5e626cb40",
+    "result": "SUCCESS",
+    "details": {
+      "email": "newbie-1789473626144@corp.com",
+      "role": "OPERATOR"
+    },
+    "id": "aud-1789473626161-yg4az01",
+    "timestamp": 1789473626161
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "admin-a-1789473626144",
+    "actorName": "Admin A",
+    "actorType": "USER",
+    "action": "member.invite",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "inv-4423aad699e9d224",
+    "result": "SUCCESS",
+    "details": {
+      "email": "revokeme-1789473626144@corp.com",
+      "role": "VIEWER"
+    },
+    "id": "aud-1789473626162-ric462g",
+    "timestamp": 1789473626162
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "admin-a-1789473626144",
+    "actorName": "Admin A",
+    "actorType": "USER",
+    "action": "invitation.revoke",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "inv-4423aad699e9d224",
+    "result": "SUCCESS",
+    "details": {
+      "email": "revokeme-1789473626144@corp.com"
+    },
+    "id": "aud-1789473626163-8tbx9ck",
+    "timestamp": 1789473626163
+  },
+  {
+    "orgId": "org-5e6dc4a80508",
+    "actorId": "admin-a-1789473626144",
+    "actorName": "Admin A",
+    "actorType": "USER",
+    "action": "support.ticket_create",
+    "resourceType": "SUPPORT_TICKET",
+    "resourceId": "tkt-d9c3701fc7c4",
+    "result": "SUCCESS",
+    "details": {
+      "subject": "Investigate Ingestion Latency on payments-cluster",
+      "category": "INCIDENT",
+      "severity": "HIGH"
+    },
+    "id": "aud-1789473626164-cxxq762",
+    "timestamp": 1789473626164
+  },
+  {
+    "orgId": "org-7e2296a5f1b4",
+    "actorId": "owner-b-1789473626144",
+    "actorName": "Owner B",
+    "actorType": "USER",
+    "action": "support.ticket_create",
+    "resourceType": "SUPPORT_TICKET",
+    "resourceId": "tkt-315a00b20036",
+    "result": "SUCCESS",
+    "details": {
+      "subject": "General Question on Node Baselines",
+      "category": "GENERAL",
+      "severity": "LOW"
+    },
+    "id": "aud-1789473626165-l3r85ch",
+    "timestamp": 1789473626165
+  },
+  {
+    "orgId": "org-fdb15950a992",
+    "actorId": "user-sre-remediation",
+    "actorName": "SRE Approver",
+    "actorType": "USER",
+    "action": "organization.create",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "org-fdb15950a992",
+    "result": "SUCCESS",
+    "details": {
+      "name": "Remediation Org",
+      "slug": "remediation-org"
+    },
+    "id": "aud-1789473626802-0lvjnkj",
+    "timestamp": 1789473626802
+  },
+  {
+    "orgId": "org-60c0e9005e7b",
+    "actorId": "user-test-1",
+    "actorName": "Workspace Owner",
+    "actorType": "USER",
+    "action": "organization.create",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "org-60c0e9005e7b",
+    "result": "SUCCESS",
+    "details": {
+      "name": "Telemetry Org",
+      "slug": "telemetry-org"
+    },
+    "id": "aud-1789473627498-ftogasl",
+    "timestamp": 1789473627498
+  },
+  {
+    "orgId": "org-660249713303",
+    "actorId": "user-test-sre",
+    "actorName": "SRE Lead",
+    "actorType": "USER",
+    "action": "organization.create",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "org-660249713303",
+    "result": "SUCCESS",
+    "details": {
+      "name": "Reliability Org",
+      "slug": "reliability-org"
+    },
+    "id": "aud-1789473628179-12kz9bh",
+    "timestamp": 1789473628179
+  },
+  {
+    "orgId": "org-0a14d185de79",
+    "actorId": "detail-test",
+    "actorName": "Workspace Owner",
+    "actorType": "USER",
+    "action": "organization.create",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "org-0a14d185de79",
+    "result": "SUCCESS",
+    "details": {
+      "name": "Incident Detail Test Org",
+      "slug": "incident-detail-test-org"
+    },
+    "id": "aud-1789473628205-azdfyn6",
+    "timestamp": 1789473628205
+  },
+  {
+    "orgId": "org-11562ceee333",
+    "actorId": "agent-launch",
+    "actorName": "Workspace Owner",
+    "actorType": "USER",
+    "action": "organization.create",
+    "resourceType": "ORGANIZATION",
+    "resourceId": "org-11562ceee333",
+    "result": "SUCCESS",
+    "details": {
+      "name": "Agent Launch Corp",
+      "slug": "agent-launch-corp"
+    },
+    "id": "aud-1789473628213-3uf7lmp",
+    "timestamp": 1789473628213
   }
 ]

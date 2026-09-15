@@ -34,9 +34,6 @@ export type NavigationTab =
   | 'clusters'
   | 'incidents'
   | 'observability'
-  | 'ai'
-  | 'actions'
-  | 'insights'
   | 'audit'
   | 'settings';
 
@@ -113,23 +110,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'observability',
       label: 'Observability',
       icon: <Radio className="w-4 h-4" />
-    },
-    {
-      id: 'ai',
-      label: 'SkyOps AI',
-      icon: <Sparkles className="w-4 h-4 text-sky-400" />
-    },
-    {
-      id: 'actions',
-      label: 'Actions Hub',
-      icon: <Zap className="w-4 h-4 text-amber-400" />,
-      badge: pendingActionsCount > 0 ? pendingActionsCount : undefined,
-      badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-    },
-    {
-      id: 'insights',
-      label: 'Insights & Hygiene',
-      icon: <Award className="w-4 h-4" />
     },
     {
       id: 'audit',

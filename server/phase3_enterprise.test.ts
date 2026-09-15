@@ -183,6 +183,17 @@ test('Phase 3 Enterprise Foundation: Multi-Tenancy, RBAC, Invitations, and Suppo
       /no longer valid/
     );
 
+    const emailMismatchInvitation = store.inviteMember(orgA.id, `alice-${testRunId}@corp.com`, 'VIEWER', userAdminA);
+    assert.throws(
+      () => store.acceptInvitation(emailMismatchInvitation.token, {
+        id: `bob-${testRunId}`,
+        email: `bob-${testRunId}@corp.com`,
+        name: 'Bob'
+      }),
+      /does not match the authenticated user/
+    );
+    assert.equal(store.verifyInvitation(emailMismatchInvitation.token).valid, true);
+
     // Revoking an invitation test
     const revokeInv = store.inviteMember(orgA.id, `revokeme-${testRunId}@corp.com`, 'VIEWER', userAdminA);
     const revokeSuccess = store.revokeInvitation(orgA.id, revokeInv.id, userAdminA);

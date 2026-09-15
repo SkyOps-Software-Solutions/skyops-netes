@@ -37,6 +37,8 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
+export { app };
+
 // Security & Parsing Middlewares
 app.use(
   cors({
@@ -2061,6 +2063,8 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
-  console.error('Fatal Server Startup Error:', err);
-});
+if (process.env.NODE_ENV !== 'test') {
+  startServer().catch((err) => {
+    console.error('Fatal Server Startup Error:', err);
+  });
+}

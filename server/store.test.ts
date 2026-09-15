@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 process.env.NODE_ENV = 'test';
 import { store, DataStore } from './store';
 import { KubernetesResource } from '../src/types/index';
@@ -31,6 +32,11 @@ test('DataStore Multi-Tenant & Agent Lifecycle Suite', async (t) => {
     // Reject forged / invalid token
     const authForged = store.authenticateAgentToken('sky_agent_invalid_token_123');
     assert.equal(authForged, null);
+
+    (store as any).saveSnapshotSync();
+    const persisted = fs.readFileSync((store as any).storagePath, 'utf8');
+    assert.equal(persisted.includes(rawToken), false);
+    assert.equal(persisted.includes('agentToken'), false);
   });
 
   await t.test('Agent registration and heartbeat lifecycle update cluster diagnostics', () => {

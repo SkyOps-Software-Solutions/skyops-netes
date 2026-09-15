@@ -735,6 +735,9 @@ export class DataStore {
       this.saveSnapshot();
       throw new Error('This invitation has expired');
     }
+    if (user.email !== inv.email) {
+      throw new Error('Invitation email does not match the authenticated user');
+    }
 
     const org = this.orgs.get(inv.orgId);
     if (!org) {
@@ -3183,7 +3186,8 @@ export class DataStore {
     if (!cluster) return [];
     let list = this.resources.get(clusterId) || [];
     if (
-      process.env.NODE_ENV !== 'test' &&
+      process.env.NODE_ENV !== 'production' &&
+      process.env.ENABLE_DEV_SIMULATION === 'true' &&
       cluster.isSimulated &&
       list.length === 0
     ) {

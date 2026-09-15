@@ -177,11 +177,7 @@ export async function requireUserAuth(
   }
 
   const idToken = authHeader.substring(7).trim();
-  const projectId = config.FIREBASE_PROJECT_ID || (config.FIREBASE_TRUSTED_PROJECT_IDS || '').split(',')[0]?.trim();
-
-  if (!projectId) {
-    return res.status(503).json({ error: 'Authentication service is not configured' });
-  }
+  const projectId = config.FIREBASE_PROJECT_ID || (config.FIREBASE_TRUSTED_PROJECT_IDS || '').split(',')[0]?.trim() || '';
 
   try {
     const verifiedUser = await verifyFirebaseIdToken(idToken, projectId);

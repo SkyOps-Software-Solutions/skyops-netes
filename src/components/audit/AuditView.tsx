@@ -132,7 +132,7 @@ export const AuditView: React.FC = () => {
             <div>
               <h1 className="text-xl font-bold text-zinc-100 font-mono tracking-tight">Enterprise Audit & Compliance</h1>
               <p className="text-xs text-zinc-400 font-mono mt-0.5">
-                Immutable, cryptographically verifiable ledger of administrative actions, human approvals, and agent executions.
+                Tenant-scoped record of administrative actions, human approvals, and agent executions.
               </p>
             </div>
           </div>
@@ -178,9 +178,9 @@ export const AuditView: React.FC = () => {
         </div>
         <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 shadow-xs hover:border-zinc-700/60 transition-colors">
           <span className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider">Ledger Integrity</span>
-          <div className="text-xl font-bold font-mono text-emerald-400 mt-1.5 flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>SHA-256 Valid</span>
+          <div className="text-xl font-bold font-mono text-zinc-300 mt-1.5 flex items-center gap-1.5">
+            <Shield className="w-4 h-4 text-zinc-400 shrink-0" />
+            <span>Not cryptographically verified</span>
           </div>
         </div>
         <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 shadow-xs hover:border-zinc-700/60 transition-colors">

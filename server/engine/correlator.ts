@@ -2,9 +2,132 @@ import { KubernetesResource } from '../../src/types/index';
 import {
   CorrelatedSignal,
   CorrelatedTimelineEvent,
+  DetectedResourceChange,
   ResourceRelationship,
   SignalCategory
 } from './types';
+
+/**
+ * Formats temporal distance from event timestamp relative to incident or baseline reference.
+ */
+export function formatTemporalDistance(timestamp: number, baseTimestamp: number): string {
+  const diffMs = timestamp - baseTimestamp;
+  const absSec = Math.round(Math.abs(diffMs) / 1000);
+  if (absSec < 5) return 'at onset';
+  const mins = Math.floor(absSec / 60);
+  const secs = absSec % 60;
+  const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+  return diffMs < 0 ? `-${timeStr} before onset` : `+${timeStr} after onset`;
+}
+
+/**
+ * Detects observable configuration and operational state changes for an incident's target.
+ * Never invents previous states: if prior observation is unavailable, sets oldValue to 'UNKNOWN'.
+ */
+export function detectResourceChanges(
+  target: KubernetesResource,
+  allResources: KubernetesResource[]
+): DetectedResourceChange[] {
+  const changes: DetectedResourceChange[] = [];
+  const now = target.updatedAt || Date.now();
+
+  // 1. Container Image Changes & Waiting State
+  if (target.containers && target.containers.length > 0) {
+    for (const c of target.containers) {
+      if (c.image) {
+        changes.push({
+          changeId: `chg-img-${target.name}-${c.name}`,
+          resourceKind: target.kind,
+          resourceName: target.name,
+          namespace: target.namespace,
+          field: `containers[${c.name}].image`,
+          oldValue: 'UNKNOWN', // Zero-fabrication: unrecorded prior version is explicit UNKNOWN
+          newValue: c.image,
+          timestamp: target.createdAt || now,
+          confidence: 0.95,
+          evidence: `Current container specification image is "${c.image}"`
+        });
+      }
+
+      if (c.waitingReason) {
+        changes.push({
+          changeId: `chg-wait-${target.name}-${c.name}`,
+          resourceKind: target.kind,
+          resourceName: target.name,
+          namespace: target.namespace,
+          field: `containers[${c.name}].state.waiting`,
+          oldValue: 'Running',
+          newValue: c.waitingReason,
+          timestamp: now,
+          confidence: 0.99,
+          evidence: `Container transitioned into waiting state: ${c.waitingReason}${c.waitingMessage ? ` (${c.waitingMessage})` : ''}`
+        });
+      }
+
+      if (c.restartCount !== undefined && c.restartCount > 0) {
+        changes.push({
+          changeId: `chg-restarts-${target.name}-${c.name}`,
+          resourceKind: target.kind,
+          resourceName: target.name,
+          namespace: target.namespace,
+          field: `containers[${c.name}].restartCount`,
+          oldValue: 0,
+          newValue: c.restartCount,
+          timestamp: now,
+          confidence: 1.0,
+          evidence: `Container restart counter incremented to ${c.restartCount}`
+        });
+      }
+    }
+  }
+
+  // 2. Controller Replica Changes
+  if (['Deployment', 'StatefulSet', 'DaemonSet'].includes(target.kind)) {
+    const desired = target.specSummary?.replicas ?? target.statusSummary?.desiredNumberScheduled;
+    const ready = target.statusSummary?.readyReplicas ?? target.statusSummary?.numberReady ?? 0;
+    if (desired !== undefined && desired !== ready) {
+      changes.push({
+        changeId: `chg-replicas-${target.name}`,
+        resourceKind: target.kind,
+        resourceName: target.name,
+        namespace: target.namespace,
+        field: 'status.readyReplicas',
+        oldValue: String(desired),
+        newValue: String(ready),
+        timestamp: now,
+        confidence: 0.95,
+        evidence: `Replica deficit observed: ${ready}/${desired} available`
+      });
+    }
+  }
+
+  // 3. Scheduled Node Conditions
+  const nodeName = target.specSummary?.nodeName || (target as any).nodeName;
+  if (nodeName) {
+    const nodeResource = allResources.find(
+      (r) => r.kind === 'Node' && r.name.toLowerCase() === nodeName.toLowerCase()
+    );
+    if (nodeResource && nodeResource.conditions) {
+      for (const cond of nodeResource.conditions) {
+        if (['MemoryPressure', 'DiskPressure', 'PIDPressure'].includes(cond.type) && cond.status === 'True') {
+          changes.push({
+            changeId: `chg-node-cond-${nodeName}-${cond.type}`,
+            resourceKind: 'Node',
+            resourceName: nodeName,
+            field: `conditions.${cond.type}`,
+            oldValue: 'False',
+            newValue: 'True',
+            timestamp: now,
+            confidence: 0.99,
+            evidence: `Host node ${nodeName} transitioned to ${cond.type}=True: ${cond.message || cond.reason || ''}`
+          });
+        }
+      }
+    }
+  }
+
+  return changes;
+}
 
 /**
  * Builds the comprehensive Kubernetes relationship graph around an incident's target resource.
@@ -506,35 +629,58 @@ export function extractCorrelatedSignals(
 }
 
 /**
- * Merges events, state transitions, and diagnostic logs into a clean,
- * chronologically sorted timeline with full 7-tier provenance tagging.
+ * Merges events, state transitions, diagnostic logs, and configuration changes into a clean,
+ * chronologically sorted timeline with full 7-tier provenance tagging, temporal distance, and relationship tags.
  */
 export function buildCorrelatedTimeline(
   target: KubernetesResource,
   allResources: KubernetesResource[],
-  signals: CorrelatedSignal[]
+  signals: CorrelatedSignal[],
+  incidentOnsetTimestamp?: number
 ): CorrelatedTimelineEvent[] {
   const timeline: CorrelatedTimelineEvent[] = [];
-  const targetNs = target.namespace || 'default';
+  const baseTimestamp = incidentOnsetTimestamp || target.createdAt || Date.now();
 
-  // Include target resource events
+  // 1. Include target resource events
   if (target.events && target.events.length > 0) {
     for (let idx = 0; idx < target.events.length; idx++) {
       const e = target.events[idx];
+      const ts = e.timestamp || target.createdAt || Date.now();
       timeline.push({
-        id: `event-${idx}-${e.reason}-${e.timestamp || 0}`,
-        timestamp: e.timestamp || target.createdAt || Date.now(),
+        id: `event-${idx}-${e.reason}-${ts}`,
+        timestamp: ts,
         title: `${e.reason} (${e.type || 'Warning'})`,
         category: 'FACT',
         description: e.message,
         source: 'kubelet',
         resourceKind: target.kind,
-        resourceName: target.name
+        resourceName: target.name,
+        temporalDistance: formatTemporalDistance(ts, baseTimestamp),
+        relationship: 'OBSERVED',
+        evidenceConfidence: 0.99
       });
     }
   }
 
-  // Include correlated node events if pod is scheduled on a node
+  // 2. Include detected configuration/operational changes
+  const changes = detectResourceChanges(target, allResources);
+  for (const chg of changes) {
+    timeline.push({
+      id: `change-${chg.changeId}`,
+      timestamp: chg.timestamp,
+      title: `Change: ${chg.field}`,
+      category: 'FACT',
+      description: chg.evidence,
+      source: 'spec',
+      resourceKind: chg.resourceKind,
+      resourceName: chg.resourceName,
+      temporalDistance: formatTemporalDistance(chg.timestamp, baseTimestamp),
+      relationship: 'CORRELATED',
+      evidenceConfidence: chg.confidence
+    });
+  }
+
+  // 3. Include correlated node events if pod is scheduled on a node
   const nodeName = target.specSummary?.nodeName || (target as any).nodeName;
   if (nodeName) {
     const nodeResource = allResources.find(
@@ -544,22 +690,26 @@ export function buildCorrelatedTimeline(
       for (let idx = 0; idx < nodeResource.events.length; idx++) {
         const ne = nodeResource.events[idx];
         if (ne.type === 'Warning' || ne.reason === 'NodeNotReady' || ne.reason === 'EvictionThresholdMet') {
+          const ts = ne.timestamp || Date.now();
           timeline.push({
             id: `node-event-${idx}-${ne.reason}`,
-            timestamp: ne.timestamp || Date.now(),
+            timestamp: ts,
             title: `Node ${nodeName}: ${ne.reason}`,
             category: 'FACT',
             description: ne.message,
             source: 'kubelet-node',
             resourceKind: 'Node',
-            resourceName: nodeName
+            resourceName: nodeName,
+            temporalDistance: formatTemporalDistance(ts, baseTimestamp),
+            relationship: 'CORRELATED',
+            evidenceConfidence: 0.88
           });
         }
       }
     }
   }
 
-  // Include key inferred or derived facts from signals
+  // 4. Include key inferred or derived facts from signals
   for (const sig of signals) {
     if (sig.category === 'INFERENCE' || (sig.category === 'DERIVED_FACT' && (sig.weight || 0) >= 4)) {
       timeline.push({
@@ -570,7 +720,10 @@ export function buildCorrelatedTimeline(
         description: sig.description,
         source: sig.source,
         resourceKind: sig.resourceKind,
-        resourceName: sig.resourceName
+        resourceName: sig.resourceName,
+        temporalDistance: formatTemporalDistance(sig.timestamp, baseTimestamp),
+        relationship: sig.category === 'INFERENCE' ? 'LIKELY_RELATED' : 'CORRELATED',
+        evidenceConfidence: sig.category === 'INFERENCE' ? 0.75 : 0.9
       });
     }
   }

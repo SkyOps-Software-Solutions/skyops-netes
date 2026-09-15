@@ -94,6 +94,35 @@ export interface CorrelatedTimelineEvent {
   source: string;
   resourceKind: string;
   resourceName: string;
+  temporalDistance?: string;
+  relationship?: 'OBSERVED' | 'CORRELATED' | 'LIKELY_RELATED' | 'PLAUSIBLE' | 'UNKNOWN';
+  evidenceConfidence?: number;
+}
+
+export interface DetectedResourceChange {
+  changeId: string;
+  resourceKind: string;
+  resourceName: string;
+  namespace?: string;
+  field: string;
+  oldValue: string | number | boolean | null;
+  newValue: string | number | boolean | null;
+  timestamp: number;
+  confidence: number;
+  evidence: string;
+}
+
+export interface InvestigationQuestionResult {
+  question: string;
+  answer: string;
+  category: string;
+  confidence: number;
+  confidenceLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+  supportingEvidence: EvidencePoint[];
+  facts: string[];
+  inferences: string[];
+  unknowns: string[];
+  recommendedNextSteps: string[];
 }
 
 export interface ExplainabilityReport {
@@ -146,8 +175,12 @@ export interface IntelligenceAnalysis {
   signals: CorrelatedSignal[];
   relationships: ResourceRelationship[];
   correlatedTimeline: CorrelatedTimelineEvent[];
+  changes?: DetectedResourceChange[];
   explainability: ExplainabilityReport;
   recommendation: string;
   executableProposal?: ExecutableActionProposal;
   isUnknownOrInconclusive: boolean;
+  customerImpact?: string;
+  whatRemainsUnknown?: string[];
+  whatShouldHappenNext?: string[];
 }

@@ -62,17 +62,21 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
     return `${diffHours}h ago`;
   };
 
-  const filteredIncidents = incidents.filter((inc) => {
+  const safeIncidents = Array.isArray(incidents) ? incidents : [];
+  const safeClusters = Array.isArray(clusters) ? clusters : [];
+
+  const filteredIncidents = safeIncidents.filter((inc) => {
+    if (!inc) return false;
     // Search
-    const q = searchTerm.toLowerCase();
+    const q = (searchTerm || '').toLowerCase().trim();
     const matchesSearch =
-      !searchTerm ||
-      inc.id.toLowerCase().includes(q) ||
-      inc.title.toLowerCase().includes(q) ||
-      inc.resourceName.toLowerCase().includes(q) ||
-      inc.namespace.toLowerCase().includes(q) ||
-      inc.clusterName.toLowerCase().includes(q) ||
-      inc.incidentType.toLowerCase().includes(q);
+      !q ||
+      (inc.id && inc.id.toLowerCase().includes(q)) ||
+      (inc.title && inc.title.toLowerCase().includes(q)) ||
+      (inc.resourceName && inc.resourceName.toLowerCase().includes(q)) ||
+      (inc.namespace && inc.namespace.toLowerCase().includes(q)) ||
+      (inc.clusterName && inc.clusterName.toLowerCase().includes(q)) ||
+      (inc.incidentType && inc.incidentType.toLowerCase().includes(q));
 
     // Status
     const matchesStatus = statusFilter === 'ALL' || inc.status === statusFilter;
@@ -83,7 +87,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
     // Cluster
     const matchesCluster = clusterFilter === 'ALL' || inc.clusterId === clusterFilter;
 
-    return matchesSearch && matchesStatus && matchesSeverity && matchesCluster;
+    return Boolean(matchesSearch && matchesStatus && matchesSeverity && matchesCluster);
   });
 
   const activeFiltersCount =
@@ -189,9 +193,9 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
               className="w-full px-3 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-500"
             >
               <option value="ALL">Cluster: All Clusters</option>
-              {clusters.map((c) => (
+              {safeClusters.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name}
+                  {c.name || c.id}
                 </option>
               ))}
             </select>
@@ -215,9 +219,9 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
       {/* Incidents Table */}
       {filteredIncidents.length === 0 ? (
         <EmptyState
-          title={incidents.length === 0 ? 'No active incidents' : 'No matching incidents'}
+          title={safeIncidents.length === 0 ? 'No active incidents' : 'No matching incidents'}
           description={
-            incidents.length === 0
+            safeIncidents.length === 0
               ? 'SkyOps has not detected any failure conditions on your clusters.'
               : 'Try clearing your active filters or modifying search keywords.'
           }
@@ -247,7 +251,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                   >
                     <td className="px-5 py-3.5">
                       <span className="font-bold text-sky-400 font-mono">{inc.id}</span>
-                      <div className="text-[10px] text-zinc-500 font-sans mt-0.5">{inc.incidentType}</div>
+                      <div className="text-[10px] text-zinc-500 font-sans mt-0.5">{inc.incidentType || 'Failure'}</div>
                     </td>
 
                     <td className="px-5 py-3.5">
@@ -255,7 +259,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                     </td>
 
                     <td className="px-5 py-3.5 max-w-sm">
-                      <div className="font-semibold text-zinc-100 truncate">{inc.title}</div>
+                      <div className="font-semibold text-zinc-100 truncate">{inc.title || 'Incident Anomaly'}</div>
                       {inc.technicalDetails?.reason && (
                         <div className="text-[11px] text-zinc-500 truncate mt-0.5">
                           Reason: {inc.technicalDetails.reason}
@@ -264,10 +268,10 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                     </td>
 
                     <td className="px-5 py-3.5">
-                      <div className="text-zinc-300 font-medium">{inc.clusterName}</div>
+                      <div className="text-zinc-300 font-medium">{inc.clusterName || inc.clusterId || 'Cluster'}</div>
                       <div className="text-[11px] text-zinc-500 truncate">
-                        ns: <strong className="text-zinc-400">{inc.namespace}</strong> • {inc.resourceKind}/
-                        {inc.resourceName}
+                        ns: <strong className="text-zinc-400">{inc.namespace || 'default'}</strong> • {inc.resourceKind || 'Workload'}/
+                        {inc.resourceName || 'Resource'}
                       </div>
                     </td>
 

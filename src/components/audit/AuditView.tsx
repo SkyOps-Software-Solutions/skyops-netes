@@ -100,17 +100,24 @@ export const AuditView: React.FC = () => {
       window.URL.revokeObjectURL(downloadUrl);
     } catch (err) {
       console.error('Export error:', err);
-      alert('Failed to export audit logs. Please try again.');
     }
   };
 
-  const formatTime = (ts: number) => {
-    const d = new Date(ts);
-    return {
-      date: d.toLocaleDateString(),
-      time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      iso: d.toISOString()
-    };
+  const formatTime = (ts?: number | string | null) => {
+    if (!ts) return { date: '—', time: '—', iso: '' };
+    const num = typeof ts === 'string' ? Date.parse(ts) : Number(ts);
+    if (isNaN(num)) return { date: '—', time: '—', iso: '' };
+    const d = new Date(num);
+    if (isNaN(d.getTime())) return { date: '—', time: '—', iso: '' };
+    try {
+      return {
+        date: d.toLocaleDateString(),
+        time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        iso: d.toISOString()
+      };
+    } catch {
+      return { date: '—', time: '—', iso: '' };
+    }
   };
 
   return (
@@ -179,7 +186,7 @@ export const AuditView: React.FC = () => {
         <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 shadow-xs hover:border-zinc-700/60 transition-colors">
           <span className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider">Autonomous Events</span>
           <div className="text-xl font-bold font-mono text-sky-400 mt-1.5">
-            {logs.filter((l) => l.actorType === 'AGENT').length} (Page)
+            {(logs || []).filter((l) => l && l.actorType === 'AGENT').length} (Page)
           </div>
         </div>
         <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 shadow-xs hover:border-zinc-700/60 transition-colors">

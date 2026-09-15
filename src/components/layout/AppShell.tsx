@@ -12,6 +12,7 @@ import { IncidentsView } from '../incidents/IncidentsView';
 import { OverviewView } from '../overview/OverviewView';
 import { SettingsView } from '../settings/SettingsView';
 import { AuditView } from '../audit/AuditView';
+import { ErrorBoundary } from '../common/ErrorBoundary';
 import { NavigationTab, Sidebar } from './Sidebar';
 
 interface AppShellProps {
@@ -281,21 +282,23 @@ export const AppShell: React.FC<AppShellProps> = ({
         {/* View Routing */}
         <div className="flex-1">
           {activeTab === 'overview' && (
-            <OverviewView
-              metrics={metrics}
-              clusters={clusters}
-              recentIncidents={incidents}
-              recentActivity={recentActivity}
-              onSelectIncident={handleSelectIncident}
-              onSelectCluster={handleSelectCluster}
-              onOpenAddCluster={() => setIsAddClusterOpen(true)}
-              onRefresh={handleManualRefresh}
-              loading={loading || isRefreshing}
-            />
+            <ErrorBoundary fallbackTitle="Overview Diagnostics">
+              <OverviewView
+                metrics={metrics}
+                clusters={clusters}
+                recentIncidents={incidents}
+                recentActivity={recentActivity}
+                onSelectIncident={handleSelectIncident}
+                onSelectCluster={handleSelectCluster}
+                onOpenAddCluster={() => setIsAddClusterOpen(true)}
+                onRefresh={handleManualRefresh}
+                loading={loading || isRefreshing}
+              />
+            </ErrorBoundary>
           )}
 
           {activeTab === 'clusters' && (
-            <>
+            <ErrorBoundary fallbackTitle="Cluster Management">
               {selectedClusterId ? (
                 <ClusterDetailView
                   clusterId={selectedClusterId}
@@ -320,11 +323,11 @@ export const AppShell: React.FC<AppShellProps> = ({
                   loading={loading || isRefreshing}
                 />
               )}
-            </>
+            </ErrorBoundary>
           )}
 
           {activeTab === 'incidents' && (
-            <>
+            <ErrorBoundary fallbackTitle="Incidents Management">
               {selectedIncidentId ? (
                 <IncidentDetailView
                   incidentId={selectedIncidentId}
@@ -340,19 +343,23 @@ export const AppShell: React.FC<AppShellProps> = ({
                   loading={loading || isRefreshing}
                 />
               )}
-            </>
+            </ErrorBoundary>
           )}
 
           {activeTab === 'audit' && (
-            <AuditView />
+            <ErrorBoundary fallbackTitle="Audit & Compliance Ledger">
+              <AuditView />
+            </ErrorBoundary>
           )}
 
           {activeTab === 'settings' && (
-            <SettingsView
-              clusters={clusters}
-              onSelectIncident={handleSelectIncident}
-              onRefresh={handleManualRefresh}
-            />
+            <ErrorBoundary fallbackTitle="Settings & Configuration">
+              <SettingsView
+                clusters={clusters}
+                onSelectIncident={handleSelectIncident}
+                onRefresh={handleManualRefresh}
+              />
+            </ErrorBoundary>
           )}
         </div>
       </main>

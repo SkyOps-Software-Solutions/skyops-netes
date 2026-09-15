@@ -118,6 +118,11 @@ export class SkyOpsAIService {
           if (analysis.confidence < deterministicIntelligence.confidence) {
             analysis.confidence = Math.max(analysis.confidence, deterministicIntelligence.confidence);
           }
+        } else if (deterministicIntelligence.isUnknownOrInconclusive) {
+          // Zero-fabrication: prevent AI hallucinating certainty when cluster evidence is insufficient
+          analysis.confidence = Math.min(analysis.confidence, 0.35);
+          analysis.rootCause = deterministicIntelligence.rootCause;
+          analysis.confidenceExplanation = deterministicIntelligence.confidenceExplanation;
         }
         analysis.intelligence = deterministicIntelligence;
       } catch (err: any) {

@@ -19,7 +19,7 @@ import {
   Webhook,
   Zap
 } from 'lucide-react';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { Cluster } from '../../types/index';
@@ -39,10 +39,18 @@ type SettingsTab = 'org' | 'notifications' | 'webhooks' | 'usage' | 'system' | '
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIncident, onRefresh }) => {
   const { currentOrg, members, role, user } = useAuth();
+  const safeClusters = Array.isArray(clusters) ? clusters : [];
+  const safeMembers = Array.isArray(members) ? members : [];
   const [activeTab, setActiveTab] = useState<SettingsTab>('org');
-  const [selectedClusterId, setSelectedClusterId] = useState<string>(clusters[0]?.id || '');
+  const [selectedClusterId, setSelectedClusterId] = useState<string>(safeClusters[0]?.id || '');
   const [simulating, setSimulating] = useState(false);
   const [simResult, setSimResult] = useState<{ success: boolean; message: string; incidentId?: string } | null>(null);
+
+  useEffect(() => {
+    if (!selectedClusterId && safeClusters.length > 0) {
+      setSelectedClusterId(safeClusters[0].id);
+    }
+  }, [safeClusters, selectedClusterId]);
 
   const handleSimulate = async (
     scenario:
@@ -196,7 +204,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
           <div className="p-6 rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-4">
             <h3 className="text-xs font-bold text-zinc-200 font-mono uppercase tracking-wider flex items-center gap-2">
               <Users className="w-4 h-4 text-sky-400" />
-              Team Members & Access Roles ({members.length})
+              Team Members & Access Roles ({safeMembers.length})
             </h3>
 
             <div className="bg-zinc-950 border border-zinc-800/80 rounded-lg overflow-hidden">
@@ -210,22 +218,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/60 text-zinc-300">
-                  {members.map((m) => (
-                    <tr key={m.userId} className="hover:bg-zinc-900/40">
-                      <td className="px-4 py-3 font-semibold text-zinc-200">{m.name}</td>
-                      <td className="px-4 py-3 text-zinc-400">{m.email}</td>
-                      <td className="px-4 py-3">
-                        <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700 text-[10px]">
-                          {m.role}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1 text-emerald-400 text-[11px]">
-                          <CheckCircle2 className="w-3 h-3" /> Active
-                        </span>
+                  {safeMembers.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-6 text-center text-zinc-500">
+                        No team members registered in this organization.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    safeMembers.map((m) => (
+                      <tr key={m.userId} className="hover:bg-zinc-900/40">
+                        <td className="px-4 py-3 font-semibold text-zinc-200">{m.name}</td>
+                        <td className="px-4 py-3 text-zinc-400">{m.email}</td>
+                        <td className="px-4 py-3">
+                          <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700 text-[10px]">
+                            {m.role}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center gap-1 text-emerald-400 text-[11px]">
+                            <CheckCircle2 className="w-3 h-3" /> Active
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -266,9 +282,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
                 onChange={(e) => setSelectedClusterId(e.target.value)}
                 className="px-3 py-1 bg-zinc-950 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-sky-500 font-semibold"
               >
-                {clusters.map((c) => (
+                {safeClusters.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name}
+                    {c.name || c.id}
                   </option>
                 ))}
               </select>

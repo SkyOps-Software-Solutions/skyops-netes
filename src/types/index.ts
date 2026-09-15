@@ -653,12 +653,16 @@ export interface MetricHistoryPoint {
   cpuUsageMillicores?: number;
   cpuRequestMillicores: number;
   cpuCapacityMillicores: number;
+  cpuAllocatableMillicores?: number;
+  cpuLimitMillicores?: number;
   cpuRequestedPercent?: number;
   cpuLimitPercent?: number;
   cpuUsagePercent?: number;
   memoryUsageBytes?: number;
   memoryRequestBytes: number;
   memoryCapacityBytes: number;
+  memoryAllocatableBytes?: number;
+  memoryLimitBytes?: number;
   memoryRequestedPercent?: number;
   memoryLimitPercent?: number;
   memoryUsagePercent?: number;
@@ -681,11 +685,11 @@ export interface SpecChangePoint {
   timestamp: number;
   cpuRequestMillicores: number;
   cpuLimitMillicores?: number;
-  cpuAllocatableMillicores: number;
+  cpuAllocatableMillicores?: number;
   cpuCapacityMillicores: number;
   memoryRequestBytes: number;
   memoryLimitBytes?: number;
-  memoryAllocatableBytes: number;
+  memoryAllocatableBytes?: number;
   memoryCapacityBytes: number;
   nodeCount: number;
   podCount: number;
@@ -734,28 +738,52 @@ export interface ResourceBaseline {
   calculatedAt: number;
   windowRange: string;
   sampleSize: number;
+  status?: 'AVAILABLE' | 'INSUFFICIENT_EVIDENCE' | 'UNAVAILABLE';
+  quality?: 'HIGH' | 'MEDIUM' | 'LOW' | 'INSUFFICIENT_HISTORY';
+  confidence?: 'HIGH' | 'MEDIUM' | 'LOW';
+  explanation?: string;
   cpu: {
     avgPercent?: number;
     p95Percent?: number;
     maxPercent?: number;
+    minPercent?: number;
     stdDevPercent?: number;
+    expectedPercent?: number;
+    normalRange?: [number, number];
   };
   memory: {
     avgPercent?: number;
     p95Percent?: number;
     maxPercent?: number;
+    minPercent?: number;
     stdDevPercent?: number;
+    expectedPercent?: number;
+    normalRange?: [number, number];
   };
 }
 
 export interface TelemetryAnomaly {
-  type: 'CPU_SPIKE' | 'MEMORY_LEAK_TREND' | 'NEAR_SATURATION' | 'SPEC_OVERCOMMITMENT' | 'STALE_METRICS';
+  id?: string;
+  type: 'CPU_SPIKE' | 'MEMORY_LEAK_TREND' | 'NEAR_SATURATION' | 'SPEC_OVERCOMMITMENT' | 'STALE_METRICS' | 'RESTART_ACCELERATION' | 'NODE_PRESSURE' | 'WORKLOAD_DEGRADATION';
+  status?: 'NORMAL' | 'ANOMALOUS' | 'UNKNOWN' | 'INSUFFICIENT_EVIDENCE';
   severity: 'INFO' | 'WARNING' | 'CRITICAL';
   message: string;
   detectedAt: number;
-  metric: 'cpu' | 'memory' | 'all';
+  metric: 'cpu' | 'memory' | 'restarts' | 'nodes' | 'all';
   currentValue?: number;
+  observedValue?: number | string;
+  expectedValue?: number | string;
   threshold?: number;
+  deviationReason?: string;
+  timeWindow?: string;
+  source?: string;
+  confidence?: number;
+  evidenceReferences?: string[];
+  resource?: {
+    kind: string;
+    name: string;
+    namespace?: string;
+  };
 }
 
 export interface OverviewMetrics {
@@ -1085,6 +1113,35 @@ export interface CorrelatedTimelineEvent {
   source: string;
   resourceKind: string;
   resourceName: string;
+  temporalDistance?: string; // e.g. "-12m before incident", "+15s after detection"
+  relationship?: 'OBSERVED' | 'CORRELATED' | 'LIKELY_RELATED' | 'PLAUSIBLE' | 'UNKNOWN';
+  evidenceConfidence?: number;
+}
+
+export interface DetectedResourceChange {
+  changeId: string;
+  resourceKind: string;
+  resourceName: string;
+  namespace?: string;
+  field: string;
+  oldValue: string | number | boolean | null;
+  newValue: string | number | boolean | null;
+  timestamp: number;
+  confidence: number;
+  evidence: string;
+}
+
+export interface InvestigationQuestionResult {
+  question: string;
+  answer: string;
+  category: string;
+  confidence: number;
+  confidenceLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+  supportingEvidence: EvidencePoint[];
+  facts: string[];
+  inferences: string[];
+  unknowns: string[];
+  recommendedNextSteps: string[];
 }
 
 export interface ExplainabilityReport {
@@ -1137,10 +1194,14 @@ export interface IntelligenceAnalysis {
   signals: CorrelatedSignal[];
   relationships: ResourceRelationship[];
   correlatedTimeline: CorrelatedTimelineEvent[];
+  changes?: DetectedResourceChange[];
   explainability: ExplainabilityReport;
   recommendation: string;
   executableProposal?: ExecutableActionProposal;
   isUnknownOrInconclusive: boolean;
+  customerImpact?: string;
+  whatRemainsUnknown?: string[];
+  whatShouldHappenNext?: string[];
 }
 
 

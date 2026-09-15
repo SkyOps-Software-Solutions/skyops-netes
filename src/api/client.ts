@@ -24,7 +24,9 @@ import {
   PodLogsResponse,
   TelemetryResponse,
   TelemetryQueryOptions,
-  ResourceBaseline
+  ResourceBaseline,
+  TelemetryAnomaly,
+  InvestigationQuestionResult
 } from '../types/index';
 
 /**
@@ -405,6 +407,11 @@ class ApiClient {
     return this.request<{ baseline: ResourceBaseline }>(`/api/v1/clusters/${clusterId}/telemetry/baseline?range=${encodeURIComponent(range)}`);
   }
 
+  async getTelemetryAnomalies(clusterId: string): Promise<TelemetryAnomaly[]> {
+    const data = await this.request<{ anomalies: TelemetryAnomaly[] }>(`/api/v1/clusters/${clusterId}/telemetry/anomalies`);
+    return Array.isArray(data.anomalies) ? data.anomalies : [];
+  }
+
   // --- First-Class Kubernetes Events Observability ---
   async getClusterEvents(
     clusterId: string,
@@ -496,6 +503,19 @@ class ApiClient {
 
   async getIncidentIntelligence(id: string): Promise<{ intelligence: IntelligenceAnalysis }> {
     return this.request<{ intelligence: IntelligenceAnalysis }>(`/api/v1/incidents/${id}/intelligence`);
+  }
+
+  async investigateIncident(
+    id: string,
+    question: string
+  ): Promise<{ result: InvestigationQuestionResult; intelligence: IntelligenceAnalysis }> {
+    return this.request<{ result: InvestigationQuestionResult; intelligence: IntelligenceAnalysis }>(
+      `/api/v1/incidents/${id}/investigate`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ question })
+      }
+    );
   }
 
   async getIncidentAIAnalysis(id: string): Promise<{ analysis: SkyOpsAIAnalysis; remediation?: StructuredRemediation }> {

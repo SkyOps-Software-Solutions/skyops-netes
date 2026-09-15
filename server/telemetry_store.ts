@@ -533,19 +533,40 @@ export class TelemetryStore {
     const calcStats = (vals: number[]) => {
       if (vals.length === 0) return {};
       const avg = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+      const min = Math.min(...vals);
       const max = Math.max(...vals);
       const sorted = [...vals].sort((a, b) => a - b);
       const p95 = sorted[Math.floor(sorted.length * 0.95)] ?? max;
       const variance = vals.reduce((acc, val) => acc + Math.pow(val - avg, 2), 0) / vals.length;
       const stdDev = Math.round(Math.sqrt(variance));
-      return { avgPercent: avg, maxPercent: max, p95Percent: p95, stdDevPercent: stdDev };
+      const normalMin = Math.max(0, avg - 2 * stdDev);
+      const normalMax = Math.min(100, avg + 2 * stdDev);
+      return {
+        avgPercent: avg,
+        expectedPercent: avg,
+        minPercent: min,
+        maxPercent: max,
+        p95Percent: p95,
+        stdDevPercent: stdDev,
+        normalRange: [normalMin, normalMax] as [number, number]
+      };
     };
+
+    const sampleSize = validPoints.length;
+    const isSufficient = sampleSize >= 10;
+    const isHighConfidence = sampleSize >= 30;
 
     return {
       clusterId,
       calculatedAt: now,
       windowRange: range,
-      sampleSize: validPoints.length,
+      sampleSize,
+      status: isSufficient ? 'AVAILABLE' : 'INSUFFICIENT_EVIDENCE',
+      quality: isHighConfidence ? 'HIGH' : isSufficient ? 'MEDIUM' : 'INSUFFICIENT_HISTORY',
+      confidence: isHighConfidence ? 'HIGH' : isSufficient ? 'MEDIUM' : 'LOW',
+      explanation: isSufficient
+        ? `Baseline calculated from ${sampleSize} historical observations across ${range}.`
+        : `Baseline has limited confidence: only ${sampleSize} observation${sampleSize === 1 ? '' : 's'} exist in window. At least 10 observations required for full statistical baseline.`,
       cpu: calcStats(cpuPercents),
       memory: calcStats(memPercents)
     };
@@ -554,7 +575,7 @@ export class TelemetryStore {
   /**
    * Detects real telemetry anomalies without synthetic noise.
    */
-  public detectAnomalies(clusterId: string, now = Date.now()): TelemetryAnomaly[] {
+  public detectAnomalies(clusterId: string, now = Date.now(), resources?: any[]): TelemetryAnomaly[] {
     const anomalies: TelemetryAnomaly[] = [];
     const bucket = this.clusters.get(clusterId);
     if (!bucket || bucket.rawPoints.length === 0) return anomalies;
@@ -564,40 +585,75 @@ export class TelemetryStore {
 
     if (!latest) return anomalies;
 
+    // Helper for unique anomaly IDs
+    let anomIdx = 0;
+    const nextId = (prefix: string) => `ANOM-${clusterId}-${prefix}-${now}-${++anomIdx}`;
+
     // Check freshness: if cluster agent sent nothing for 5+ min
     if (now - latest.timestamp > 5 * 60 * 1000) {
+      const staleMins = Math.round((now - latest.timestamp) / 60000);
       anomalies.push({
+        id: nextId('STALE'),
         type: 'STALE_METRICS',
+        status: 'ANOMALOUS',
         severity: 'WARNING',
-        message: `Telemetry collection has stalled: last observation was ${Math.round((now - latest.timestamp) / 60000)}m ago.`,
+        message: `Telemetry collection has stalled: last observation was ${staleMins}m ago.`,
         detectedAt: now,
         metric: 'all',
-        currentValue: now - latest.timestamp
+        currentValue: now - latest.timestamp,
+        observedValue: `${staleMins}m without telemetry`,
+        expectedValue: 'Observations every <= 15s',
+        deviationReason: 'Agent connection silent or disrupted beyond 5m threshold',
+        timeWindow: '5m',
+        source: 'kubelet',
+        confidence: 0.95,
+        evidenceReferences: [`cluster.${clusterId}.lastObservationTime`],
+        resource: { kind: 'Cluster', name: clusterId }
       });
     }
 
     // Check spec overcommitment (requests > 100% of allocatable)
     if (latest.cpuRequestedPercent !== undefined && latest.cpuRequestedPercent > 100) {
       anomalies.push({
+        id: nextId('CPU_OVERCOMMIT'),
         type: 'SPEC_OVERCOMMITMENT',
+        status: 'ANOMALOUS',
         severity: 'WARNING',
         message: `CPU requests (${latest.cpuRequestedPercent}%) exceed total cluster allocatable capacity.`,
         detectedAt: now,
         metric: 'cpu',
         currentValue: latest.cpuRequestedPercent,
-        threshold: 100
+        observedValue: `${latest.cpuRequestedPercent}%`,
+        expectedValue: '<= 100%',
+        threshold: 100,
+        deviationReason: `CPU requested capacity exceeds 100% allocatable by ${latest.cpuRequestedPercent - 100}%`,
+        timeWindow: '15m',
+        source: 'spec-derived',
+        confidence: 0.98,
+        evidenceReferences: [`cluster.${clusterId}.cpuRequestedPercent`],
+        resource: { kind: 'Cluster', name: clusterId }
       });
     }
 
     if (latest.memoryRequestedPercent !== undefined && latest.memoryRequestedPercent > 100) {
       anomalies.push({
+        id: nextId('MEM_OVERCOMMIT'),
         type: 'SPEC_OVERCOMMITMENT',
+        status: 'ANOMALOUS',
         severity: 'WARNING',
         message: `Memory requests (${latest.memoryRequestedPercent}%) exceed total cluster allocatable capacity.`,
         detectedAt: now,
         metric: 'memory',
         currentValue: latest.memoryRequestedPercent,
-        threshold: 100
+        observedValue: `${latest.memoryRequestedPercent}%`,
+        expectedValue: '<= 100%',
+        threshold: 100,
+        deviationReason: `Memory requested capacity exceeds 100% allocatable by ${latest.memoryRequestedPercent - 100}%`,
+        timeWindow: '15m',
+        source: 'spec-derived',
+        confidence: 0.98,
+        evidenceReferences: [`cluster.${clusterId}.memoryRequestedPercent`],
+        resource: { kind: 'Cluster', name: clusterId }
       });
     }
 
@@ -605,13 +661,23 @@ export class TelemetryStore {
     if (latest.isUsageAvailable && latest.cpuUsagePercent !== undefined) {
       if (latest.cpuUsagePercent >= 90) {
         anomalies.push({
+          id: nextId('CPU_SATURATION'),
           type: 'NEAR_SATURATION',
+          status: 'ANOMALOUS',
           severity: 'CRITICAL',
           message: `Cluster CPU runtime utilization reached critical level (${latest.cpuUsagePercent}%).`,
           detectedAt: now,
           metric: 'cpu',
           currentValue: latest.cpuUsagePercent,
-          threshold: 90
+          observedValue: `${latest.cpuUsagePercent}%`,
+          expectedValue: '< 90%',
+          threshold: 90,
+          deviationReason: 'CPU runtime utilization reached critical threshold (>= 90%)',
+          timeWindow: '15m',
+          source: 'metrics.k8s.io',
+          confidence: 0.95,
+          evidenceReferences: [`cluster.${clusterId}.cpuUsagePercent`],
+          resource: { kind: 'Cluster', name: clusterId }
         });
       }
     }
@@ -619,13 +685,23 @@ export class TelemetryStore {
     if (latest.isUsageAvailable && latest.memoryUsagePercent !== undefined) {
       if (latest.memoryUsagePercent >= 90) {
         anomalies.push({
+          id: nextId('MEM_SATURATION'),
           type: 'NEAR_SATURATION',
+          status: 'ANOMALOUS',
           severity: 'CRITICAL',
           message: `Cluster memory runtime utilization reached critical level (${latest.memoryUsagePercent}%).`,
           detectedAt: now,
           metric: 'memory',
           currentValue: latest.memoryUsagePercent,
-          threshold: 90
+          observedValue: `${latest.memoryUsagePercent}%`,
+          expectedValue: '< 90%',
+          threshold: 90,
+          deviationReason: 'Memory runtime utilization reached critical threshold (>= 90%)',
+          timeWindow: '15m',
+          source: 'metrics.k8s.io',
+          confidence: 0.95,
+          evidenceReferences: [`cluster.${clusterId}.memoryUsagePercent`],
+          resource: { kind: 'Cluster', name: clusterId }
         });
       }
     }
@@ -646,13 +722,123 @@ export class TelemetryStore {
         }
         if (isStrictlyClimbing && memUsages[memUsages.length - 1] - memUsages[0] >= 15) {
           anomalies.push({
+            id: nextId('MEM_LEAK_TREND'),
             type: 'MEMORY_LEAK_TREND',
+            status: 'ANOMALOUS',
             severity: 'WARNING',
             message: `Continuous memory growth detected: climbed from ${memUsages[0]}% to ${memUsages[memUsages.length - 1]}% across recent scrapes.`,
             detectedAt: now,
             metric: 'memory',
-            currentValue: memUsages[memUsages.length - 1]
+            currentValue: memUsages[memUsages.length - 1],
+            observedValue: `+${memUsages[memUsages.length - 1] - memUsages[0]}% net climb`,
+            expectedValue: 'Stable or fluctuating memory usage',
+            deviationReason: 'Strict upward trajectory across 5+ consecutive scrapes',
+            timeWindow: '15m',
+            source: 'metrics.k8s.io',
+            confidence: 0.9,
+            evidenceReferences: [`cluster.${clusterId}.memoryUsageTrend`],
+            resource: { kind: 'Cluster', name: clusterId }
           });
+        }
+      }
+    }
+
+    // Workload & Node conditions anomalies if resources are provided
+    if (Array.isArray(resources) && resources.length > 0) {
+      for (const res of resources) {
+        // 1. Restart Acceleration
+        if (res.kind === 'Pod' && Array.isArray(res.containers)) {
+          for (const c of res.containers) {
+            if (c.restartCount !== undefined && c.restartCount >= 4) {
+              anomalies.push({
+                id: nextId(`RESTART_${res.name}`),
+                type: 'RESTART_ACCELERATION',
+                status: 'ANOMALOUS',
+                severity: c.restartCount >= 10 ? 'CRITICAL' : 'WARNING',
+                message: `Pod ${res.name} (container ${c.name}) has restarted ${c.restartCount} times.`,
+                detectedAt: now,
+                metric: 'restarts',
+                currentValue: c.restartCount,
+                observedValue: `${c.restartCount} restarts`,
+                expectedValue: '0 restarts',
+                threshold: 4,
+                deviationReason: `Container ${c.name} is repeatedly failing/crashing`,
+                timeWindow: '1h',
+                source: 'kubelet',
+                confidence: 0.95,
+                evidenceReferences: [`pod.${res.name}.containers.${c.name}.restartCount`],
+                resource: { kind: 'Pod', name: res.name, namespace: res.namespace }
+              });
+            }
+          }
+        }
+
+        // 2. Node Pressure
+        if (res.kind === 'Node' && Array.isArray(res.conditions)) {
+          for (const cond of res.conditions) {
+            if (['MemoryPressure', 'DiskPressure', 'PIDPressure'].includes(cond.type) && cond.status === 'True') {
+              anomalies.push({
+                id: nextId(`NODE_PRESSURE_${res.name}`),
+                type: 'NODE_PRESSURE',
+                status: 'ANOMALOUS',
+                severity: 'CRITICAL',
+                message: `Node ${res.name} has active ${cond.type}: ${cond.message || cond.reason || 'condition True'}`,
+                detectedAt: now,
+                metric: 'nodes',
+                observedValue: `${cond.type}=True`,
+                expectedValue: `${cond.type}=False`,
+                deviationReason: cond.message || cond.reason || `Node reporting ${cond.type}`,
+                timeWindow: '5m',
+                source: 'kubelet',
+                confidence: 0.99,
+                evidenceReferences: [`node.${res.name}.conditions.${cond.type}`],
+                resource: { kind: 'Node', name: res.name }
+              });
+            } else if (cond.type === 'Ready' && cond.status !== 'True') {
+              anomalies.push({
+                id: nextId(`NODE_NOT_READY_${res.name}`),
+                type: 'NODE_PRESSURE',
+                status: 'ANOMALOUS',
+                severity: 'CRITICAL',
+                message: `Node ${res.name} is NotReady: ${cond.message || cond.reason || 'Kubelet unready'}`,
+                detectedAt: now,
+                metric: 'nodes',
+                observedValue: 'Ready=False',
+                expectedValue: 'Ready=True',
+                deviationReason: cond.message || cond.reason || 'Kubelet not ready',
+                timeWindow: '5m',
+                source: 'kubelet',
+                confidence: 0.99,
+                evidenceReferences: [`node.${res.name}.conditions.Ready`],
+                resource: { kind: 'Node', name: res.name }
+              });
+            }
+          }
+        }
+
+        // 3. Workload Degradation
+        if (['Deployment', 'StatefulSet', 'DaemonSet'].includes(res.kind)) {
+          const desired = res.specSummary?.replicas ?? res.statusSummary?.desiredNumberScheduled ?? 0;
+          const available = res.statusSummary?.availableReplicas ?? res.statusSummary?.numberReady ?? 0;
+          if (desired > 0 && available === 0) {
+            anomalies.push({
+              id: nextId(`DEGRADED_${res.name}`),
+              type: 'WORKLOAD_DEGRADATION',
+              status: 'ANOMALOUS',
+              severity: 'CRITICAL',
+              message: `${res.kind} ${res.name} has 0/${desired} ready replicas.`,
+              detectedAt: now,
+              metric: 'all',
+              observedValue: `0/${desired} ready`,
+              expectedValue: `${desired}/${desired} ready`,
+              deviationReason: 'Total availability loss for controller replicas',
+              timeWindow: '5m',
+              source: 'spec-derived',
+              confidence: 0.95,
+              evidenceReferences: [`workload.${res.name}.readyReplicas`],
+              resource: { kind: res.kind, name: res.name, namespace: res.namespace }
+            });
+          }
         }
       }
     }

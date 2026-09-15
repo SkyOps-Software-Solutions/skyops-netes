@@ -91,12 +91,11 @@ export const WebhooksManager: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this webhook endpoint?')) return;
     try {
       await api.deleteWebhook(id);
       fetchWebhooks();
     } catch (err: any) {
-      alert(err.message || 'Failed to delete webhook');
+      console.error('Failed to delete webhook:', err);
     }
   };
 

@@ -2757,8 +2757,19 @@ export class DataStore {
     const cluster = this.getCluster(clusterId, orgId);
     if (!cluster) return null;
     const response = this.telemetryStore.getTelemetryHistory(clusterId, options);
-    response.anomalies = this.telemetryStore.detectAnomalies(clusterId);
+    const resources = this.getClusterResources(clusterId, orgId);
+    response.anomalies = this.telemetryStore.detectAnomalies(clusterId, Date.now(), resources);
     return response;
+  }
+
+  public getTelemetryAnomalies(
+    clusterId: string,
+    orgId?: string
+  ): TelemetryAnomaly[] {
+    const cluster = this.getCluster(clusterId, orgId);
+    if (!cluster) return [];
+    const resources = this.getClusterResources(clusterId, orgId);
+    return this.telemetryStore.detectAnomalies(clusterId, Date.now(), resources);
   }
 
   public getTelemetryBaseline(

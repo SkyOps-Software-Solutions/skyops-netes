@@ -607,6 +607,11 @@ app.get('/api/v1/clusters/:id/telemetry/baseline', requireUserAuth, requireOrgMe
   res.json({ baseline });
 });
 
+app.get('/api/v1/clusters/:id/telemetry/anomalies', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const anomalies = store.getTelemetryAnomalies(req.params.id, req.orgId!);
+  res.json({ anomalies });
+});
+
 // --- First-Class Kubernetes Events Observability Endpoint ---
 app.get('/api/v1/clusters/:id/events', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
   const cluster = store.getCluster(req.params.id, req.orgId!);
@@ -1050,6 +1055,30 @@ app.get('/api/v1/incidents/:id/intelligence', requireUserAuth, requireOrgMembers
   );
   const intelligence = SkyOpsIntelligenceEngine.analyzeIncident(incident, associatedResource, clusterResources);
   res.json({ intelligence });
+});
+
+app.post('/api/v1/incidents/:id/investigate', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const incident = store.getIncident(req.params.id, req.orgId!);
+  if (!incident) {
+    return res.status(404).json({ error: 'Incident not found' });
+  }
+
+  const { question } = req.body || {};
+  if (!question || typeof question !== 'string') {
+    return res.status(400).json({ error: 'Question string is required' });
+  }
+
+  const clusterResources = store.getClusterResources(incident.clusterId, req.orgId!);
+  const associatedResource = clusterResources.find(
+    (r) =>
+      r.kind.toLowerCase() === incident.resourceKind.toLowerCase() &&
+      r.name.toLowerCase() === incident.resourceName.toLowerCase() &&
+      (r.namespace || 'default').toLowerCase() === (incident.namespace || 'default').toLowerCase()
+  );
+  const intelligence = SkyOpsIntelligenceEngine.analyzeIncident(incident, associatedResource, clusterResources);
+  const result = SkyOpsIntelligenceEngine.investigateQuestion(intelligence, question);
+
+  res.json({ result, intelligence });
 });
 
 // --- SkyOps AI Incident Root-Cause Analysis Endpoints ---

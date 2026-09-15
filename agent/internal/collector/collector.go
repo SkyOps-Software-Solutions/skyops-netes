@@ -195,10 +195,10 @@ func (c *Collector) collectFromKubernetes(ctx context.Context) {
 		}
 	}
 	collectionStatus["metrics"] = CollectionStatusItem{
-		Collected:   metricsAvailable,
-		Count:       len(nodeMetricsMap) + len(podMetricsMap),
-		LastSuccess: time.Now().UnixMilli(),
-		Error:       metricsErrMsg,
+		Success:    metricsAvailable,
+		Count:      len(nodeMetricsMap) + len(podMetricsMap),
+		ObservedAt: time.Now().UnixMilli(),
+		Error:      metricsErrMsg,
 	}
 
 	// 2. Nodes

@@ -154,6 +154,8 @@ describe('Phase 2 Smart Telemetry, Tiered Retention & Historical Intelligence', 
           cpuCapacityMillicores: 4000,
           cpuRequestMillicores: 2000,
           cpuLimitMillicores: 3000,
+          memoryCapacityBytes: 16 * 1024 * 1024 * 1024,
+          memoryRequestBytes: 8 * 1024 * 1024 * 1024,
           isUsageAvailable: true,
           source: 'metrics.k8s.io'
         },
@@ -168,6 +170,8 @@ describe('Phase 2 Smart Telemetry, Tiered Retention & Historical Intelligence', 
           cpuCapacityMillicores: 4000,
           cpuRequestMillicores: 2000,
           cpuLimitMillicores: 3000,
+          memoryCapacityBytes: 16 * 1024 * 1024 * 1024,
+          memoryRequestBytes: 8 * 1024 * 1024 * 1024,
           isUsageAvailable: true,
           source: 'metrics.k8s.io'
         },
@@ -258,6 +262,8 @@ describe('Phase 2 Smart Telemetry, Tiered Retention & Historical Intelligence', 
         cpuRequestMillicores: 2000,
         cpuLimitMillicores: 3000,
         cpuUsagePercent: 35,
+        memoryCapacityBytes: 16 * 1024 * 1024 * 1024,
+        memoryRequestBytes: 8 * 1024 * 1024 * 1024,
         isUsageAvailable: true,
         source: 'metrics.k8s.io'
       });
@@ -293,7 +299,7 @@ describe('Phase 2 Smart Telemetry, Tiered Retention & Historical Intelligence', 
 
     it('DataStore seamlessly provides getTelemetryHistory and getTelemetryBaseline', () => {
       const ds = new DataStore();
-      const org = ds.createOrganization('Telemetry Org');
+      const org = ds.createOrganization('Telemetry Org', 'user-test-1');
       const { cluster } = ds.createCluster(org.id, 'prod-cluster');
 
       // Record telemetry via store

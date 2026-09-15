@@ -7,24 +7,34 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Clock,
   Cpu,
   FileCheck,
+  FileDiff,
   GitBranch,
+  HelpCircle,
+  History,
   Info,
   Layers,
   Lock,
   Network,
   Radio,
   RefreshCw,
+  Send,
   Share2,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Terminal,
   XCircle
 } from 'lucide-react';
+import { api } from '../../api/client';
 import {
   CorrelatedSignal,
+  CorrelatedTimelineEvent,
+  DetectedResourceChange,
   IntelligenceAnalysis,
+  InvestigationQuestionResult,
   ResourceRelationship,
   RootCauseHypothesis,
   SignalCategory
@@ -42,9 +52,34 @@ export const SkyOpsIntelligenceCard: React.FC<SkyOpsIntelligenceCardProps> = ({
   loading = false,
   onRefresh
 }) => {
-  const [activeTab, setActiveTab] = useState<'hypotheses' | 'signals' | 'relationships' | 'explainability'>('hypotheses');
+  const [activeTab, setActiveTab] = useState<
+    'hypotheses' | 'signals' | 'relationships' | 'timeline' | 'changes' | 'investigation' | 'explainability'
+  >('hypotheses');
   const [selectedSignalCategory, setSelectedSignalCategory] = useState<string>('ALL');
   const [expandedHypothesis, setExpandedHypothesis] = useState<string | null>(null);
+
+  // Interactive deterministic investigation state
+  const [questionInput, setQuestionInput] = useState('');
+  const [investigationLoading, setInvestigationLoading] = useState(false);
+  const [investigationResult, setInvestigationResult] = useState<InvestigationQuestionResult | null>(null);
+  const [investigationError, setInvestigationError] = useState<string | null>(null);
+
+  const handleAskQuestion = async (queryText?: string) => {
+    const q = (queryText || questionInput).trim();
+    if (!q || !intelligence) return;
+    try {
+      setInvestigationLoading(true);
+      setInvestigationError(null);
+      const res = await api.investigateIncident(intelligence.incidentId, q);
+      setInvestigationResult(res.result);
+      setQuestionInput('');
+    } catch (err: any) {
+      console.error('Failed to investigate question:', err);
+      setInvestigationError(err?.message || 'Failed to query intelligence engine');
+    } finally {
+      setInvestigationLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -72,6 +107,11 @@ export const SkyOpsIntelligenceCard: React.FC<SkyOpsIntelligenceCardProps> = ({
     evaluatedHypotheses = [],
     signals = [],
     relationships = [],
+    correlatedTimeline = [],
+    changes = [],
+    customerImpact,
+    whatRemainsUnknown = [],
+    whatShouldHappenNext = [],
     explainability,
     executableProposal,
     isUnknownOrInconclusive
@@ -246,6 +286,24 @@ export const SkyOpsIntelligenceCard: React.FC<SkyOpsIntelligenceCardProps> = ({
         </div>
       </div>
 
+      {/* Grounded Customer Impact & Unknowns Banner */}
+      {customerImpact && (
+        <div className="p-3 bg-zinc-950/80 rounded-lg border border-zinc-800/80 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Activity className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <div>
+              <span className="text-[10px] font-mono uppercase font-bold text-zinc-400 mr-1.5">Impact Assessment:</span>
+              <span className="text-zinc-200 font-sans text-xs">{customerImpact}</span>
+            </div>
+          </div>
+          {whatRemainsUnknown.length > 0 && (
+            <span className="px-2 py-0.5 rounded text-[10px] font-mono text-zinc-400 bg-zinc-900 border border-zinc-800 shrink-0">
+              {whatRemainsUnknown.length} unknown factor{whatRemainsUnknown.length === 1 ? '' : 's'} recorded
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Tabs Navigation */}
       <div className="flex items-center gap-2 border-b border-zinc-800/70 pb-2 overflow-x-auto no-scrollbar">
         <button
@@ -274,6 +332,32 @@ export const SkyOpsIntelligenceCard: React.FC<SkyOpsIntelligenceCardProps> = ({
 
         <button
           type="button"
+          onClick={() => setActiveTab('timeline')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'timeline'
+              ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/40 font-bold'
+              : 'text-zinc-400 hover:text-zinc-200 bg-zinc-950 border border-zinc-800'
+          }`}
+        >
+          <Clock className="w-3 h-3" />
+          Correlated Timeline ({correlatedTimeline.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('changes')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'changes'
+              ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/40 font-bold'
+              : 'text-zinc-400 hover:text-zinc-200 bg-zinc-950 border border-zinc-800'
+          }`}
+        >
+          <FileDiff className="w-3 h-3" />
+          Changes ({changes.length})
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab('relationships')}
           className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-colors whitespace-nowrap cursor-pointer ${
             activeTab === 'relationships'
@@ -282,6 +366,19 @@ export const SkyOpsIntelligenceCard: React.FC<SkyOpsIntelligenceCardProps> = ({
           }`}
         >
           Topology Graph ({relationships.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('investigation')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'investigation'
+              ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/40 font-bold'
+              : 'text-zinc-400 hover:text-zinc-200 bg-zinc-950 border border-zinc-800'
+          }`}
+        >
+          <HelpCircle className="w-3 h-3 text-cyan-400" />
+          Investigation Assistant
         </button>
 
         {explainability && (
@@ -601,6 +698,254 @@ export const SkyOpsIntelligenceCard: React.FC<SkyOpsIntelligenceCardProps> = ({
                   <li key={idx}>{item}</li>
                 ))}
               </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB: CORRELATED TIMELINE */}
+      {activeTab === 'timeline' && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between text-xs font-mono text-zinc-400">
+            <span>Chronological events correlated across cluster topology</span>
+            <span>{correlatedTimeline.length} events anchored</span>
+          </div>
+
+          {correlatedTimeline.length === 0 ? (
+            <div className="p-6 text-center rounded-lg bg-zinc-950/60 border border-zinc-800 text-zinc-400 text-xs font-mono">
+              No correlated timeline events recorded for this incident window.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {correlatedTimeline.map((item, idx) => (
+                <div
+                  key={item.id || idx}
+                  className="p-3 rounded-lg bg-zinc-950/80 border border-zinc-800/80 hover:border-zinc-700 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs"
+                >
+                  <div className="flex items-start sm:items-center gap-3 min-w-0">
+                    <div className="flex flex-col items-center shrink-0">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-950/80 text-cyan-300 border border-cyan-800">
+                        {item.temporalDistance || '+0s'}
+                      </span>
+                    </div>
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-zinc-200">{item.title}</span>
+                        {item.relationship && (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-mono text-cyan-400 bg-cyan-950/60 border border-cyan-800/60">
+                            {item.relationship}
+                          </span>
+                        )}
+                        <span className="text-[10px] text-zinc-500 font-mono">
+                          {item.resourceKind}/{item.resourceName}
+                        </span>
+                      </div>
+                      <p className="text-zinc-300 text-[11px] font-sans leading-relaxed">{item.description}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                    <span className="text-[10px] font-mono text-zinc-500">
+                      {new Date(item.timestamp).toLocaleTimeString()}
+                    </span>
+                    {typeof item.confidence === 'number' && (
+                      <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-zinc-900 text-zinc-400 border border-zinc-800">
+                        {Math.round(item.confidence * 100)}%
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB: DETECTED RESOURCE CHANGES */}
+      {activeTab === 'changes' && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between text-xs font-mono text-zinc-400">
+            <span>Configuration & state transitions detected within incident buffer</span>
+            <span>{changes.length} recorded change{changes.length === 1 ? '' : 's'}</span>
+          </div>
+
+          {changes.length === 0 ? (
+            <div className="p-6 text-center rounded-lg bg-zinc-950/60 border border-zinc-800 text-zinc-400 text-xs font-mono">
+              No recent configuration diffs or state transitions detected in current window.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {changes.map((chg) => (
+                <div
+                  key={chg.changeId}
+                  className="p-3.5 rounded-lg bg-zinc-950/80 border border-zinc-800/80 space-y-2 text-xs"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-950/80 text-amber-300 border border-amber-800">
+                        {chg.changeType}
+                      </span>
+                      <span className="font-mono font-bold text-zinc-200">
+                        {chg.resourceKind}/{chg.resourceName}
+                      </span>
+                      <span className="text-[10px] font-mono text-zinc-500">{chg.field}</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-zinc-500">
+                      {new Date(chg.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono bg-zinc-900/60 p-2 rounded border border-zinc-800/60">
+                    <div>
+                      <span className="text-[10px] text-zinc-500 block uppercase">Previous Value:</span>
+                      <span className="text-zinc-400 break-all">{chg.oldValue}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-cyan-400 block uppercase">New / Observed Value:</span>
+                      <span className="text-cyan-200 font-bold break-all">{chg.newValue}</span>
+                    </div>
+                  </div>
+
+                  <p className="text-zinc-300 text-[11px] font-sans">{chg.evidence}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB: INVESTIGATION ASSISTANT */}
+      {activeTab === 'investigation' && (
+        <div className="space-y-4">
+          <div className="p-3.5 rounded-lg bg-zinc-950/90 border border-zinc-800/80 space-y-3">
+            <div>
+              <h4 className="text-xs font-mono uppercase font-bold text-cyan-400 flex items-center gap-1.5">
+                <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+                Evidence-Grounded Investigation Assistant
+              </h4>
+              <p className="text-[11px] text-zinc-400 mt-0.5 font-sans">
+                Queries are strictly evaluated against verified cluster telemetry facts, derived state, and the deterministic RCA graph. Zero hallucinations.
+              </p>
+            </div>
+
+            {/* Quick question presets */}
+            <div className="flex items-center gap-1.5 flex-wrap text-xs">
+              <span className="text-[10px] font-mono text-zinc-500 uppercase mr-1">Quick Inquiries:</span>
+              {[
+                'Why did this incident occur?',
+                'What recent changes were detected?',
+                'What is the customer impact?',
+                'How do I fix this safely?'
+              ].map((queryText) => (
+                <button
+                  key={queryText}
+                  type="button"
+                  onClick={() => handleAskQuestion(queryText)}
+                  disabled={investigationLoading}
+                  className="px-2.5 py-1 rounded text-[11px] font-mono bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {queryText}
+                </button>
+              ))}
+            </div>
+
+            {/* Custom Question Form */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleAskQuestion();
+              }}
+              className="flex items-center gap-2"
+            >
+              <input
+                type="text"
+                value={questionInput}
+                onChange={(e) => setQuestionInput(e.target.value)}
+                placeholder="Ask about root cause, topology, impact, changes, or safe remediation..."
+                className="flex-1 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-xs font-mono focus:outline-none focus:border-cyan-500 transition-colors"
+                disabled={investigationLoading}
+              />
+              <button
+                type="submit"
+                disabled={investigationLoading || !questionInput.trim()}
+                className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:bg-zinc-800 text-white text-xs font-mono font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:cursor-not-allowed"
+              >
+                {investigationLoading ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Send className="w-3.5 h-3.5" />
+                )}
+                Investigate
+              </button>
+            </form>
+
+            {investigationError && (
+              <div className="p-2 rounded bg-rose-950/80 border border-rose-800 text-rose-300 text-xs font-mono">
+                {investigationError}
+              </div>
+            )}
+          </div>
+
+          {/* Investigation Result Display */}
+          {investigationResult && (
+            <div className="p-4 rounded-xl bg-zinc-950/90 border border-cyan-900/60 shadow-xs space-y-3 text-xs">
+              <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-950 text-cyan-300 border border-cyan-800">
+                    {investigationResult.category}
+                  </span>
+                  <span className="text-zinc-200 font-mono font-semibold">Q: "{investigationResult.question}"</span>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                  {Math.round(investigationResult.confidence * 100)}% {investigationResult.confidenceLevel} CERTAINTY
+                </span>
+              </div>
+
+              <div className="p-3 rounded-lg bg-zinc-900/80 border border-zinc-800 text-zinc-100 font-sans leading-relaxed">
+                {investigationResult.answer}
+              </div>
+
+              {/* Supporting Facts */}
+              {investigationResult.facts && investigationResult.facts.length > 0 && (
+                <div className="space-y-1">
+                  <span className="text-[10px] font-mono text-emerald-400 uppercase font-bold block">
+                    Observed Cluster Facts:
+                  </span>
+                  <ul className="list-disc list-inside text-zinc-300 text-[11px] space-y-0.5 font-mono">
+                    {investigationResult.facts.map((fact, idx) => (
+                      <li key={idx}>{fact}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* What Remains Unknown */}
+              {investigationResult.unknowns && investigationResult.unknowns.length > 0 && (
+                <div className="p-2.5 rounded bg-amber-950/20 border border-amber-800/40 text-[11px] space-y-1">
+                  <span className="text-amber-400 font-bold font-mono text-[10px] uppercase block">
+                    What Remains Unknown:
+                  </span>
+                  <ul className="list-disc list-inside text-zinc-400 space-y-0.5">
+                    {investigationResult.unknowns.map((unk, idx) => (
+                      <li key={idx}>{unk}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Recommended Next Steps */}
+              {investigationResult.recommendedNextSteps && investigationResult.recommendedNextSteps.length > 0 && (
+                <div className="space-y-1">
+                  <span className="text-[10px] font-mono text-cyan-400 uppercase font-bold block">
+                    Recommended Operator Next Steps:
+                  </span>
+                  <ul className="list-disc list-inside text-zinc-200 text-[11px] space-y-0.5">
+                    {investigationResult.recommendedNextSteps.map((step, idx) => (
+                      <li key={idx}>{step}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
         </div>

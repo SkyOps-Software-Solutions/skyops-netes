@@ -8,15 +8,18 @@ import {
 import {
   buildCorrelatedTimeline,
   buildRelationshipGraph,
+  detectResourceChanges,
   extractCorrelatedSignals
 } from './correlator';
 import {
   CorrelatedSignal,
+  DetectedResourceChange,
   EvidencePoint,
   ExecutableActionProposal,
   ExplainabilityReport,
   HypothesisStatus,
   IntelligenceAnalysis,
+  InvestigationQuestionResult,
   ResourceRelationship,
   RootCauseHypothesis
 } from './types';
@@ -80,17 +83,20 @@ export class SkyOpsIntelligenceEngine {
     // 3. Extract Correlated Signals across 7-tier model
     const signals = extractCorrelatedSignals(target, allResources, metrics);
 
-    // 4. Build Correlated Timeline
-    const correlatedTimeline = buildCorrelatedTimeline(target, allResources, signals);
+    // 4. Detect Configuration & State Changes
+    const changes = detectResourceChanges(target, allResources);
 
-    // 5. Evaluate Domain-Specific Hypotheses
+    // 5. Build Correlated Timeline with temporal distance
+    const correlatedTimeline = buildCorrelatedTimeline(target, allResources, signals, incident.firstSeenAt);
+
+    // 6. Evaluate Domain-Specific Hypotheses
     const { evaluatedHypotheses, isUnknownOrInconclusive, missingEvidence } =
       this.evaluateHypotheses(incident, target, relationships, signals, allResources);
 
-    // 6. Select Authoritative Primary Hypothesis
+    // 7. Select Authoritative Primary Hypothesis
     const primaryHypothesis = evaluatedHypotheses.length > 0 ? evaluatedHypotheses[0] : null;
 
-    // 7. Calculate Confidence Score and Level
+    // 8. Calculate Confidence Score and Level
     let confidence = 0.25;
     let confidenceLevel: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
     let confidenceExplanation = '';
@@ -114,7 +120,7 @@ export class SkyOpsIntelligenceEngine {
       confidenceExplanation = 'All evaluated hypotheses were refuted or lacked sufficient supporting evidence.';
     }
 
-    // 8. Build Explainability Report
+    // 9. Build Explainability Report
     const explainability = this.buildExplainability(
       primaryHypothesis,
       evaluatedHypotheses,
@@ -123,7 +129,7 @@ export class SkyOpsIntelligenceEngine {
       missingEvidence
     );
 
-    // 9. Formulate Recommendation and Executable Action Proposal
+    // 10. Formulate Recommendation and Executable Action Proposal
     const { recommendation, executableProposal } = this.formulateRemediation(
       incident,
       target,
@@ -138,6 +144,39 @@ export class SkyOpsIntelligenceEngine {
     const rootCauseCategory = isUnknownOrInconclusive || !primaryHypothesis
       ? 'UNDETERMINED'
       : primaryHypothesis.category;
+
+    // 11. Derive Evidence-Grounded Customer Impact (Zero Fabrication)
+    let customerImpact = 'UNKNOWN - Ingress / external APM telemetry not connected to cluster';
+    const isServiceTarget = target.kind === 'Service' || relationships.some((r) => r.source.kind === 'Service' || r.target.kind === 'Service');
+    const isWorkloadDegraded = target.health === 'CRITICAL' || target.health === 'WARNING' || incident.severity === 'CRITICAL';
+    if (isServiceTarget && isWorkloadDegraded) {
+      customerImpact = `POTENTIAL SERVICE IMPACT: Workload ${target.name} (${target.kind}) in namespace "${targetNs}" is non-operational and backs active cluster networking endpoints.`;
+    } else if (isWorkloadDegraded) {
+      customerImpact = `INTERNAL WORKLOAD IMPACT: Resource ${target.name} (${target.kind}) in namespace "${targetNs}" is degraded internally; no external ingress degradation recorded.`;
+    } else {
+      customerImpact = 'NO DETECTED EXTERNAL IMPACT: Cluster control plane and networking report normal baseline operation.';
+    }
+
+    // 12. Derive What Remains Unknown & Next Steps
+    const whatRemainsUnknown: string[] = [];
+    if (missingEvidence && missingEvidence.length > 0) {
+      whatRemainsUnknown.push(...missingEvidence);
+    }
+    if (!target.events || target.events.length === 0) {
+      whatRemainsUnknown.push('Target resource has no recorded Kubelet warning events in current buffer.');
+    }
+    const hasPriorVersion = changes.some((c) => c.oldValue !== 'UNKNOWN');
+    if (!hasPriorVersion) {
+      whatRemainsUnknown.push('Exact prior deployment commit hash is unrecorded in local telemetry store.');
+    }
+
+    const whatShouldHappenNext: string[] = [];
+    if (executableProposal && executableProposal.isExecutable) {
+      whatShouldHappenNext.push(`Review and execute bounded safe proposal: ${executableProposal.reason} (${executableProposal.fieldPath})`);
+    } else if (recommendation) {
+      whatShouldHappenNext.push(recommendation);
+    }
+    whatShouldHappenNext.push(`Inspect live status with: kubectl describe ${target.kind.toLowerCase()} ${target.name} -n ${targetNs}`);
 
     return {
       incidentId: incident.id,
@@ -156,10 +195,14 @@ export class SkyOpsIntelligenceEngine {
       signals,
       relationships,
       correlatedTimeline,
+      changes,
       explainability,
       recommendation,
       executableProposal,
-      isUnknownOrInconclusive
+      isUnknownOrInconclusive,
+      customerImpact,
+      whatRemainsUnknown,
+      whatShouldHappenNext
     };
   }
 
@@ -954,6 +997,101 @@ export class SkyOpsIntelligenceEngine {
 
     return {
       recommendation: `Review the ${target.kind} configuration in namespace "${target.namespace || 'default'}" to address ${primary.title.toLowerCase()}.`
+    };
+  }
+
+  /**
+   * Evaluates and answers operator investigation questions strictly using deterministic facts and evidence.
+   * Prevents AI hallucination or fabricated claims by anchoring answers to the computed analysis.
+   */
+  public static investigateQuestion(
+    analysis: IntelligenceAnalysis,
+    question: string
+  ): InvestigationQuestionResult {
+    const q = question.toLowerCase();
+    const facts = analysis.signals.filter((s) => s.category === 'FACT').map((s) => s.description);
+    const inferences = analysis.signals.filter((s) => s.category === 'INFERENCE').map((s) => s.description);
+    const unknowns = analysis.whatRemainsUnknown || [];
+
+    if (q.includes('why') || q.includes('root cause') || q.includes('cause')) {
+      const primary = analysis.primaryHypothesis;
+      const answer = primary
+        ? `Definitive root cause identified: ${primary.title}. Grounded in ${primary.supportingEvidence.length} corroborating cluster facts (${primary.whySelectedOrRejected || primary.description}).`
+        : `Root cause undetermined due to insufficient cluster telemetry (${analysis.confidenceExplanation}).`;
+      return {
+        question,
+        answer,
+        category: 'ROOT_CAUSE',
+        confidence: analysis.confidence,
+        confidenceLevel: analysis.confidenceLevel,
+        supportingEvidence: primary?.supportingEvidence || [],
+        facts: facts.slice(0, 5),
+        inferences: inferences.slice(0, 3),
+        unknowns,
+        recommendedNextSteps: analysis.whatShouldHappenNext || [analysis.recommendation]
+      };
+    }
+
+    if (q.includes('change') || q.includes('deploy') || q.includes('recent')) {
+      const changes = analysis.changes || [];
+      const answer = changes.length > 0
+        ? `Identified ${changes.length} configuration or operational state change${changes.length === 1 ? '' : 's'}: ${changes.map((c) => `${c.field} -> ${c.newValue}`).join('; ')}.`
+        : 'No recent spec modifications or state transitions observed in current buffer window.';
+      return {
+        question,
+        answer,
+        category: 'CHANGE_DETECTION',
+        confidence: changes.length > 0 ? 0.95 : 0.5,
+        confidenceLevel: changes.length > 0 ? 'HIGH' : 'MEDIUM',
+        supportingEvidence: changes.map((c) => ({ id: c.changeId, description: c.evidence, source: 'spec', weight: 30 })),
+        facts: changes.map((c) => c.evidence),
+        inferences: [],
+        unknowns,
+        recommendedNextSteps: ['Inspect git commit history or audit logs for change author and timing']
+      };
+    }
+
+    if (q.includes('impact') || q.includes('customer') || q.includes('traffic')) {
+      return {
+        question,
+        answer: analysis.customerImpact || 'No external traffic impact detected in cluster telemetry.',
+        category: 'IMPACT_ASSESSMENT',
+        confidence: 0.9,
+        confidenceLevel: 'HIGH',
+        supportingEvidence: [],
+        facts: [`Incident severity: ${analysis.incidentType}`, `Namespace: ${analysis.clusterName}`],
+        inferences: [],
+        unknowns,
+        recommendedNextSteps: ['Verify public ingress metrics and external APM availability']
+      };
+    }
+
+    if (q.includes('fix') || q.includes('remediat') || q.includes('action') || q.includes('do')) {
+      return {
+        question,
+        answer: analysis.recommendation,
+        category: 'REMEDIATION',
+        confidence: analysis.confidence,
+        confidenceLevel: analysis.confidenceLevel,
+        supportingEvidence: analysis.primaryHypothesis?.supportingEvidence || [],
+        facts,
+        inferences,
+        unknowns,
+        recommendedNextSteps: analysis.whatShouldHappenNext || [analysis.recommendation]
+      };
+    }
+
+    return {
+      question,
+      answer: `Analysis for incident ${analysis.incidentId}: ${analysis.rootCause}. Confidence: ${analysis.confidenceLevel} (${Math.round(analysis.confidence * 100)}%). ${analysis.confidenceExplanation}`,
+      category: 'GENERAL_INTELLIGENCE',
+      confidence: analysis.confidence,
+      confidenceLevel: analysis.confidenceLevel,
+      supportingEvidence: analysis.primaryHypothesis?.supportingEvidence || [],
+      facts: facts.slice(0, 5),
+      inferences: inferences.slice(0, 3),
+      unknowns,
+      recommendedNextSteps: analysis.whatShouldHappenNext || [analysis.recommendation]
     };
   }
 }

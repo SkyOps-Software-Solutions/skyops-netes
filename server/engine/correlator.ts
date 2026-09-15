@@ -175,11 +175,20 @@ export function buildRelationshipGraph(
 
         // If owned by ReplicaSet, find the parent Deployment
         if (ref.kind === 'ReplicaSet') {
-          const parentDeploy = allResources.find((r) => {
+          // Check if owner ReplicaSet has ownerReferences pointing to Deployment
+          let parentDeploy = allResources.find((r) => {
             if (r.kind !== 'Deployment' || (r.namespace || 'default').toLowerCase() !== targetNs.toLowerCase()) return false;
-            // Common naming pattern: deployment-name-hash
-            return ref.name.startsWith(r.name + '-');
+            return ownerResource?.ownerReferences?.some(
+              (o) => o.kind === 'Deployment' && (o.uid && r.uid ? o.uid === r.uid : o.name === r.name)
+            );
           });
+          if (!parentDeploy) {
+            parentDeploy = allResources.find((r) => {
+              if (r.kind !== 'Deployment' || (r.namespace || 'default').toLowerCase() !== targetNs.toLowerCase()) return false;
+              // Bounded naming pattern: deployment-name-hash
+              return ref.name === r.name || ref.name.startsWith(r.name + '-');
+            });
+          }
           if (parentDeploy) {
             relationships.push({
               source: { kind: 'ReplicaSet', name: ref.name, namespace: targetNs, status: ownerResource?.status },
@@ -198,7 +207,7 @@ export function buildRelationshipGraph(
           (r.namespace || 'default').toLowerCase() === targetNs.toLowerCase()
       );
       for (const ctrl of controllers) {
-        if (targetName.startsWith(ctrl.name + '-') || targetName.startsWith(ctrl.name)) {
+        if (targetName === ctrl.name || targetName.startsWith(ctrl.name + '-')) {
           relationships.push({
             source: { kind: 'Pod', name: targetName, namespace: targetNs, status: target.status },
             target: { kind: ctrl.kind, name: ctrl.name, namespace: targetNs, status: ctrl.status },
@@ -309,7 +318,7 @@ export function buildRelationshipGraph(
       const selector = svc.specSummary?.selector;
       if (selector && typeof selector === 'object') {
         // If pod has labels that match service selector
-        const podLabels = spec.labels || {};
+        const podLabels = (target.labels || spec.labels || (target as any).metadata?.labels || {}) as Record<string, string>;
         let matches = true;
         for (const [k, v] of Object.entries(selector)) {
           if (podLabels[k] !== v) {
@@ -329,22 +338,86 @@ export function buildRelationshipGraph(
       }
     }
   } else if (['Deployment', 'StatefulSet', 'DaemonSet'].includes(targetKind)) {
-    // Controller target -> discover child pods
-    const childPods = allResources.filter(
-      (r) =>
-        r.kind === 'Pod' &&
-        (r.namespace || 'default').toLowerCase() === targetNs.toLowerCase() &&
-        (r.ownerReferences?.some((ref) => ref.name === targetName || ref.name.startsWith(targetName + '-')) ||
-          r.name.startsWith(targetName + '-'))
-    );
+    // Controller target -> discover child pods with strict ownerReferences and bounded naming
+    const ownedRsNames = new Set<string>();
+    const ownedRsUids = new Set<string>();
+    if (targetKind === 'Deployment') {
+      allResources.forEach((r) => {
+        if (r.kind === 'ReplicaSet' && (r.namespace || 'default').toLowerCase() === targetNs.toLowerCase()) {
+          const isOwned =
+            r.ownerReferences?.some(
+              (o) => o && o.kind === 'Deployment' && (o.uid && target.uid ? o.uid === target.uid : o.name === targetName)
+            ) ||
+            (!r.ownerReferences?.length && (r.name === targetName || r.name.startsWith(targetName + '-')));
+          if (isOwned) {
+            ownedRsNames.add(r.name);
+            if (r.uid) ownedRsUids.add(r.uid);
+          }
+        }
+      });
+    }
 
-    for (const pod of childPods.slice(0, 5)) {
+    const childPods = allResources.filter((r) => {
+      if (r.kind !== 'Pod' || (r.namespace || 'default').toLowerCase() !== targetNs.toLowerCase()) return false;
+      if (r.ownerReferences && r.ownerReferences.length > 0) {
+        return r.ownerReferences.some((ref) => {
+          if (!ref) return false;
+          if (ref.uid && target.uid && ref.uid === target.uid) return true;
+          if (ref.kind === targetKind && ref.name === targetName) return true;
+          if (targetKind === 'Deployment' && ref.kind === 'ReplicaSet') {
+            if (ref.uid && ownedRsUids.has(ref.uid)) return true;
+            if (ref.name && ownedRsNames.has(ref.name)) return true;
+            return ref.name === targetName || ref.name.startsWith(targetName + '-');
+          }
+          return false;
+        });
+      }
+      return r.name === targetName || r.name.startsWith(targetName + '-');
+    });
+
+    for (const pod of childPods.slice(0, 10)) {
       relationships.push({
         source: { kind: targetKind, name: targetName, namespace: targetNs, status: target.status },
         target: { kind: 'Pod', name: pod.name, namespace: targetNs, status: pod.status },
         relation: 'CONTROLS_POD',
         details: `Manages replica pod ${pod.name} (status: ${pod.status})`,
         isImpacted: pod.health === 'CRITICAL'
+      });
+    }
+  } else if (targetKind === 'Service') {
+    // Service target -> discover backing pods and endpoints
+    const selector = target.specSummary?.selector as Record<string, string> | undefined;
+    if (selector && typeof selector === 'object' && Object.keys(selector).length > 0) {
+      const matchingPods = allResources.filter((r) => {
+        if (r.kind !== 'Pod' || (r.namespace || 'default').toLowerCase() !== targetNs.toLowerCase()) return false;
+        const podLabels = (r.labels || r.specSummary?.labels || (r as any).metadata?.labels || {}) as Record<string, string>;
+        return Object.entries(selector).every(([k, v]) => podLabels[k] === v);
+      });
+
+      for (const pod of matchingPods.slice(0, 10)) {
+        relationships.push({
+          source: { kind: 'Service', name: targetName, namespace: targetNs, status: target.status },
+          target: { kind: 'Pod', name: pod.name, namespace: targetNs, status: pod.status },
+          relation: 'ROUTES_TO_POD',
+          details: `Service routes traffic to backing pod ${pod.name}`,
+          isImpacted: pod.health === 'CRITICAL'
+        });
+      }
+    }
+
+    // Related EndpointSlices
+    const epSlices = allResources.filter(
+      (r) =>
+        r.kind === 'EndpointSlice' &&
+        (r.namespace || 'default').toLowerCase() === targetNs.toLowerCase() &&
+        (r.labels?.['kubernetes.io/service-name'] === targetName || r.name === targetName || r.name.startsWith(targetName + '-'))
+    );
+    for (const ep of epSlices) {
+      relationships.push({
+        source: { kind: 'Service', name: targetName, namespace: targetNs, status: target.status },
+        target: { kind: 'EndpointSlice', name: ep.name, namespace: targetNs, status: ep.status },
+        relation: 'BACKED_BY_ENDPOINTS',
+        details: `Service is backed by EndpointSlice ${ep.name}`
       });
     }
   } else if (targetKind === 'PersistentVolumeClaim') {

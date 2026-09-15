@@ -19,6 +19,7 @@ import { Cluster, Incident, K8sEvent, KubernetesResource } from '../../types/ind
 import { api } from '../../api/client';
 import { Button } from '../common/UI';
 import { StatusBadge, SeverityBadge, ResourceHealthBadge, WorkloadKindBadge } from '../common/Badges';
+import { formatEventTimestamp } from '../../utils/date';
 
 interface NamespaceDetailModalProps {
   namespaceName: string;
@@ -490,7 +491,7 @@ export const NamespaceDetailModal: React.FC<NamespaceDetailModalProps> = ({
                           )}
                         </div>
                         <span className="text-zinc-500 text-[10px]">
-                          {new Date(evt.lastTimestamp).toLocaleTimeString()}
+                          {formatEventTimestamp(evt.lastObserved ?? evt.timestamp ?? evt.lastTimestamp)}
                         </span>
                       </div>
                       <p className="text-zinc-300 text-[11px] leading-relaxed">{evt.message}</p>

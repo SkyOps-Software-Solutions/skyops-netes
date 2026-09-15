@@ -22,6 +22,7 @@ import { PodPhaseBadge, ResourceHealthBadge, SeverityBadge, WorkloadKindBadge } 
 import { Button } from '../common/UI';
 import { ResourceRelationshipTree } from './ResourceRelationshipTree';
 import { api } from '../../api/client';
+import { formatEventTimestamp } from '../../utils/date';
 
 interface WorkloadDetailModalProps {
   workload: KubernetesResource | null;
@@ -87,20 +88,54 @@ export const WorkloadDetailModal: React.FC<WorkloadDetailModalProps> = ({
 
   if (!workload) return null;
 
-  // Find child pods
-  const childPods = safeClusterResources.filter((r) => {
-    if (r.kind !== 'Pod' || r.namespace !== workload.namespace) return false;
-    if (r.ownerReferences && r.ownerReferences.length > 0) {
-      return r.ownerReferences.some(
-        (o) =>
-          o &&
-          ((o.kind === workload.kind && o.name === workload.name) ||
-            (workload.kind === 'Deployment' && o.kind === 'ReplicaSet' && o.name?.startsWith(workload.name)) ||
-            (workload.kind === 'CronJob' && o.kind === 'Job' && o.name?.startsWith(workload.name)))
-      );
+  // Find child pods with strict Kubernetes hierarchy and bounded matching
+  const childPods = useMemo(() => {
+    if (!workload) return [];
+
+    // For Deployment: find owned ReplicaSets first
+    const ownedRsNames = new Set<string>();
+    const ownedRsUids = new Set<string>();
+    if (workload.kind === 'Deployment') {
+      safeClusterResources.forEach((r) => {
+        if (r.kind === 'ReplicaSet' && r.namespace === workload.namespace) {
+          const isOwned =
+            r.ownerReferences?.some(
+              (o) => o && o.kind === 'Deployment' && (o.uid && workload.uid ? o.uid === workload.uid : o.name === workload.name)
+            ) ||
+            (!r.ownerReferences?.length && (r.name === workload.name || r.name.startsWith(`${workload.name}-`)));
+          if (isOwned) {
+            ownedRsNames.add(r.name);
+            if (r.uid) ownedRsUids.add(r.uid);
+          }
+        }
+      });
     }
-    return typeof r.name === 'string' && r.name.startsWith(`${workload.name}-`);
-  });
+
+    return safeClusterResources.filter((r) => {
+      if (r.kind !== 'Pod' || r.namespace !== workload.namespace) return false;
+      if (r.ownerReferences && r.ownerReferences.length > 0) {
+        return r.ownerReferences.some((o) => {
+          if (!o) return false;
+          // Direct owner match
+          if (o.kind === workload.kind && (o.uid && workload.uid ? o.uid === workload.uid : o.name === workload.name)) {
+            return true;
+          }
+          // Deployment -> ReplicaSet -> Pod
+          if (workload.kind === 'Deployment' && o.kind === 'ReplicaSet') {
+            if (o.uid && ownedRsUids.has(o.uid)) return true;
+            if (o.name && ownedRsNames.has(o.name)) return true;
+            return o.name === workload.name || o.name?.startsWith(`${workload.name}-`);
+          }
+          // CronJob -> Job -> Pod
+          if (workload.kind === 'CronJob' && o.kind === 'Job') {
+            return o.name === workload.name || o.name?.startsWith(`${workload.name}-`);
+          }
+          return false;
+        });
+      }
+      return typeof r.name === 'string' && (r.name === workload.name || r.name.startsWith(`${workload.name}-`));
+    });
+  }, [workload, safeClusterResources]);
 
   const crashingPods = childPods.filter(
     (p) =>
@@ -713,7 +748,7 @@ export const WorkloadDetailModal: React.FC<WorkloadDetailModalProps> = ({
                           )}
                         </div>
                         <span className="text-zinc-500 text-[10px]">
-                          {new Date(evt.lastTimestamp).toLocaleTimeString()}
+                          {formatEventTimestamp(evt.lastObserved ?? evt.timestamp ?? evt.lastTimestamp)}
                         </span>
                       </div>
                       <p className="text-zinc-300 text-xs leading-relaxed">{evt.message}</p>

@@ -43,28 +43,54 @@ export const ResourceRelationshipTree: React.FC<ResourceRelationshipTreeProps> =
 
   // Helper to find child pods for a workload
   const findChildPods = (workload: KubernetesResource): KubernetesResource[] => {
+    // For Deployment: find owned ReplicaSets first
+    const ownedRsNames = new Set<string>();
+    const ownedRsUids = new Set<string>();
+    if (workload.kind === 'Deployment') {
+      safeClusterResources.forEach((r) => {
+        if (r.kind === 'ReplicaSet' && r.namespace === workload.namespace) {
+          const isOwned =
+            r.ownerReferences?.some(
+              (o) => o && o.kind === 'Deployment' && (o.uid && workload.uid ? o.uid === workload.uid : o.name === workload.name)
+            ) ||
+            (!r.ownerReferences?.length && (r.name === workload.name || r.name.startsWith(`${workload.name}-`)));
+          if (isOwned) {
+            ownedRsNames.add(r.name);
+            if (r.uid) ownedRsUids.add(r.uid);
+          }
+        }
+      });
+    }
+
     return safeClusterResources.filter((r) => {
       if (r.kind !== 'Pod' || r.namespace !== workload.namespace) return false;
 
       // Check direct ownerReference
       if (r.ownerReferences && r.ownerReferences.length > 0) {
-        const matchesOwner = r.ownerReferences.some(
-          (o) =>
-            o &&
-            ((o.kind === workload.kind && o.name === workload.name) ||
-              (workload.kind === 'Deployment' &&
-                o.kind === 'ReplicaSet' &&
-                o.name?.startsWith(workload.name)) ||
-              (workload.kind === 'CronJob' &&
-                o.kind === 'Job' &&
-                o.name?.startsWith(workload.name)))
-        );
+        const matchesOwner = r.ownerReferences.some((o) => {
+          if (!o) return false;
+          // Direct owner match
+          if (o.kind === workload.kind && (o.uid && workload.uid ? o.uid === workload.uid : o.name === workload.name)) {
+            return true;
+          }
+          // Deployment -> ReplicaSet -> Pod
+          if (workload.kind === 'Deployment' && o.kind === 'ReplicaSet') {
+            if (o.uid && ownedRsUids.has(o.uid)) return true;
+            if (o.name && ownedRsNames.has(o.name)) return true;
+            return o.name === workload.name || o.name?.startsWith(`${workload.name}-`);
+          }
+          // CronJob -> Job -> Pod
+          if (workload.kind === 'CronJob' && o.kind === 'Job') {
+            return o.name === workload.name || o.name?.startsWith(`${workload.name}-`);
+          }
+          return false;
+        });
         if (matchesOwner) return true;
       }
 
-      // Fallback to Kubernetes standard naming convention
+      // Fallback to Kubernetes standard naming convention (strictly bounded)
       const prefix = `${workload.name}-`;
-      return typeof r.name === 'string' && r.name.startsWith(prefix);
+      return typeof r.name === 'string' && (r.name === workload.name || r.name.startsWith(prefix));
     });
   };
 
@@ -74,11 +100,25 @@ export const ResourceRelationshipTree: React.FC<ResourceRelationshipTreeProps> =
       const topOwner = pod.ownerReferences[0];
       if (topOwner && topOwner.kind === 'ReplicaSet') {
         const rsName = topOwner.name || '';
+        // Look for ReplicaSet resource to check its ownerReferences
+        const rsResource = safeClusterResources.find(
+          (r) => r.kind === 'ReplicaSet' && r.namespace === pod.namespace && (topOwner.uid ? r.uid === topOwner.uid : r.name === rsName)
+        );
+        if (rsResource?.ownerReferences?.length) {
+          const rsOwner = rsResource.ownerReferences.find((o) => o && o.kind === 'Deployment');
+          if (rsOwner) {
+            const dep = safeClusterResources.find(
+              (r) => r.kind === 'Deployment' && r.namespace === pod.namespace && (rsOwner.uid ? r.uid === rsOwner.uid : r.name === rsOwner.name)
+            );
+            if (dep) return { parent: dep, controller: rsName };
+          }
+        }
+        // Fallback bounded matching
         const dep = safeClusterResources.find(
           (r) =>
             r.kind === 'Deployment' &&
             r.namespace === pod.namespace &&
-            rsName.startsWith(`${r.name}-`)
+            (rsName === r.name || rsName.startsWith(`${r.name}-`))
         );
         if (dep) return { parent: dep, controller: rsName };
         return { controller: rsName };
@@ -87,7 +127,7 @@ export const ResourceRelationshipTree: React.FC<ResourceRelationshipTreeProps> =
         const directParent = safeClusterResources.find(
           (r) =>
             r.kind === topOwner.kind &&
-            r.name === topOwner.name &&
+            (topOwner.uid ? r.uid === topOwner.uid : r.name === topOwner.name) &&
             r.namespace === pod.namespace
         );
         if (directParent) return { parent: directParent, controller: topOwner.name };
@@ -95,10 +135,10 @@ export const ResourceRelationshipTree: React.FC<ResourceRelationshipTreeProps> =
       }
     }
 
-    // Name prefix fallback
+    // Name prefix fallback (strictly bounded)
     for (const r of safeClusterResources) {
       if (['Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob'].includes(r.kind)) {
-        if (r.namespace === pod.namespace && pod.name.startsWith(`${r.name}-`)) {
+        if (r.namespace === pod.namespace && (pod.name === r.name || pod.name.startsWith(`${r.name}-`))) {
           return { parent: r, controller: pod.name.slice(0, pod.name.lastIndexOf('-')) };
         }
       }

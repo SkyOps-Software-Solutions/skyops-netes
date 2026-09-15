@@ -397,7 +397,7 @@ export const PodsView: React.FC<PodsViewProps> = ({
                     <td className="p-3.5 text-zinc-400 truncate max-w-[130px]">{pod.namespace}</td>
                     <td className="p-3.5">
                       <div className="flex items-center gap-1.5">
-                        <PodPhaseBadge phase={pod.status} />
+                        <PodPhaseBadge phaseOrStatus={pod.status} phase={pod.status} />
                         {pod.statusSummary?.reason && pod.statusSummary.reason !== pod.status && (
                           <span className="text-[10px] text-zinc-500 truncate max-w-[100px]">
                             ({String(pod.statusSummary.reason)})

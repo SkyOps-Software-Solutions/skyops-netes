@@ -535,6 +535,7 @@ export interface K8sEvent {
   source?: string;
   firstObserved?: number;
   lastObserved?: number;
+  lastTimestamp?: number;
   involvedObject?: {
     kind?: string;
     namespace?: string;
@@ -1171,6 +1172,8 @@ export type ResourceRelationType =
   | 'MOUNTS_PVC'
   | 'BACKED_BY_STORAGE_CLASS'
   | 'EXPOSED_BY_SERVICE'
+  | 'ROUTES_TO_POD'
+  | 'BACKED_BY_ENDPOINTS'
   | 'CONTROLS_POD'
   | 'PEER_ON_NODE';
 

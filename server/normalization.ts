@@ -170,6 +170,25 @@ export function normalizeResource(value: unknown, authenticatedClusterId: string
     const failed = asNumber(status.failed, 0);
     displayStatus = failed > 0 ? 'Failed' : succeeded > 0 ? 'Completed' : 'Running';
     health = failed > 0 ? 'CRITICAL' : 'HEALTHY';
+  } else if (kind === 'Service') {
+    const svcType = asString(spec.type, asString(target.status, 'ClusterIP'));
+    displayStatus = svcType || 'ClusterIP';
+    const isExternalName = svcType === 'ExternalName';
+    const totalEndpoints = asNumber(status.totalEndpoints, asNumber((target.statusSummary as any)?.totalEndpoints, 0));
+    const readyEndpoints = asNumber(status.readyEndpoints, asNumber((target.statusSummary as any)?.readyEndpoints, 0));
+    if (isExternalName) {
+      health = 'HEALTHY';
+    } else if (totalEndpoints > 0 && readyEndpoints === 0) {
+      health = 'CRITICAL';
+    } else if (totalEndpoints > 0 && readyEndpoints < totalEndpoints) {
+      health = 'WARNING';
+    } else {
+      health = 'HEALTHY';
+    }
+  } else if (kind === 'EndpointSlice') {
+    const ready = asNumber(status.readyEndpoints, asNumber(spec.readyCount, 0));
+    displayStatus = asString(target.status, `${ready} ready`);
+    health = 'HEALTHY';
   }
 
   const createdAt = Date.parse(asString(metadata.creationTimestamp));

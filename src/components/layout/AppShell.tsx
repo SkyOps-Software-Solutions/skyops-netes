@@ -10,9 +10,14 @@ import { ClustersView } from '../clusters/ClustersView';
 import { IncidentDetailView } from '../incidents/IncidentDetailView';
 import { IncidentsView } from '../incidents/IncidentsView';
 import { OverviewView } from '../overview/OverviewView';
+import { InfrastructureView } from '../infrastructure/InfrastructureView';
+import { ServicesView } from '../services/ServicesView';
+import { ObservabilityHubView } from '../observability/ObservabilityHubView';
+import { SkyOpsAICopilotView } from '../ai/SkyOpsAICopilotView';
+import { ActionsCenterView } from '../actions/ActionsCenterView';
+import { InsightsView } from '../insights/InsightsView';
 import { SettingsView } from '../settings/SettingsView';
 import { AuditView } from '../audit/AuditView';
-import { ErrorBoundary } from '../common/ErrorBoundary';
 import { NavigationTab, Sidebar } from './Sidebar';
 
 interface AppShellProps {
@@ -28,6 +33,8 @@ export const AppShell: React.FC<AppShellProps> = ({
   const [activeTab, setActiveTab] = useState<NavigationTab>('overview');
   const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
+  const [copilotInitialPrompt, setCopilotInitialPrompt] = useState<string>('');
+  const [targetLogPod, setTargetLogPod] = useState<{ clusterId: string; namespace: string; name: string } | null>(null);
   const [isAddClusterOpen, setIsAddClusterOpen] = useState(initialOpenAddCluster);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     try {
@@ -139,7 +146,17 @@ export const AppShell: React.FC<AppShellProps> = ({
   const handleSelectCluster = (id: string) => {
     setSelectedClusterId(id);
     setSelectedIncidentId(null);
-    setActiveTab('clusters');
+    setActiveTab('infrastructure');
+  };
+
+  const handleOpenAICopilot = (prompt?: string) => {
+    if (prompt) setCopilotInitialPrompt(prompt);
+    setActiveTab('ai');
+  };
+
+  const handleOpenLogs = (clusterId: string, namespace: string, podName: string) => {
+    setTargetLogPod({ clusterId, namespace, name: podName });
+    setActiveTab('observability');
   };
 
   const handleClearIncident = () => {
@@ -282,23 +299,22 @@ export const AppShell: React.FC<AppShellProps> = ({
         {/* View Routing */}
         <div className="flex-1">
           {activeTab === 'overview' && (
-            <ErrorBoundary fallbackTitle="Overview Diagnostics">
-              <OverviewView
-                metrics={metrics}
-                clusters={clusters}
-                recentIncidents={incidents}
-                recentActivity={recentActivity}
-                onSelectIncident={handleSelectIncident}
-                onSelectCluster={handleSelectCluster}
-                onOpenAddCluster={() => setIsAddClusterOpen(true)}
-                onRefresh={handleManualRefresh}
-                loading={loading || isRefreshing}
-              />
-            </ErrorBoundary>
+            <OverviewView
+              metrics={metrics}
+              clusters={clusters}
+              recentIncidents={incidents}
+              recentActivity={recentActivity}
+              onSelectIncident={handleSelectIncident}
+              onSelectCluster={handleSelectCluster}
+              onOpenAddCluster={() => setIsAddClusterOpen(true)}
+              onRefresh={handleManualRefresh}
+              loading={loading || isRefreshing}
+              onOpenAICopilot={handleOpenAICopilot}
+            />
           )}
 
-          {activeTab === 'clusters' && (
-            <ErrorBoundary fallbackTitle="Cluster Management">
+          {(activeTab === 'infrastructure' || activeTab === 'clusters') && (
+            <>
               {selectedClusterId ? (
                 <ClusterDetailView
                   clusterId={selectedClusterId}
@@ -311,7 +327,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                   }}
                 />
               ) : (
-                <ClustersView
+                <InfrastructureView
                   clusters={clusters}
                   onSelectCluster={handleSelectCluster}
                   onOpenAddCluster={() => setIsAddClusterOpen(true)}
@@ -321,13 +337,40 @@ export const AppShell: React.FC<AppShellProps> = ({
                   }}
                   onRefresh={handleManualRefresh}
                   loading={loading || isRefreshing}
+                  onSelectIncident={handleSelectIncident}
+                  onOpenLogs={handleOpenLogs}
                 />
               )}
-            </ErrorBoundary>
+            </>
+          )}
+
+          {activeTab === 'services' && (
+            <div className="p-6 max-w-7xl mx-auto space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-xl font-bold text-zinc-100">Kubernetes Services</h1>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/30">
+                      Service Mesh & Ingress
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 mt-1">
+                    First-class observability for ClusterIP, NodePort, LoadBalancer services, backing pods, and endpoint slices.
+                  </p>
+                </div>
+              </div>
+              <ServicesView
+                clusters={clusters}
+                loading={loading || isRefreshing}
+                onRefresh={handleManualRefresh}
+                onSelectCluster={handleSelectCluster}
+                onSelectIncident={handleSelectIncident}
+              />
+            </div>
           )}
 
           {activeTab === 'incidents' && (
-            <ErrorBoundary fallbackTitle="Incidents Management">
+            <>
               {selectedIncidentId ? (
                 <IncidentDetailView
                   incidentId={selectedIncidentId}
@@ -343,23 +386,58 @@ export const AppShell: React.FC<AppShellProps> = ({
                   loading={loading || isRefreshing}
                 />
               )}
-            </ErrorBoundary>
+            </>
+          )}
+
+          {activeTab === 'observability' && (
+            <ObservabilityHubView
+              clusters={clusters}
+              initialClusterId={targetLogPod?.clusterId}
+              initialPod={
+                targetLogPod ? { namespace: targetLogPod.namespace, name: targetLogPod.name } : undefined
+              }
+              onRefresh={handleManualRefresh}
+            />
+          )}
+
+          {activeTab === 'ai' && (
+            <SkyOpsAICopilotView
+              clusters={clusters}
+              incidents={incidents}
+              onSelectIncident={handleSelectIncident}
+              onSelectCluster={handleSelectCluster}
+              initialPrompt={copilotInitialPrompt}
+            />
+          )}
+
+          {activeTab === 'actions' && (
+            <ActionsCenterView
+              incidents={incidents}
+              onSelectIncident={handleSelectIncident}
+              onRefresh={handleManualRefresh}
+            />
+          )}
+
+          {activeTab === 'insights' && (
+            <InsightsView
+              clusters={clusters}
+              incidents={incidents}
+              onSelectIncident={handleSelectIncident}
+              onSelectCluster={handleSelectCluster}
+              onRefresh={handleManualRefresh}
+            />
           )}
 
           {activeTab === 'audit' && (
-            <ErrorBoundary fallbackTitle="Audit & Compliance Ledger">
-              <AuditView />
-            </ErrorBoundary>
+            <AuditView />
           )}
 
           {activeTab === 'settings' && (
-            <ErrorBoundary fallbackTitle="Settings & Configuration">
-              <SettingsView
-                clusters={clusters}
-                onSelectIncident={handleSelectIncident}
-                onRefresh={handleManualRefresh}
-              />
-            </ErrorBoundary>
+            <SettingsView
+              clusters={clusters}
+              onSelectIncident={handleSelectIncident}
+              onRefresh={handleManualRefresh}
+            />
           )}
         </div>
       </main>

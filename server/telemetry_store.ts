@@ -523,8 +523,11 @@ export class TelemetryStore {
     const bucket = this.clusters.get(clusterId);
     if (!bucket) return null;
 
+    // Prefer granular raw observations if available in window, otherwise fallback to rollups
+    const rawPoints = this.getRawPoints(clusterId, range, now).filter((p) => p.isUsageAvailable);
     const query = this.getTelemetryHistory(clusterId, { range: range as any, resolution: '5m' }, now);
-    const validPoints = query.points.filter((p) => p.isUsageAvailable);
+    const rollupPoints = query.points.filter((p) => p.isUsageAvailable);
+    const validPoints = rawPoints.length > 0 ? rawPoints : rollupPoints;
     if (validPoints.length === 0) return null;
 
     const cpuPercents = validPoints.map((p) => p.cpuUsagePercent).filter((v): v is number => v !== undefined);
@@ -657,8 +660,53 @@ export class TelemetryStore {
       });
     }
 
-    // Check runtime spikes & near-saturation if usage is available
+    // Calculate baseline intelligence for historical comparison
+    const baseline = this.calculateBaseline(clusterId, '24h', now);
+    const hasSufficientBaseline = baseline !== null && baseline.status === 'AVAILABLE' && baseline.sampleSize >= 10;
+
+    // Check runtime CPU: compare against historical baseline and detect meaningful or sustained deviation
     if (latest.isUsageAvailable && latest.cpuUsagePercent !== undefined) {
+      if (hasSufficientBaseline && baseline.cpu.avgPercent !== undefined && baseline.cpu.normalRange) {
+        const normalUpper = baseline.cpu.normalRange[1];
+        const avg = baseline.cpu.avgPercent;
+        const stdDev = baseline.cpu.stdDevPercent ?? 0;
+
+        // Detect meaningful deviation exceeding 2 standard deviations from baseline average
+        if (latest.cpuUsagePercent > normalUpper && latest.cpuUsagePercent >= avg + 15) {
+          // Check for sustained deviation across recent observations
+          const recentUsagePoints = recent.filter((p) => p.isUsageAvailable && p.cpuUsagePercent !== undefined);
+          const sustainedPoints = recentUsagePoints.filter((p) => p.cpuUsagePercent! > normalUpper);
+          const sustainedCount = sustainedPoints.length;
+          const isSustained = sustainedCount >= 3;
+          const deviation = latest.cpuUsagePercent - avg;
+
+          anomalies.push({
+            id: nextId('CPU_BASELINE_DEVIATION'),
+            type: 'CPU_SPIKE',
+            status: 'ANOMALOUS',
+            severity: latest.cpuUsagePercent >= 85 || isSustained ? 'CRITICAL' : 'WARNING',
+            message: `Cluster CPU runtime utilization (${latest.cpuUsagePercent}%) significantly exceeds historical baseline of ${avg}%${isSustained ? ` (sustained across ${sustainedCount} observations)` : ''}.`,
+            detectedAt: now,
+            metric: 'cpu',
+            currentValue: latest.cpuUsagePercent,
+            observedValue: `${latest.cpuUsagePercent}%${isSustained ? ` (sustained ${sustainedCount}x)` : ''}`,
+            expectedValue: `${avg}% (baseline normal range: ${baseline.cpu.normalRange[0]}% - ${baseline.cpu.normalRange[1]}%)`,
+            threshold: normalUpper,
+            deviationReason: `Current CPU (${latest.cpuUsagePercent}%) exceeds baseline upper bound (${normalUpper}%, avg ${avg}% ± ${stdDev}%) by +${deviation}%`,
+            timeWindow: '24h',
+            source: 'metrics.k8s.io',
+            confidence: baseline.confidence === 'HIGH' ? 0.95 : 0.85,
+            evidenceReferences: [
+              `cluster.${clusterId}.cpuUsagePercent`,
+              `cluster.${clusterId}.baseline.cpu.avgPercent`,
+              `cluster.${clusterId}.baseline.cpu.normalRange`
+            ],
+            resource: { kind: 'Cluster', name: clusterId }
+          });
+        }
+      }
+
+      // Preserve deterministic static safety threshold
       if (latest.cpuUsagePercent >= 90) {
         anomalies.push({
           id: nextId('CPU_SATURATION'),
@@ -672,7 +720,9 @@ export class TelemetryStore {
           observedValue: `${latest.cpuUsagePercent}%`,
           expectedValue: '< 90%',
           threshold: 90,
-          deviationReason: 'CPU runtime utilization reached critical threshold (>= 90%)',
+          deviationReason: hasSufficientBaseline
+            ? `CPU runtime utilization reached critical threshold (>= 90%) [Baseline avg: ${baseline?.cpu.avgPercent}%]`
+            : 'CPU runtime utilization reached critical threshold (>= 90%) [Baseline: INSUFFICIENT_HISTORY]',
           timeWindow: '15m',
           source: 'metrics.k8s.io',
           confidence: 0.95,
@@ -682,7 +732,47 @@ export class TelemetryStore {
       }
     }
 
+    // Check runtime Memory: compare against historical baseline and detect meaningful or sustained deviation
     if (latest.isUsageAvailable && latest.memoryUsagePercent !== undefined) {
+      if (hasSufficientBaseline && baseline.memory.avgPercent !== undefined && baseline.memory.normalRange) {
+        const normalUpper = baseline.memory.normalRange[1];
+        const avg = baseline.memory.avgPercent;
+        const stdDev = baseline.memory.stdDevPercent ?? 0;
+
+        if (latest.memoryUsagePercent > normalUpper && latest.memoryUsagePercent >= avg + 15) {
+          const recentUsagePoints = recent.filter((p) => p.isUsageAvailable && p.memoryUsagePercent !== undefined);
+          const sustainedPoints = recentUsagePoints.filter((p) => p.memoryUsagePercent! > normalUpper);
+          const sustainedCount = sustainedPoints.length;
+          const isSustained = sustainedCount >= 3;
+          const deviation = latest.memoryUsagePercent - avg;
+
+          anomalies.push({
+            id: nextId('MEM_BASELINE_DEVIATION'),
+            type: 'NEAR_SATURATION',
+            status: 'ANOMALOUS',
+            severity: latest.memoryUsagePercent >= 85 || isSustained ? 'CRITICAL' : 'WARNING',
+            message: `Cluster memory utilization (${latest.memoryUsagePercent}%) significantly exceeds historical baseline of ${avg}%${isSustained ? ` (sustained across ${sustainedCount} observations)` : ''}.`,
+            detectedAt: now,
+            metric: 'memory',
+            currentValue: latest.memoryUsagePercent,
+            observedValue: `${latest.memoryUsagePercent}%${isSustained ? ` (sustained ${sustainedCount}x)` : ''}`,
+            expectedValue: `${avg}% (baseline normal range: ${baseline.memory.normalRange[0]}% - ${baseline.memory.normalRange[1]}%)`,
+            threshold: normalUpper,
+            deviationReason: `Current memory (${latest.memoryUsagePercent}%) exceeds baseline upper bound (${normalUpper}%, avg ${avg}% ± ${stdDev}%) by +${deviation}%`,
+            timeWindow: '24h',
+            source: 'metrics.k8s.io',
+            confidence: baseline.confidence === 'HIGH' ? 0.95 : 0.85,
+            evidenceReferences: [
+              `cluster.${clusterId}.memoryUsagePercent`,
+              `cluster.${clusterId}.baseline.memory.avgPercent`,
+              `cluster.${clusterId}.baseline.memory.normalRange`
+            ],
+            resource: { kind: 'Cluster', name: clusterId }
+          });
+        }
+      }
+
+      // Preserve deterministic static safety threshold
       if (latest.memoryUsagePercent >= 90) {
         anomalies.push({
           id: nextId('MEM_SATURATION'),
@@ -696,7 +786,9 @@ export class TelemetryStore {
           observedValue: `${latest.memoryUsagePercent}%`,
           expectedValue: '< 90%',
           threshold: 90,
-          deviationReason: 'Memory runtime utilization reached critical threshold (>= 90%)',
+          deviationReason: hasSufficientBaseline
+            ? `Memory runtime utilization reached critical threshold (>= 90%) [Baseline avg: ${baseline?.memory.avgPercent}%]`
+            : 'Memory runtime utilization reached critical threshold (>= 90%) [Baseline: INSUFFICIENT_HISTORY]',
           timeWindow: '15m',
           source: 'metrics.k8s.io',
           confidence: 0.95,

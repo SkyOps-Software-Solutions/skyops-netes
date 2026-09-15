@@ -165,6 +165,26 @@ app.get('/api/v1/orgs', requireUserAuth, (req: AuthenticatedUserRequest, res) =>
   res.json({ organizations: orgs });
 });
 
+app.get('/api/v1/orgs/current', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const org = store.getOrganization(req.orgId!);
+  if (!org) {
+    return res.status(404).json({ error: 'Organization not found' });
+  }
+  res.json({ organization: org, role: req.userRole });
+});
+
+app.get('/api/v1/orgs/:id', requireUserAuth, (req: AuthenticatedUserRequest, res) => {
+  const access = store.checkUserOrgAccess(req.user!.id, req.params.id, req.user!.email);
+  if (!access.hasAccess) {
+    return res.status(403).json({ error: 'Forbidden: You do not have access to this organization' });
+  }
+  const org = store.getOrganization(req.params.id);
+  if (!org) {
+    return res.status(404).json({ error: 'Organization not found' });
+  }
+  res.json({ organization: org, role: access.role });
+});
+
 const CreateOrgSchema = z.object({
   name: z.string().min(2, 'Organization name must be at least 2 characters').max(60)
 });
@@ -175,14 +195,317 @@ app.post('/api/v1/orgs', requireUserAuth, (req: AuthenticatedUserRequest, res) =
     return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid organization payload' });
   }
 
-  const org = store.createOrganization(parsed.data.name.trim(), req.user!.id);
+  const org = store.createOrganization(
+    parsed.data.name.trim(),
+    req.user!.id,
+    req.user!.email,
+    req.user!.name
+  );
   res.status(201).json({ organization: org });
 });
 
-app.get('/api/v1/orgs/members', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
-  const members = store.getOrgMembers(req.orgId!);
-  res.json({ members });
+const UpdateOrgSchema = z.object({
+  name: z.string().min(2).max(60).optional(),
+  settings: z
+    .object({
+      general: z
+        .object({
+          name: z.string().optional(),
+          timezone: z.string().optional()
+        })
+        .optional(),
+      notifications: z
+        .object({
+          incidentEmailEnabled: z.boolean().optional(),
+          digestEmailEnabled: z.boolean().optional(),
+          alertSeverityThreshold: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
+          webhookUrl: z.string().url().or(z.literal('')).optional()
+        })
+        .optional(),
+      security: z
+        .object({
+          enforceMfa: z.boolean().optional(),
+          sessionTimeoutMinutes: z.number().min(15).max(10080).optional()
+        })
+        .optional()
+    })
+    .optional()
 });
+
+app.patch(
+  '/api/v1/orgs/:id',
+  requireUserAuth,
+  requireOrgMembership,
+  requireRole(['OWNER', 'ADMIN']),
+  (req: AuthenticatedUserRequest, res) => {
+    if (req.params.id !== req.orgId) {
+      return res.status(403).json({ error: 'Forbidden: Cannot update an organization outside your active context' });
+    }
+    const parsed = UpdateOrgSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid update payload' });
+    }
+
+    const updated = store.updateOrganization(req.orgId!, parsed.data, {
+      id: req.user!.id,
+      name: req.user!.name || req.user!.email
+    });
+    if (!updated) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+    res.json({ organization: updated });
+  }
+);
+
+// --- Organization Members ---
+app.get('/api/v1/orgs/members', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+  const role = typeof req.query.role === 'string' ? (req.query.role as any) : undefined;
+  const status = typeof req.query.status === 'string' ? (req.query.status as any) : undefined;
+
+  const members = store.getOrgMembers(req.orgId!, { search, role, status });
+  res.json({ members, total: members.length });
+});
+
+const InviteMemberSchema = z.object({
+  email: z.string().email('Valid email is required'),
+  role: z.enum(['OWNER', 'ADMIN', 'OPERATOR', 'ENGINEER', 'VIEWER'])
+});
+
+app.post(
+  '/api/v1/orgs/members/invite',
+  requireUserAuth,
+  requireOrgMembership,
+  requireRole(['OWNER', 'ADMIN']),
+  (req: AuthenticatedUserRequest, res) => {
+    const parsed = InviteMemberSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid invitation payload' });
+    }
+
+    if (req.userRole !== 'OWNER' && parsed.data.role === 'OWNER') {
+      return res.status(403).json({ error: 'Only organization Owners can invite users as Owners' });
+    }
+
+    try {
+      const invitation = store.inviteMember(req.orgId!, parsed.data.email, parsed.data.role, {
+        id: req.user!.id,
+        name: req.user!.name || req.user!.email,
+        email: req.user!.email
+      });
+      res.status(201).json({ success: true, invitation });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || 'Failed to invite member' });
+    }
+  }
+);
+
+const UpdateRoleSchema = z.object({
+  role: z.enum(['OWNER', 'ADMIN', 'OPERATOR', 'ENGINEER', 'VIEWER'])
+});
+
+app.patch(
+  '/api/v1/orgs/members/:userId/role',
+  requireUserAuth,
+  requireOrgMembership,
+  requireRole(['OWNER', 'ADMIN']),
+  (req: AuthenticatedUserRequest, res) => {
+    const parsed = UpdateRoleSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid role payload' });
+    }
+
+    try {
+      const member = store.updateMemberRole(req.orgId!, req.params.userId, parsed.data.role, {
+        id: req.user!.id,
+        name: req.user!.name || req.user!.email,
+        role: req.userRole!
+      });
+      res.json({ success: true, member });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || 'Failed to update member role' });
+    }
+  }
+);
+
+const UpdateStatusSchema = z.object({
+  status: z.enum(['ACTIVE', 'SUSPENDED', 'REMOVED'])
+});
+
+app.patch(
+  '/api/v1/orgs/members/:userId/status',
+  requireUserAuth,
+  requireOrgMembership,
+  requireRole(['OWNER', 'ADMIN']),
+  (req: AuthenticatedUserRequest, res) => {
+    const parsed = UpdateStatusSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid status payload' });
+    }
+
+    try {
+      const member = store.updateMemberStatus(req.orgId!, req.params.userId, parsed.data.status, {
+        id: req.user!.id,
+        name: req.user!.name || req.user!.email,
+        role: req.userRole!
+      });
+      res.json({ success: true, member });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || 'Failed to update member status' });
+    }
+  }
+);
+
+app.delete(
+  '/api/v1/orgs/members/:userId',
+  requireUserAuth,
+  requireOrgMembership,
+  requireRole(['OWNER', 'ADMIN']),
+  (req: AuthenticatedUserRequest, res) => {
+    try {
+      const success = store.removeMember(req.orgId!, req.params.userId, {
+        id: req.user!.id,
+        name: req.user!.name || req.user!.email,
+        role: req.userRole!
+      });
+      res.json({ success, message: 'Member removed from organization' });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || 'Failed to remove member' });
+    }
+  }
+);
+
+// --- Invitations ---
+app.get(
+  '/api/v1/orgs/invitations',
+  requireUserAuth,
+  requireOrgMembership,
+  requireRole(['OWNER', 'ADMIN']),
+  (req: AuthenticatedUserRequest, res) => {
+    const invitations = store.getOrgInvitations(req.orgId!);
+    res.json({ invitations });
+  }
+);
+
+app.delete(
+  '/api/v1/orgs/invitations/:id',
+  requireUserAuth,
+  requireOrgMembership,
+  requireRole(['OWNER', 'ADMIN']),
+  (req: AuthenticatedUserRequest, res) => {
+    const success = store.revokeInvitation(req.orgId!, req.params.id, {
+      id: req.user!.id,
+      name: req.user!.name || req.user!.email
+    });
+    if (!success) {
+      return res.status(404).json({ error: 'Invitation not found or cannot be revoked' });
+    }
+    res.json({ success: true, message: 'Invitation revoked' });
+  }
+);
+
+app.post(
+  '/api/v1/orgs/invitations/:id/resend',
+  requireUserAuth,
+  requireOrgMembership,
+  requireRole(['OWNER', 'ADMIN']),
+  (req: AuthenticatedUserRequest, res) => {
+    try {
+      const invitation = store.resendInvitation(req.orgId!, req.params.id, {
+        id: req.user!.id,
+        name: req.user!.name || req.user!.email
+      });
+      res.json({ success: true, invitation });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || 'Failed to resend invitation' });
+    }
+  }
+);
+
+// Verify invitation token (public/authenticated preview)
+app.get('/api/v1/invitations/verify', (req: Request, res: Response) => {
+  const token = req.query.token as string;
+  if (!token) {
+    return res.status(400).json({ error: 'Invitation token is required' });
+  }
+  const inv = store.getInvitationByToken(token);
+  if (!inv) {
+    return res.status(404).json({ error: 'Invalid or expired invitation' });
+  }
+  const org = store.getOrganization(inv.orgId);
+  res.json({
+    valid: inv.status === 'PENDING' && inv.expiresAt > Date.now(),
+    email: inv.email,
+    role: inv.role,
+    orgName: org?.name || 'SkyOps Workspace',
+    expiresAt: inv.expiresAt,
+    status: inv.status
+  });
+});
+
+const AcceptInvitationSchema = z.object({
+  token: z.string().min(1, 'Token is required')
+});
+
+app.post('/api/v1/invitations/accept', requireUserAuth, (req: AuthenticatedUserRequest, res) => {
+  const parsed = AcceptInvitationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Invalid invitation acceptance payload' });
+  }
+
+  try {
+    const result = store.acceptInvitation(parsed.data.token, {
+      id: req.user!.id,
+      email: req.user!.email,
+      name: req.user!.name || req.user!.email
+    });
+    res.json({ success: true, organization: result.org, role: result.role });
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Failed to accept invitation' });
+  }
+});
+
+// --- Support / Enterprise Contact ---
+const CreateSupportTicketSchema = z.object({
+  subject: z.string().min(3, 'Subject must be at least 3 characters').max(120),
+  category: z.enum(['INCIDENT', 'AGENT', 'PLATFORM', 'BILLING_QUERY', 'GENERAL']),
+  severity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']),
+  description: z.string().min(10, 'Description must be at least 10 characters').max(3000),
+  clusterId: z.string().optional(),
+  incidentId: z.string().optional()
+});
+
+app.post(
+  '/api/v1/support/tickets',
+  requireUserAuth,
+  requireOrgMembership,
+  (req: AuthenticatedUserRequest, res) => {
+    const parsed = CreateSupportTicketSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid support ticket payload' });
+    }
+
+    const ticket = store.createSupportTicket({
+      orgId: req.orgId!,
+      userId: req.user!.id,
+      userName: req.user!.name || req.user!.email,
+      userEmail: req.user!.email,
+      ...parsed.data
+    });
+
+    res.status(201).json({ success: true, ticket });
+  }
+);
+
+app.get(
+  '/api/v1/support/tickets',
+  requireUserAuth,
+  requireOrgMembership,
+  (req: AuthenticatedUserRequest, res) => {
+    const tickets = store.getSupportTickets(req.orgId!);
+    res.json({ tickets });
+  }
+);
 
 // --- Clusters ---
 app.get('/api/v1/clusters', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
@@ -306,7 +629,10 @@ app.delete(
   requireOrgMembership,
   requireRole(['OWNER', 'ADMIN']),
   (req: AuthenticatedUserRequest, res) => {
-    const deleted = store.deleteCluster(req.params.id, req.orgId!);
+    const deleted = store.deleteCluster(req.params.id, req.orgId!, {
+      id: req.user!.id,
+      name: req.user!.name || req.user!.email
+    });
     if (!deleted) {
       return res.status(404).json({ error: 'Cluster not found' });
     }
@@ -1564,7 +1890,8 @@ app.get('/api/v1/integrations/webhooks/:id/deliveries', requireUserAuth, require
 // --- Organization Usage Tracking ---
 app.get('/api/v1/orgs/usage', requireUserAuth, requireOrgMembership, requirePermission('billing.read'), (req: AuthenticatedUserRequest, res) => {
   const usage = store.getOrgUsage(req.orgId!);
-  res.json({ usage });
+  const metrics = store.getUsageMetrics(req.orgId!);
+  res.json({ usage, metrics });
 });
 
 // --- Development & QA Scenario Simulation (Strictly Protected) ---

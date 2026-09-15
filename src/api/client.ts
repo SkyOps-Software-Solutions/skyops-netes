@@ -9,11 +9,17 @@ import {
   IntelligenceAnalysis,
   KubernetesResource,
   Organization,
+  OrganizationSettings,
+  OrgInvitation,
   OrgMember,
+  OrgMemberStatus,
   OverviewMetrics,
   Role,
   SkyOpsAIAnalysis,
   StructuredRemediation,
+  SupportTicket,
+  TicketCategory,
+  TicketSeverity,
   TimelineEvent,
   User,
   ClusterObservabilityMetrics,
@@ -201,6 +207,14 @@ class ApiClient {
     return data.organizations;
   }
 
+  async getCurrentOrganization(): Promise<{ organization: Organization; role: Role }> {
+    return this.request<{ organization: Organization; role: Role }>('/api/v1/orgs/current');
+  }
+
+  async getOrganization(orgId: string): Promise<{ organization: Organization; role?: Role }> {
+    return this.request<{ organization: Organization; role?: Role }>(`/api/v1/orgs/${orgId}`);
+  }
+
   async createOrganization(name: string): Promise<Organization> {
     const data = await this.request<{ organization: Organization }>('/api/v1/orgs', {
       method: 'POST',
@@ -209,9 +223,128 @@ class ApiClient {
     return data.organization;
   }
 
-  async getOrgMembers(): Promise<OrgMember[]> {
-    const data = await this.request<{ members: OrgMember[] }>('/api/v1/orgs/members');
+  async updateOrganization(
+    orgId: string,
+    updates: { name?: string; settings?: OrganizationSettings }
+  ): Promise<{ organization: Organization }> {
+    return this.request<{ organization: Organization }>(`/api/v1/orgs/${orgId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates)
+    });
+  }
+
+  async getOrgMembers(options?: {
+    search?: string;
+    role?: Role;
+    status?: OrgMemberStatus;
+  }): Promise<OrgMember[]> {
+    const params = new URLSearchParams();
+    if (options?.search) params.append('search', options.search);
+    if (options?.role) params.append('role', options.role);
+    if (options?.status) params.append('status', options.status);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const data = await this.request<{ members: OrgMember[] }>(`/api/v1/orgs/members${query}`);
     return data.members;
+  }
+
+  async inviteMember(
+    email: string,
+    role: Role
+  ): Promise<{ success: boolean; invitation: OrgInvitation }> {
+    return this.request<{ success: boolean; invitation: OrgInvitation }>('/api/v1/orgs/members/invite', {
+      method: 'POST',
+      body: JSON.stringify({ email, role })
+    });
+  }
+
+  async updateMemberRole(
+    userId: string,
+    role: Role
+  ): Promise<{ success: boolean; member: OrgMember }> {
+    return this.request<{ success: boolean; member: OrgMember }>(`/api/v1/orgs/members/${userId}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role })
+    });
+  }
+
+  async updateMemberStatus(
+    userId: string,
+    status: OrgMemberStatus
+  ): Promise<{ success: boolean; member: OrgMember }> {
+    return this.request<{ success: boolean; member: OrgMember }>(`/api/v1/orgs/members/${userId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status })
+    });
+  }
+
+  async removeMember(userId: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>(`/api/v1/orgs/members/${userId}`, {
+      method: 'DELETE'
+    });
+  }
+
+  // --- Invitations ---
+  async getOrgInvitations(): Promise<OrgInvitation[]> {
+    const data = await this.request<{ invitations: OrgInvitation[] }>('/api/v1/orgs/invitations');
+    return data.invitations;
+  }
+
+  async revokeInvitation(invitationId: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>(`/api/v1/orgs/invitations/${invitationId}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async resendInvitation(invitationId: string): Promise<{ success: boolean; invitation: OrgInvitation }> {
+    return this.request<{ success: boolean; invitation: OrgInvitation }>(
+      `/api/v1/orgs/invitations/${invitationId}/resend`,
+      { method: 'POST' }
+    );
+  }
+
+  async verifyInvitation(token: string): Promise<{
+    valid: boolean;
+    email: string;
+    role: Role;
+    orgName: string;
+    expiresAt: number;
+    status: string;
+  }> {
+    return this.request<{
+      valid: boolean;
+      email: string;
+      role: Role;
+      orgName: string;
+      expiresAt: number;
+      status: string;
+    }>(`/api/v1/invitations/verify?token=${encodeURIComponent(token)}`);
+  }
+
+  async acceptInvitation(token: string): Promise<{ success: boolean; organization: Organization; role: Role }> {
+    return this.request<{ success: boolean; organization: Organization; role: Role }>('/api/v1/invitations/accept', {
+      method: 'POST',
+      body: JSON.stringify({ token })
+    });
+  }
+
+  // --- Support ---
+  async createSupportTicket(data: {
+    subject: string;
+    category: TicketCategory;
+    severity: TicketSeverity;
+    description: string;
+    clusterId?: string;
+    incidentId?: string;
+  }): Promise<{ success: boolean; ticket: SupportTicket }> {
+    return this.request<{ success: boolean; ticket: SupportTicket }>('/api/v1/support/tickets', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async getSupportTickets(): Promise<SupportTicket[]> {
+    const data = await this.request<{ tickets: SupportTicket[] }>('/api/v1/support/tickets');
+    return data.tickets;
   }
 
   // --- Clusters ---

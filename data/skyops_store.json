@@ -32,13 +32,6 @@
     }
   },
   "orgs": {
-    "org-production-sre": {
-      "id": "org-production-sre",
-      "name": "Acme Platform Engineering",
-      "slug": "acme-platform",
-      "createdAt": 1784996989203,
-      "membersCount": 3
-    },
     "org-85197e5f1bd6": {
       "id": "org-85197e5f1bd6",
       "name": "Saurav's Workspace",
@@ -381,6 +374,418 @@
       "slug": "persistent-history-org",
       "createdAt": 1789441137198,
       "membersCount": 1
+    },
+    "org-a71bf1dff095": {
+      "id": "org-a71bf1dff095",
+      "name": "Event Org",
+      "slug": "event-org",
+      "createdAt": 1789442984928,
+      "membersCount": 1
+    },
+    "org-8f94a1a9765a": {
+      "id": "org-8f94a1a9765a",
+      "name": "Empty Metrics Org",
+      "slug": "empty-metrics-org",
+      "createdAt": 1789442984935,
+      "membersCount": 1
+    },
+    "org-c8b3212f40bb": {
+      "id": "org-c8b3212f40bb",
+      "name": "No Live Metrics Org",
+      "slug": "no-live-metrics-org",
+      "createdAt": 1789442984936,
+      "membersCount": 1
+    },
+    "org-6502cc15926f": {
+      "id": "org-6502cc15926f",
+      "name": "Persistent History Org",
+      "slug": "persistent-history-org",
+      "createdAt": 1789442984937,
+      "membersCount": 1
+    },
+    "org-8e0fa58acb18": {
+      "id": "org-8e0fa58acb18",
+      "name": "Event Org",
+      "slug": "event-org",
+      "createdAt": 1789443604769,
+      "membersCount": 1
+    },
+    "org-b0e89db295df": {
+      "id": "org-b0e89db295df",
+      "name": "Empty Metrics Org",
+      "slug": "empty-metrics-org",
+      "createdAt": 1789443604779,
+      "membersCount": 1
+    },
+    "org-1d36acc9da6d": {
+      "id": "org-1d36acc9da6d",
+      "name": "No Live Metrics Org",
+      "slug": "no-live-metrics-org",
+      "createdAt": 1789443604780,
+      "membersCount": 1
+    },
+    "org-a957ed730c55": {
+      "id": "org-a957ed730c55",
+      "name": "Persistent History Org",
+      "slug": "persistent-history-org",
+      "createdAt": 1789443604781,
+      "membersCount": 1
+    },
+    "org-dd4e4159cf98": {
+      "id": "org-dd4e4159cf98",
+      "name": "Event Org",
+      "slug": "event-org",
+      "createdAt": 1789443680940,
+      "membersCount": 1
+    },
+    "org-5c4501aa9c80": {
+      "id": "org-5c4501aa9c80",
+      "name": "Empty Metrics Org",
+      "slug": "empty-metrics-org",
+      "createdAt": 1789443680947,
+      "membersCount": 1
+    },
+    "org-b693d374c3ea": {
+      "id": "org-b693d374c3ea",
+      "name": "No Live Metrics Org",
+      "slug": "no-live-metrics-org",
+      "createdAt": 1789443680947,
+      "membersCount": 1
+    },
+    "org-e963bace431e": {
+      "id": "org-e963bace431e",
+      "name": "Persistent History Org",
+      "slug": "persistent-history-org",
+      "createdAt": 1789443680949,
+      "membersCount": 1
+    },
+    "org-f4b8fa72ca40": {
+      "id": "org-f4b8fa72ca40",
+      "name": "Event Org",
+      "slug": "event-org",
+      "createdAt": 1789444306155,
+      "membersCount": 1
+    },
+    "org-6254212293fc": {
+      "id": "org-6254212293fc",
+      "name": "Empty Metrics Org",
+      "slug": "empty-metrics-org",
+      "createdAt": 1789444306162,
+      "membersCount": 1
+    },
+    "org-95afb91e014f": {
+      "id": "org-95afb91e014f",
+      "name": "No Live Metrics Org",
+      "slug": "no-live-metrics-org",
+      "createdAt": 1789444306163,
+      "membersCount": 1
+    },
+    "org-8ef9e32b0fa4": {
+      "id": "org-8ef9e32b0fa4",
+      "name": "Persistent History Org",
+      "slug": "persistent-history-org",
+      "createdAt": 1789444306164,
+      "membersCount": 1
+    },
+    "org-8a28a346b54a": {
+      "id": "org-8a28a346b54a",
+      "name": "Event Org",
+      "slug": "event-org",
+      "status": "ACTIVE",
+      "createdAt": 1789444857605,
+      "updatedAt": 1789444857605,
+      "membersCount": 1,
+      "ownerUserId": "user-test-obs",
+      "settings": {
+        "general": {
+          "name": "Event Org",
+          "timezone": "UTC"
+        },
+        "notifications": {
+          "incidentEmailEnabled": true,
+          "digestEmailEnabled": false,
+          "alertSeverityThreshold": "HIGH"
+        },
+        "security": {
+          "enforceMfa": false,
+          "sessionTimeoutMinutes": 1440
+        }
+      }
+    },
+    "org-bc458f47b696": {
+      "id": "org-bc458f47b696",
+      "name": "Empty Metrics Org",
+      "slug": "empty-metrics-org",
+      "status": "ACTIVE",
+      "createdAt": 1789444857612,
+      "updatedAt": 1789444857612,
+      "membersCount": 1,
+      "ownerUserId": "user-test-obs",
+      "settings": {
+        "general": {
+          "name": "Empty Metrics Org",
+          "timezone": "UTC"
+        },
+        "notifications": {
+          "incidentEmailEnabled": true,
+          "digestEmailEnabled": false,
+          "alertSeverityThreshold": "HIGH"
+        },
+        "security": {
+          "enforceMfa": false,
+          "sessionTimeoutMinutes": 1440
+        }
+      }
+    },
+    "org-be145d527978": {
+      "id": "org-be145d527978",
+      "name": "No Live Metrics Org",
+      "slug": "no-live-metrics-org",
+      "status": "ACTIVE",
+      "createdAt": 1789444857613,
+      "updatedAt": 1789444857613,
+      "membersCount": 1,
+      "ownerUserId": "user-test-obs",
+      "settings": {
+        "general": {
+          "name": "No Live Metrics Org",
+          "timezone": "UTC"
+        },
+        "notifications": {
+          "incidentEmailEnabled": true,
+          "digestEmailEnabled": false,
+          "alertSeverityThreshold": "HIGH"
+        },
+        "security": {
+          "enforceMfa": false,
+          "sessionTimeoutMinutes": 1440
+        }
+      }
+    },
+    "org-ac20a4430a6c": {
+      "id": "org-ac20a4430a6c",
+      "name": "Persistent History Org",
+      "slug": "persistent-history-org",
+      "status": "ACTIVE",
+      "createdAt": 1789444857614,
+      "updatedAt": 1789444857614,
+      "membersCount": 1,
+      "ownerUserId": "user-test-obs",
+      "settings": {
+        "general": {
+          "name": "Persistent History Org",
+          "timezone": "UTC"
+        },
+        "notifications": {
+          "incidentEmailEnabled": true,
+          "digestEmailEnabled": false,
+          "alertSeverityThreshold": "HIGH"
+        },
+        "security": {
+          "enforceMfa": false,
+          "sessionTimeoutMinutes": 1440
+        }
+      }
+    },
+    "org-d004d5063247": {
+      "id": "org-d004d5063247",
+      "name": "Event Org",
+      "slug": "event-org",
+      "status": "ACTIVE",
+      "createdAt": 1789444890562,
+      "updatedAt": 1789444890562,
+      "membersCount": 1,
+      "ownerUserId": "user-test-obs",
+      "settings": {
+        "general": {
+          "name": "Event Org",
+          "timezone": "UTC"
+        },
+        "notifications": {
+          "incidentEmailEnabled": true,
+          "digestEmailEnabled": false,
+          "alertSeverityThreshold": "HIGH"
+        },
+        "security": {
+          "enforceMfa": false,
+          "sessionTimeoutMinutes": 1440
+        }
+      }
+    },
+    "org-9b89a5ac8446": {
+      "id": "org-9b89a5ac8446",
+      "name": "Empty Metrics Org",
+      "slug": "empty-metrics-org",
+      "status": "ACTIVE",
+      "createdAt": 1789444890570,
+      "updatedAt": 1789444890570,
+      "membersCount": 1,
+      "ownerUserId": "user-test-obs",
+      "settings": {
+        "general": {
+          "name": "Empty Metrics Org",
+          "timezone": "UTC"
+        },
+        "notifications": {
+          "incidentEmailEnabled": true,
+          "digestEmailEnabled": false,
+          "alertSeverityThreshold": "HIGH"
+        },
+        "security": {
+          "enforceMfa": false,
+          "sessionTimeoutMinutes": 1440
+        }
+      }
+    },
+    "org-c3fdbc8d6ad9": {
+      "id": "org-c3fdbc8d6ad9",
+      "name": "No Live Metrics Org",
+      "slug": "no-live-metrics-org",
+      "status": "ACTIVE",
+      "createdAt": 1789444890571,
+      "updatedAt": 1789444890571,
+      "membersCount": 1,
+      "ownerUserId": "user-test-obs",
+      "settings": {
+        "general": {
+          "name": "No Live Metrics Org",
+          "timezone": "UTC"
+        },
+        "notifications": {
+          "incidentEmailEnabled": true,
+          "digestEmailEnabled": false,
+          "alertSeverityThreshold": "HIGH"
+        },
+        "security": {
+          "enforceMfa": false,
+          "sessionTimeoutMinutes": 1440
+        }
+      }
+    },
+    "org-d8e3aec08b6b": {
+      "id": "org-d8e3aec08b6b",
+      "name": "Persistent History Org",
+      "slug": "persistent-history-org",
+      "status": "ACTIVE",
+      "createdAt": 1789444890572,
+      "updatedAt": 1789444890572,
+      "membersCount": 1,
+      "ownerUserId": "user-test-obs",
+      "settings": {
+        "general": {
+          "name": "Persistent History Org",
+          "timezone": "UTC"
+        },
+        "notifications": {
+          "incidentEmailEnabled": true,
+          "digestEmailEnabled": false,
+          "alertSeverityThreshold": "HIGH"
+        },
+        "security": {
+          "enforceMfa": false,
+          "sessionTimeoutMinutes": 1440
+        }
+      }
+    },
+    "org-b9930fc1e429": {
+      "id": "org-b9930fc1e429",
+      "name": "Event Org",
+      "slug": "event-org",
+      "status": "ACTIVE",
+      "createdAt": 1789445222592,
+      "updatedAt": 1789445222592,
+      "membersCount": 1,
+      "ownerUserId": "user-test-obs",
+      "settings": {
+        "general": {
+          "name": "Event Org",
+          "timezone": "UTC"
+        },
+        "notifications": {
+          "incidentEmailEnabled": true,
+          "digestEmailEnabled": false,
+          "alertSeverityThreshold": "HIGH"
+        },
+        "security": {
+          "enforceMfa": false,
+          "sessionTimeoutMinutes": 1440
+        }
+      }
+    },
+    "org-c96b8ee74698": {
+      "id": "org-c96b8ee74698",
+      "name": "Empty Metrics Org",
+      "slug": "empty-metrics-org",
+      "status": "ACTIVE",
+      "createdAt": 1789445222600,
+      "updatedAt": 1789445222600,
+      "membersCount": 1,
+      "ownerUserId": "user-test-obs",
+      "settings": {
+        "general": {
+          "name": "Empty Metrics Org",
+          "timezone": "UTC"
+        },
+        "notifications": {
+          "incidentEmailEnabled": true,
+          "digestEmailEnabled": false,
+          "alertSeverityThreshold": "HIGH"
+        },
+        "security": {
+          "enforceMfa": false,
+          "sessionTimeoutMinutes": 1440
+        }
+      }
+    },
+    "org-c366abc9b3e9": {
+      "id": "org-c366abc9b3e9",
+      "name": "No Live Metrics Org",
+      "slug": "no-live-metrics-org",
+      "status": "ACTIVE",
+      "createdAt": 1789445222601,
+      "updatedAt": 1789445222601,
+      "membersCount": 1,
+      "ownerUserId": "user-test-obs",
+      "settings": {
+        "general": {
+          "name": "No Live Metrics Org",
+          "timezone": "UTC"
+        },
+        "notifications": {
+          "incidentEmailEnabled": true,
+          "digestEmailEnabled": false,
+          "alertSeverityThreshold": "HIGH"
+        },
+        "security": {
+          "enforceMfa": false,
+          "sessionTimeoutMinutes": 1440
+        }
+      }
+    },
+    "org-2acfd14e5517": {
+      "id": "org-2acfd14e5517",
+      "name": "Persistent History Org",
+      "slug": "persistent-history-org",
+      "status": "ACTIVE",
+      "createdAt": 1789445222603,
+      "updatedAt": 1789445222603,
+      "membersCount": 1,
+      "ownerUserId": "user-test-obs",
+      "settings": {
+        "general": {
+          "name": "Persistent History Org",
+          "timezone": "UTC"
+        },
+        "notifications": {
+          "incidentEmailEnabled": true,
+          "digestEmailEnabled": false,
+          "alertSeverityThreshold": "HIGH"
+        },
+        "security": {
+          "enforceMfa": false,
+          "sessionTimeoutMinutes": 1440
+        }
+      }
     }
   },
   "members": {
@@ -427,15 +832,6 @@
         "name": "Alex Rivera (Staff SRE)",
         "role": "OWNER",
         "joinedAt": 1789035622895
-      }
-    ],
-    "org-production-sre": [
-      {
-        "userId": "user_test_123",
-        "email": "dhandesaurav52@gmail.com",
-        "name": "Saurav Dhande",
-        "role": "OWNER",
-        "joinedAt": 1789205603665
       }
     ],
     "org-ccf2ebb04c26": [
@@ -829,8 +1225,322 @@
         "role": "OWNER",
         "joinedAt": 1789441137198
       }
+    ],
+    "org-a71bf1dff095": [
+      {
+        "userId": "user-test-obs",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "joinedAt": 1789442984928
+      }
+    ],
+    "org-8f94a1a9765a": [
+      {
+        "userId": "user-test-obs",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "joinedAt": 1789442984935
+      }
+    ],
+    "org-c8b3212f40bb": [
+      {
+        "userId": "user-test-obs",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "joinedAt": 1789442984936
+      }
+    ],
+    "org-6502cc15926f": [
+      {
+        "userId": "user-test-obs",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "joinedAt": 1789442984937
+      }
+    ],
+    "org-8e0fa58acb18": [
+      {
+        "userId": "user-test-obs",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "joinedAt": 1789443604769
+      }
+    ],
+    "org-b0e89db295df": [
+      {
+        "userId": "user-test-obs",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "joinedAt": 1789443604779
+      }
+    ],
+    "org-1d36acc9da6d": [
+      {
+        "userId": "user-test-obs",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "joinedAt": 1789443604780
+      }
+    ],
+    "org-a957ed730c55": [
+      {
+        "userId": "user-test-obs",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "joinedAt": 1789443604781
+      }
+    ],
+    "org-dd4e4159cf98": [
+      {
+        "userId": "user-test-obs",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "joinedAt": 1789443680940
+      }
+    ],
+    "org-5c4501aa9c80": [
+      {
+        "userId": "user-test-obs",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "joinedAt": 1789443680947
+      }
+    ],
+    "org-b693d374c3ea": [
+      {
+        "userId": "user-test-obs",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "joinedAt": 1789443680947
+      }
+    ],
+    "org-e963bace431e": [
+      {
+        "userId": "user-test-obs",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "joinedAt": 1789443680949
+      }
+    ],
+    "org-f4b8fa72ca40": [
+      {
+        "userId": "user-test-obs",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "joinedAt": 1789444306155
+      }
+    ],
+    "org-6254212293fc": [
+      {
+        "userId": "user-test-obs",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "joinedAt": 1789444306162
+      }
+    ],
+    "org-95afb91e014f": [
+      {
+        "userId": "user-test-obs",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "joinedAt": 1789444306163
+      }
+    ],
+    "org-8ef9e32b0fa4": [
+      {
+        "userId": "user-test-obs",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "joinedAt": 1789444306164
+      }
+    ],
+    "org-8a28a346b54a": [
+      {
+        "userId": "user-test-obs",
+        "orgId": "org-8a28a346b54a",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "status": "ACTIVE",
+        "joinedAt": 1789444857605,
+        "createdAt": 1789444857605,
+        "updatedAt": 1789444857605,
+        "lastActiveAt": 1789444857605
+      }
+    ],
+    "org-bc458f47b696": [
+      {
+        "userId": "user-test-obs",
+        "orgId": "org-bc458f47b696",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "status": "ACTIVE",
+        "joinedAt": 1789444857612,
+        "createdAt": 1789444857612,
+        "updatedAt": 1789444857612,
+        "lastActiveAt": 1789444857612
+      }
+    ],
+    "org-be145d527978": [
+      {
+        "userId": "user-test-obs",
+        "orgId": "org-be145d527978",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "status": "ACTIVE",
+        "joinedAt": 1789444857613,
+        "createdAt": 1789444857613,
+        "updatedAt": 1789444857613,
+        "lastActiveAt": 1789444857613
+      }
+    ],
+    "org-ac20a4430a6c": [
+      {
+        "userId": "user-test-obs",
+        "orgId": "org-ac20a4430a6c",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "status": "ACTIVE",
+        "joinedAt": 1789444857614,
+        "createdAt": 1789444857614,
+        "updatedAt": 1789444857614,
+        "lastActiveAt": 1789444857614
+      }
+    ],
+    "org-d004d5063247": [
+      {
+        "userId": "user-test-obs",
+        "orgId": "org-d004d5063247",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "status": "ACTIVE",
+        "joinedAt": 1789444890562,
+        "createdAt": 1789444890562,
+        "updatedAt": 1789444890562,
+        "lastActiveAt": 1789444890562
+      }
+    ],
+    "org-9b89a5ac8446": [
+      {
+        "userId": "user-test-obs",
+        "orgId": "org-9b89a5ac8446",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "status": "ACTIVE",
+        "joinedAt": 1789444890570,
+        "createdAt": 1789444890570,
+        "updatedAt": 1789444890570,
+        "lastActiveAt": 1789444890570
+      }
+    ],
+    "org-c3fdbc8d6ad9": [
+      {
+        "userId": "user-test-obs",
+        "orgId": "org-c3fdbc8d6ad9",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "status": "ACTIVE",
+        "joinedAt": 1789444890571,
+        "createdAt": 1789444890571,
+        "updatedAt": 1789444890571,
+        "lastActiveAt": 1789444890571
+      }
+    ],
+    "org-d8e3aec08b6b": [
+      {
+        "userId": "user-test-obs",
+        "orgId": "org-d8e3aec08b6b",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "status": "ACTIVE",
+        "joinedAt": 1789444890573,
+        "createdAt": 1789444890573,
+        "updatedAt": 1789444890573,
+        "lastActiveAt": 1789444890573
+      }
+    ],
+    "org-b9930fc1e429": [
+      {
+        "userId": "user-test-obs",
+        "orgId": "org-b9930fc1e429",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "status": "ACTIVE",
+        "joinedAt": 1789445222592,
+        "createdAt": 1789445222592,
+        "updatedAt": 1789445222592,
+        "lastActiveAt": 1789445222592
+      }
+    ],
+    "org-c96b8ee74698": [
+      {
+        "userId": "user-test-obs",
+        "orgId": "org-c96b8ee74698",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "status": "ACTIVE",
+        "joinedAt": 1789445222600,
+        "createdAt": 1789445222600,
+        "updatedAt": 1789445222600,
+        "lastActiveAt": 1789445222600
+      }
+    ],
+    "org-c366abc9b3e9": [
+      {
+        "userId": "user-test-obs",
+        "orgId": "org-c366abc9b3e9",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "status": "ACTIVE",
+        "joinedAt": 1789445222601,
+        "createdAt": 1789445222601,
+        "updatedAt": 1789445222601,
+        "lastActiveAt": 1789445222601
+      }
+    ],
+    "org-2acfd14e5517": [
+      {
+        "userId": "user-test-obs",
+        "orgId": "org-2acfd14e5517",
+        "email": "",
+        "name": "Workspace Owner",
+        "role": "OWNER",
+        "status": "ACTIVE",
+        "joinedAt": 1789445222603,
+        "createdAt": 1789445222603,
+        "updatedAt": 1789445222603,
+        "lastActiveAt": 1789445222603
+      }
     ]
   },
+  "invitations": {},
+  "supportTickets": {},
   "clusters": {
     "cls-5a6532fb1d5f": {
       "id": "cls-5a6532fb1d5f",
@@ -1007,31 +1717,6 @@
       "openIncidentCount": 0,
       "createdAt": 1788336646135,
       "agentToken": "sky_agent_4e3ed048247fa4b3d958f1b0bc7bfabc4ac5299a5e5c4485"
-    },
-    "cls-b1afcab85567": {
-      "id": "cls-b1afcab85567",
-      "orgId": "org-production-sre",
-      "name": "production-us-east-1",
-      "description": "",
-      "status": "AGENT_OFFLINE",
-      "agentStatus": "OFFLINE",
-      "connectionState": "offline",
-      "connectionCode": "SKYOPS-W95H-LKRU",
-      "connectionCodeExpiresAt": 1789206503665,
-      "installKey": "sky_inst_5e87447ac43eb0eb6940b8726eae2304eccb1c62",
-      "installKeyExpiresAt": 1789209203665,
-      "nodeCount": 0,
-      "podCount": 1,
-      "openIncidentCount": 1,
-      "createdAt": 1789205603665,
-      "agentToken": "sky_agent_7dff45704b9ef8cdecc7d5a0372633765926d84addb24d93",
-      "lastHeartbeat": 1789205603666,
-      "lastHeartbeatAt": 1789205603666,
-      "lastSeenAt": 1789205603666,
-      "connectedAt": 1789205603666,
-      "agentVersion": "v1.5.0",
-      "k8sVersion": "v1.35.1",
-      "connectionStatus": "disconnected"
     },
     "cls-cb8b31f9d77f": {
       "id": "cls-cb8b31f9d77f",
@@ -1934,6 +2619,580 @@
       "openIncidentCount": 0,
       "createdAt": 1789441137198,
       "agentToken": "sky_agent_a9186069777c2dfb0478679c7f1f1468898d1ab12ed26e19"
+    },
+    "cls-6e6e3814f5b3": {
+      "id": "cls-6e6e3814f5b3",
+      "orgId": "org-a71bf1dff095",
+      "name": "event-cluster",
+      "description": "",
+      "status": "WARNING",
+      "agentStatus": "CONNECTED",
+      "connectionState": "connected",
+      "connectionCode": "SKYOPS-AUMW-MHYD",
+      "connectionCodeExpiresAt": 1789443884928,
+      "installKey": "sky_inst_0e6d42b280097f7c85e9aa87e6e118de6ea27c01",
+      "installKeyExpiresAt": 1789446584928,
+      "nodeCount": 0,
+      "podCount": 1,
+      "openIncidentCount": 1,
+      "createdAt": 1789442984928,
+      "agentToken": "sky_agent_ba597bf568fcde94a9136bfe4c37c5175c40f02342498e5e",
+      "lastSeenAt": 1789442984930,
+      "lastHeartbeat": 1789442984930,
+      "lastHeartbeatAt": 1789442984930,
+      "connectedAt": 1789442984930,
+      "connectionStatus": "connected"
+    },
+    "cls-4042c9ca76a7": {
+      "id": "cls-4042c9ca76a7",
+      "orgId": "org-8f94a1a9765a",
+      "name": "empty-cluster",
+      "description": "",
+      "status": "pending",
+      "agentStatus": "PENDING",
+      "connectionState": "pending",
+      "connectionCode": "SKYOPS-AYW9-38AB",
+      "connectionCodeExpiresAt": 1789443884935,
+      "installKey": "sky_inst_3135b196358c1aa4277f4209df40aeae3fc0e47b",
+      "installKeyExpiresAt": 1789446584935,
+      "nodeCount": 0,
+      "podCount": 0,
+      "openIncidentCount": 0,
+      "createdAt": 1789442984935,
+      "agentToken": "sky_agent_06c7a892adc15f780707369d8e27098c1816b29b52ddeb6d"
+    },
+    "cls-ddd2bd379253": {
+      "id": "cls-ddd2bd379253",
+      "orgId": "org-c8b3212f40bb",
+      "name": "no-live-metrics-cluster",
+      "description": "",
+      "status": "HEALTHY",
+      "agentStatus": "CONNECTED",
+      "connectionState": "connected",
+      "connectionCode": "SKYOPS-BDGM-K9X3",
+      "connectionCodeExpiresAt": 1789443884936,
+      "installKey": "sky_inst_f6429f2aeab5a2b6f821ca6444713e638a99d23b",
+      "installKeyExpiresAt": 1789446584936,
+      "nodeCount": 0,
+      "podCount": 1,
+      "openIncidentCount": 0,
+      "createdAt": 1789442984936,
+      "agentToken": "sky_agent_cdbe2440302063764079bded6727aae684d1d91b4045674a",
+      "lastSeenAt": 1789442984936,
+      "lastHeartbeat": 1789442984936,
+      "lastHeartbeatAt": 1789442984936,
+      "connectedAt": 1789442984936,
+      "connectionStatus": "connected"
+    },
+    "cls-e5f024f2934e": {
+      "id": "cls-e5f024f2934e",
+      "orgId": "org-6502cc15926f",
+      "name": "history-cluster",
+      "description": "",
+      "status": "pending",
+      "agentStatus": "PENDING",
+      "connectionState": "pending",
+      "connectionCode": "SKYOPS-4BC5-E8MP",
+      "connectionCodeExpiresAt": 1789443884937,
+      "installKey": "sky_inst_95c7cfc86216326365a8f7af5f6a852a5767fb62",
+      "installKeyExpiresAt": 1789446584937,
+      "nodeCount": 0,
+      "podCount": 0,
+      "openIncidentCount": 0,
+      "createdAt": 1789442984937,
+      "agentToken": "sky_agent_f83205962e986555df05808eba2870eaef1e19fff51ff85d"
+    },
+    "cls-0d62c9ad568b": {
+      "id": "cls-0d62c9ad568b",
+      "orgId": "org-8e0fa58acb18",
+      "name": "event-cluster",
+      "description": "",
+      "status": "WARNING",
+      "agentStatus": "CONNECTED",
+      "connectionState": "connected",
+      "connectionCode": "SKYOPS-8AZT-BNPH",
+      "connectionCodeExpiresAt": 1789444504769,
+      "installKey": "sky_inst_753a70f46dd0a9c598ebcb61fa12ff64c0c3f683",
+      "installKeyExpiresAt": 1789447204769,
+      "nodeCount": 0,
+      "podCount": 1,
+      "openIncidentCount": 1,
+      "createdAt": 1789443604769,
+      "agentToken": "sky_agent_00c1726043f6ad41899c197b5a9cc8f7081bccf4977cb2a2",
+      "lastSeenAt": 1789443604770,
+      "lastHeartbeat": 1789443604770,
+      "lastHeartbeatAt": 1789443604770,
+      "connectedAt": 1789443604770,
+      "connectionStatus": "connected"
+    },
+    "cls-bee83c84cb91": {
+      "id": "cls-bee83c84cb91",
+      "orgId": "org-b0e89db295df",
+      "name": "empty-cluster",
+      "description": "",
+      "status": "pending",
+      "agentStatus": "PENDING",
+      "connectionState": "pending",
+      "connectionCode": "SKYOPS-VETX-Y89G",
+      "connectionCodeExpiresAt": 1789444504779,
+      "installKey": "sky_inst_9fa71bdff06868ee89106c85e8a4fe2161d2bb2c",
+      "installKeyExpiresAt": 1789447204779,
+      "nodeCount": 0,
+      "podCount": 0,
+      "openIncidentCount": 0,
+      "createdAt": 1789443604779,
+      "agentToken": "sky_agent_c662a5e0624c81ffd04e0bcd62063dd3e3f5c12ab0404b9b"
+    },
+    "cls-982bf1fe44a7": {
+      "id": "cls-982bf1fe44a7",
+      "orgId": "org-1d36acc9da6d",
+      "name": "no-live-metrics-cluster",
+      "description": "",
+      "status": "HEALTHY",
+      "agentStatus": "CONNECTED",
+      "connectionState": "connected",
+      "connectionCode": "SKYOPS-CWEQ-JD96",
+      "connectionCodeExpiresAt": 1789444504780,
+      "installKey": "sky_inst_39abeb43f9e465106f41364af9817f59fcf44895",
+      "installKeyExpiresAt": 1789447204780,
+      "nodeCount": 0,
+      "podCount": 1,
+      "openIncidentCount": 0,
+      "createdAt": 1789443604780,
+      "agentToken": "sky_agent_73d6b206f4f6986f25832c8d66b0358083557daca740e00c",
+      "lastSeenAt": 1789443604780,
+      "lastHeartbeat": 1789443604780,
+      "lastHeartbeatAt": 1789443604780,
+      "connectedAt": 1789443604780,
+      "connectionStatus": "connected"
+    },
+    "cls-66315277a675": {
+      "id": "cls-66315277a675",
+      "orgId": "org-a957ed730c55",
+      "name": "history-cluster",
+      "description": "",
+      "status": "pending",
+      "agentStatus": "PENDING",
+      "connectionState": "pending",
+      "connectionCode": "SKYOPS-RUS2-ZZ3Q",
+      "connectionCodeExpiresAt": 1789444504781,
+      "installKey": "sky_inst_288636ee61980f1d582304aeaeb49ba0cc826356",
+      "installKeyExpiresAt": 1789447204781,
+      "nodeCount": 0,
+      "podCount": 0,
+      "openIncidentCount": 0,
+      "createdAt": 1789443604781,
+      "agentToken": "sky_agent_c0ebe2ef84b104c8f22e231caaaa3b047507564c8ee01a6e"
+    },
+    "cls-7d222adaab29": {
+      "id": "cls-7d222adaab29",
+      "orgId": "org-dd4e4159cf98",
+      "name": "event-cluster",
+      "description": "",
+      "status": "WARNING",
+      "agentStatus": "CONNECTED",
+      "connectionState": "connected",
+      "connectionCode": "SKYOPS-S7LE-T9H2",
+      "connectionCodeExpiresAt": 1789444580940,
+      "installKey": "sky_inst_2b22a36adaa51afa9f668365c55052ccdb6fa88a",
+      "installKeyExpiresAt": 1789447280940,
+      "nodeCount": 0,
+      "podCount": 1,
+      "openIncidentCount": 1,
+      "createdAt": 1789443680940,
+      "agentToken": "sky_agent_47e30f506bc98f982aa146657bf1e4a7147da9c73838e338",
+      "lastSeenAt": 1789443680941,
+      "lastHeartbeat": 1789443680941,
+      "lastHeartbeatAt": 1789443680941,
+      "connectedAt": 1789443680941,
+      "connectionStatus": "connected"
+    },
+    "cls-2c347e4f24ce": {
+      "id": "cls-2c347e4f24ce",
+      "orgId": "org-5c4501aa9c80",
+      "name": "empty-cluster",
+      "description": "",
+      "status": "pending",
+      "agentStatus": "PENDING",
+      "connectionState": "pending",
+      "connectionCode": "SKYOPS-YJY4-YMBJ",
+      "connectionCodeExpiresAt": 1789444580947,
+      "installKey": "sky_inst_c5915f239ec4f93252bac3d049a8288413b6a3fd",
+      "installKeyExpiresAt": 1789447280947,
+      "nodeCount": 0,
+      "podCount": 0,
+      "openIncidentCount": 0,
+      "createdAt": 1789443680947,
+      "agentToken": "sky_agent_93ee793b15f25b9a75e7c99cf75950cd8c9df36a9f5e891b"
+    },
+    "cls-7d04356e5c55": {
+      "id": "cls-7d04356e5c55",
+      "orgId": "org-b693d374c3ea",
+      "name": "no-live-metrics-cluster",
+      "description": "",
+      "status": "HEALTHY",
+      "agentStatus": "CONNECTED",
+      "connectionState": "connected",
+      "connectionCode": "SKYOPS-KVCE-MASX",
+      "connectionCodeExpiresAt": 1789444580948,
+      "installKey": "sky_inst_2f6be39fa8ae24b46d7e140c92a79b8fa8129ffe",
+      "installKeyExpiresAt": 1789447280948,
+      "nodeCount": 0,
+      "podCount": 1,
+      "openIncidentCount": 0,
+      "createdAt": 1789443680948,
+      "agentToken": "sky_agent_d60400f4306581ad3cd3ad8798e51be8084f317da605c83b",
+      "lastSeenAt": 1789443680948,
+      "lastHeartbeat": 1789443680948,
+      "lastHeartbeatAt": 1789443680948,
+      "connectedAt": 1789443680948,
+      "connectionStatus": "connected"
+    },
+    "cls-1c138c5ed9f0": {
+      "id": "cls-1c138c5ed9f0",
+      "orgId": "org-e963bace431e",
+      "name": "history-cluster",
+      "description": "",
+      "status": "pending",
+      "agentStatus": "PENDING",
+      "connectionState": "pending",
+      "connectionCode": "SKYOPS-YWBE-57UK",
+      "connectionCodeExpiresAt": 1789444580949,
+      "installKey": "sky_inst_df396cf40bf62912377cbb183379eff27fad7224",
+      "installKeyExpiresAt": 1789447280949,
+      "nodeCount": 0,
+      "podCount": 0,
+      "openIncidentCount": 0,
+      "createdAt": 1789443680949,
+      "agentToken": "sky_agent_658c80c55529e4294b9861f1e1196f533d55fb6f8bc0b3af"
+    },
+    "cls-db455736085f": {
+      "id": "cls-db455736085f",
+      "orgId": "org-f4b8fa72ca40",
+      "name": "event-cluster",
+      "description": "",
+      "status": "WARNING",
+      "agentStatus": "CONNECTED",
+      "connectionState": "connected",
+      "connectionCode": "SKYOPS-2U5A-J9Y8",
+      "connectionCodeExpiresAt": 1789445206156,
+      "installKey": "sky_inst_e4bd80f6e9d847855de62edeeeee9b8bdcb0aacb",
+      "installKeyExpiresAt": 1789447906156,
+      "nodeCount": 0,
+      "podCount": 1,
+      "openIncidentCount": 1,
+      "createdAt": 1789444306156,
+      "agentToken": "sky_agent_059071e1e09122f3bf592944640bcf681352ed6eb1e2b51a",
+      "lastSeenAt": 1789444306157,
+      "lastHeartbeat": 1789444306157,
+      "lastHeartbeatAt": 1789444306157,
+      "connectedAt": 1789444306157,
+      "connectionStatus": "connected"
+    },
+    "cls-3a3f66085ab8": {
+      "id": "cls-3a3f66085ab8",
+      "orgId": "org-6254212293fc",
+      "name": "empty-cluster",
+      "description": "",
+      "status": "pending",
+      "agentStatus": "PENDING",
+      "connectionState": "pending",
+      "connectionCode": "SKYOPS-LSLJ-LL4P",
+      "connectionCodeExpiresAt": 1789445206162,
+      "installKey": "sky_inst_bed96ac32c6261281476759cb3a1ca8b2fdb501d",
+      "installKeyExpiresAt": 1789447906162,
+      "nodeCount": 0,
+      "podCount": 0,
+      "openIncidentCount": 0,
+      "createdAt": 1789444306162,
+      "agentToken": "sky_agent_2018a09926928ccd0c07b4d774c7c70e88988ace358b3ebf"
+    },
+    "cls-a5c62b30f7df": {
+      "id": "cls-a5c62b30f7df",
+      "orgId": "org-95afb91e014f",
+      "name": "no-live-metrics-cluster",
+      "description": "",
+      "status": "HEALTHY",
+      "agentStatus": "CONNECTED",
+      "connectionState": "connected",
+      "connectionCode": "SKYOPS-NDYR-92C8",
+      "connectionCodeExpiresAt": 1789445206163,
+      "installKey": "sky_inst_c2c52abd6053bd1697a5df1967b34d40c11783d0",
+      "installKeyExpiresAt": 1789447906163,
+      "nodeCount": 0,
+      "podCount": 1,
+      "openIncidentCount": 0,
+      "createdAt": 1789444306163,
+      "agentToken": "sky_agent_ff9c8c62b1c377997ad4884cbbd0f52f1e2d76c15e4297fd",
+      "lastSeenAt": 1789444306163,
+      "lastHeartbeat": 1789444306163,
+      "lastHeartbeatAt": 1789444306163,
+      "connectedAt": 1789444306163,
+      "connectionStatus": "connected"
+    },
+    "cls-fb2b01be37d7": {
+      "id": "cls-fb2b01be37d7",
+      "orgId": "org-8ef9e32b0fa4",
+      "name": "history-cluster",
+      "description": "",
+      "status": "pending",
+      "agentStatus": "PENDING",
+      "connectionState": "pending",
+      "connectionCode": "SKYOPS-ZMH7-MZW4",
+      "connectionCodeExpiresAt": 1789445206164,
+      "installKey": "sky_inst_70d62f5881363bb5eda5c8d9bfcb262aeda6920c",
+      "installKeyExpiresAt": 1789447906164,
+      "nodeCount": 0,
+      "podCount": 0,
+      "openIncidentCount": 0,
+      "createdAt": 1789444306164,
+      "agentToken": "sky_agent_7eda5043ba714919b0f897eabc4bd731b937fc1e1cf3944a"
+    },
+    "cls-ea870fb8865f": {
+      "id": "cls-ea870fb8865f",
+      "orgId": "org-8a28a346b54a",
+      "name": "event-cluster",
+      "description": "",
+      "status": "WARNING",
+      "agentStatus": "CONNECTED",
+      "connectionState": "connected",
+      "connectionCode": "SKYOPS-AX9N-44CD",
+      "connectionCodeExpiresAt": 1789445757605,
+      "installKey": "sky_inst_ae0b1f249abd1ae88cd6f6e1129db835ab125af2",
+      "installKeyExpiresAt": 1789448457605,
+      "nodeCount": 0,
+      "podCount": 1,
+      "openIncidentCount": 1,
+      "createdAt": 1789444857605,
+      "agentToken": "sky_agent_ad4508f4c76645fcec7302203c8aef8fa8136c1361b0ecac",
+      "lastSeenAt": 1789444857607,
+      "lastHeartbeat": 1789444857607,
+      "lastHeartbeatAt": 1789444857607,
+      "connectedAt": 1789444857607,
+      "connectionStatus": "connected"
+    },
+    "cls-cda51c9f5838": {
+      "id": "cls-cda51c9f5838",
+      "orgId": "org-bc458f47b696",
+      "name": "empty-cluster",
+      "description": "",
+      "status": "pending",
+      "agentStatus": "PENDING",
+      "connectionState": "pending",
+      "connectionCode": "SKYOPS-HJZH-N6FS",
+      "connectionCodeExpiresAt": 1789445757612,
+      "installKey": "sky_inst_51d28ce5ad83e322fffae7f9d98f917bfe873533",
+      "installKeyExpiresAt": 1789448457612,
+      "nodeCount": 0,
+      "podCount": 0,
+      "openIncidentCount": 0,
+      "createdAt": 1789444857612,
+      "agentToken": "sky_agent_9668472da0bd0d5a13906e6cd9c4bc44ae94168b793b7867"
+    },
+    "cls-0b78eea21dec": {
+      "id": "cls-0b78eea21dec",
+      "orgId": "org-be145d527978",
+      "name": "no-live-metrics-cluster",
+      "description": "",
+      "status": "HEALTHY",
+      "agentStatus": "CONNECTED",
+      "connectionState": "connected",
+      "connectionCode": "SKYOPS-Z3UE-5KTW",
+      "connectionCodeExpiresAt": 1789445757613,
+      "installKey": "sky_inst_fcd1a30f06d9a08a747db9d2716e6a297b346ddd",
+      "installKeyExpiresAt": 1789448457613,
+      "nodeCount": 0,
+      "podCount": 1,
+      "openIncidentCount": 0,
+      "createdAt": 1789444857613,
+      "agentToken": "sky_agent_23d6f310864bc19f0dd278b19bf16ac1c2be1f3ca8f9bd66",
+      "lastSeenAt": 1789444857613,
+      "lastHeartbeat": 1789444857613,
+      "lastHeartbeatAt": 1789444857613,
+      "connectedAt": 1789444857613,
+      "connectionStatus": "connected"
+    },
+    "cls-3e1c0043a475": {
+      "id": "cls-3e1c0043a475",
+      "orgId": "org-ac20a4430a6c",
+      "name": "history-cluster",
+      "description": "",
+      "status": "pending",
+      "agentStatus": "PENDING",
+      "connectionState": "pending",
+      "connectionCode": "SKYOPS-H7H3-U668",
+      "connectionCodeExpiresAt": 1789445757614,
+      "installKey": "sky_inst_c278827c5ecb565297fbe78660980ec00c73d56c",
+      "installKeyExpiresAt": 1789448457614,
+      "nodeCount": 0,
+      "podCount": 0,
+      "openIncidentCount": 0,
+      "createdAt": 1789444857614,
+      "agentToken": "sky_agent_661a42a357e3d386711c60044d15baa269cb9051c75903ee"
+    },
+    "cls-c0a481dd6423": {
+      "id": "cls-c0a481dd6423",
+      "orgId": "org-d004d5063247",
+      "name": "event-cluster",
+      "description": "",
+      "status": "WARNING",
+      "agentStatus": "CONNECTED",
+      "connectionState": "connected",
+      "connectionCode": "SKYOPS-JFQL-4NZS",
+      "connectionCodeExpiresAt": 1789445790563,
+      "installKey": "sky_inst_9966857158e98c158ebd43deca8e34b10a593360",
+      "installKeyExpiresAt": 1789448490563,
+      "nodeCount": 0,
+      "podCount": 1,
+      "openIncidentCount": 1,
+      "createdAt": 1789444890563,
+      "agentToken": "sky_agent_51768a9244959b613a05cd72408e125b8244207259e9fea1",
+      "lastSeenAt": 1789444890564,
+      "lastHeartbeat": 1789444890564,
+      "lastHeartbeatAt": 1789444890564,
+      "connectedAt": 1789444890564,
+      "connectionStatus": "connected"
+    },
+    "cls-526835716b45": {
+      "id": "cls-526835716b45",
+      "orgId": "org-9b89a5ac8446",
+      "name": "empty-cluster",
+      "description": "",
+      "status": "pending",
+      "agentStatus": "PENDING",
+      "connectionState": "pending",
+      "connectionCode": "SKYOPS-KBS3-QWE5",
+      "connectionCodeExpiresAt": 1789445790570,
+      "installKey": "sky_inst_bacfadee6ceb6d27f5e659a98acaf7ff83887faf",
+      "installKeyExpiresAt": 1789448490570,
+      "nodeCount": 0,
+      "podCount": 0,
+      "openIncidentCount": 0,
+      "createdAt": 1789444890570,
+      "agentToken": "sky_agent_bfb72317a12eec7a262d4079a7585514f03ce9fbc47635ff"
+    },
+    "cls-6eb8d8fcb3e5": {
+      "id": "cls-6eb8d8fcb3e5",
+      "orgId": "org-c3fdbc8d6ad9",
+      "name": "no-live-metrics-cluster",
+      "description": "",
+      "status": "HEALTHY",
+      "agentStatus": "CONNECTED",
+      "connectionState": "connected",
+      "connectionCode": "SKYOPS-J6TH-YPJH",
+      "connectionCodeExpiresAt": 1789445790571,
+      "installKey": "sky_inst_5a786ef98cfc41fea92c64f69640bf722a8313ff",
+      "installKeyExpiresAt": 1789448490571,
+      "nodeCount": 0,
+      "podCount": 1,
+      "openIncidentCount": 0,
+      "createdAt": 1789444890571,
+      "agentToken": "sky_agent_af8360c971cb793f31323367f77ec6a98521f002e5afa99b",
+      "lastSeenAt": 1789444890571,
+      "lastHeartbeat": 1789444890571,
+      "lastHeartbeatAt": 1789444890571,
+      "connectedAt": 1789444890571,
+      "connectionStatus": "connected"
+    },
+    "cls-fbd62b928ef7": {
+      "id": "cls-fbd62b928ef7",
+      "orgId": "org-d8e3aec08b6b",
+      "name": "history-cluster",
+      "description": "",
+      "status": "pending",
+      "agentStatus": "PENDING",
+      "connectionState": "pending",
+      "connectionCode": "SKYOPS-45GF-SWS4",
+      "connectionCodeExpiresAt": 1789445790573,
+      "installKey": "sky_inst_73564d67d0b1469e708e02270722de7871919027",
+      "installKeyExpiresAt": 1789448490573,
+      "nodeCount": 0,
+      "podCount": 0,
+      "openIncidentCount": 0,
+      "createdAt": 1789444890573,
+      "agentToken": "sky_agent_3365c59f054e3a577c5660d089221fb1bd64682aa17e3d29"
+    },
+    "cls-f0ac0fc57662": {
+      "id": "cls-f0ac0fc57662",
+      "orgId": "org-b9930fc1e429",
+      "name": "event-cluster",
+      "description": "",
+      "status": "WARNING",
+      "agentStatus": "CONNECTED",
+      "connectionState": "connected",
+      "connectionCode": "SKYOPS-X6V8-XTGE",
+      "connectionCodeExpiresAt": 1789446122593,
+      "installKey": "sky_inst_ba8313b201ae9d6d5f5af9284590e00e8ecbc1b0",
+      "installKeyExpiresAt": 1789448822593,
+      "nodeCount": 0,
+      "podCount": 1,
+      "openIncidentCount": 1,
+      "createdAt": 1789445222593,
+      "agentToken": "sky_agent_c8fffbcef7fbf5fb47ddcdd78881b405ffa0148046b1a543",
+      "lastSeenAt": 1789445222594,
+      "lastHeartbeat": 1789445222594,
+      "lastHeartbeatAt": 1789445222594,
+      "connectedAt": 1789445222594,
+      "connectionStatus": "connected"
+    },
+    "cls-d9eefe662a62": {
+      "id": "cls-d9eefe662a62",
+      "orgId": "org-c96b8ee74698",
+      "name": "empty-cluster",
+      "description": "",
+      "status": "pending",
+      "agentStatus": "PENDING",
+      "connectionState": "pending",
+      "connectionCode": "SKYOPS-H9JU-KZPY",
+      "connectionCodeExpiresAt": 1789446122600,
+      "installKey": "sky_inst_64a4ef236569e96c92ccd9510e6cf818de3d72e6",
+      "installKeyExpiresAt": 1789448822600,
+      "nodeCount": 0,
+      "podCount": 0,
+      "openIncidentCount": 0,
+      "createdAt": 1789445222600,
+      "agentToken": "sky_agent_9c1c3584307cd616891816028b321e66e109fa33809a43ae"
+    },
+    "cls-2406486aa94b": {
+      "id": "cls-2406486aa94b",
+      "orgId": "org-c366abc9b3e9",
+      "name": "no-live-metrics-cluster",
+      "description": "",
+      "status": "HEALTHY",
+      "agentStatus": "CONNECTED",
+      "connectionState": "connected",
+      "connectionCode": "SKYOPS-A2H3-JJAX",
+      "connectionCodeExpiresAt": 1789446122601,
+      "installKey": "sky_inst_bdef8ba20ab8b5dc4ddb85e5ab77d571f3e5a2ab",
+      "installKeyExpiresAt": 1789448822601,
+      "nodeCount": 0,
+      "podCount": 1,
+      "openIncidentCount": 0,
+      "createdAt": 1789445222601,
+      "agentToken": "sky_agent_c2b4fd5f9a58666b33fdf9dabef37347ef728159a69f4e56",
+      "lastSeenAt": 1789445222601,
+      "lastHeartbeat": 1789445222601,
+      "lastHeartbeatAt": 1789445222601,
+      "connectedAt": 1789445222601,
+      "connectionStatus": "connected"
+    },
+    "cls-23b167df9c49": {
+      "id": "cls-23b167df9c49",
+      "orgId": "org-2acfd14e5517",
+      "name": "history-cluster",
+      "description": "",
+      "status": "pending",
+      "agentStatus": "PENDING",
+      "connectionState": "pending",
+      "connectionCode": "SKYOPS-3KA4-EJXT",
+      "connectionCodeExpiresAt": 1789446122603,
+      "installKey": "sky_inst_4a742041a29ba07601d0390380b9aa03d06f8629",
+      "installKeyExpiresAt": 1789448822603,
+      "nodeCount": 0,
+      "podCount": 0,
+      "openIncidentCount": 0,
+      "createdAt": 1789445222603,
+      "agentToken": "sky_agent_7e72584d9e2a6b88c0d74707295bc1d9cd971dfb4f848c87"
     }
   },
   "clusterTokens": {
@@ -1968,10 +3227,6 @@
     "f237ca582660dfde87fdaf9523d4f2991c1992fe245d20c6057c170d5d39ce7f": {
       "clusterId": "cls-91a80cb2a4a5",
       "orgId": "org-85197e5f1bd6"
-    },
-    "330930058582e8fbce0137865584c52c76fb2d8601dd54cea5db964ade9dd3c6": {
-      "clusterId": "cls-b1afcab85567",
-      "orgId": "org-production-sre"
     },
     "59f17e10ae3256265fb484da3b851ee159a9a25c4724240e012c8765dd3dbf46": {
       "clusterId": "cls-cb8b31f9d77f",
@@ -2148,6 +3403,118 @@
     "0d8376434f1113df1580f31cec11c9236df8fa7673299d919654a0bb77b28c47": {
       "clusterId": "cls-c3e7b4323d64",
       "orgId": "org-f4031a87c7a6"
+    },
+    "adfebfb0b1961a090525f9101d69914c9ae641e872b4fd634298a6c4831cf010": {
+      "clusterId": "cls-6e6e3814f5b3",
+      "orgId": "org-a71bf1dff095"
+    },
+    "dffe0d534fd5058350814d55bf16974868f386d12191974cbd231f6bb3bb86c8": {
+      "clusterId": "cls-4042c9ca76a7",
+      "orgId": "org-8f94a1a9765a"
+    },
+    "5e4eec5da24efd04a1ed6fb7b85ac30eaba45d3ae7732ff1335681a60de294c9": {
+      "clusterId": "cls-ddd2bd379253",
+      "orgId": "org-c8b3212f40bb"
+    },
+    "1865689a8923bf4bf076e0d03100b70f2b9d62f0a86cbf527dc8b06bed2421a1": {
+      "clusterId": "cls-e5f024f2934e",
+      "orgId": "org-6502cc15926f"
+    },
+    "00e66098b4104190666cf92c4e1adbd45b449b2a3ce29dbbb9ed0512bec6372b": {
+      "clusterId": "cls-0d62c9ad568b",
+      "orgId": "org-8e0fa58acb18"
+    },
+    "b2e5a0c98e888cf0960d5500a7c357d77ac4c00c62a74a007abd1c8afc2c30da": {
+      "clusterId": "cls-bee83c84cb91",
+      "orgId": "org-b0e89db295df"
+    },
+    "b00c203144c6aef6af34db587904dbb4f08b413394421b0c3ce5a8f04f01fce4": {
+      "clusterId": "cls-982bf1fe44a7",
+      "orgId": "org-1d36acc9da6d"
+    },
+    "e087601c6c71cf45a36964453bd69977cb0e1367cfede681ca8462132a1312a3": {
+      "clusterId": "cls-66315277a675",
+      "orgId": "org-a957ed730c55"
+    },
+    "cc945d5faf0211229469c1746bfcc33c2899c6aa46503412cdb64260c7c19ddf": {
+      "clusterId": "cls-7d222adaab29",
+      "orgId": "org-dd4e4159cf98"
+    },
+    "0b216220149308f7eab2ccee3a0022f169da69167554596814bce21b2bafa22e": {
+      "clusterId": "cls-2c347e4f24ce",
+      "orgId": "org-5c4501aa9c80"
+    },
+    "1bf834c7c6098abbf01a4ad0fd7b3dc905cecf30fc50959b8a2f70d281126d4f": {
+      "clusterId": "cls-7d04356e5c55",
+      "orgId": "org-b693d374c3ea"
+    },
+    "3b1c5d57e907b5a0536df66847fabd7a4df7a34faff06da6ab15ad2316a3e58e": {
+      "clusterId": "cls-1c138c5ed9f0",
+      "orgId": "org-e963bace431e"
+    },
+    "39df49f8bac2748cf5734f83e8eb5968adc6d67f40326cf0ce8b40fcc9bb01c6": {
+      "clusterId": "cls-db455736085f",
+      "orgId": "org-f4b8fa72ca40"
+    },
+    "5eee4b521afd1b192e9490beca7a123ff91c61b15d1630b5665497392d7a6f48": {
+      "clusterId": "cls-3a3f66085ab8",
+      "orgId": "org-6254212293fc"
+    },
+    "7d8ded89a5781c6a7051a084d4ca82b552348f68db994d110b76941f7ed68ede": {
+      "clusterId": "cls-a5c62b30f7df",
+      "orgId": "org-95afb91e014f"
+    },
+    "d70769fdc5115f2218cc3b353979d92f6df9eabadbeaf763a385e97899edf592": {
+      "clusterId": "cls-fb2b01be37d7",
+      "orgId": "org-8ef9e32b0fa4"
+    },
+    "3ef7632fe745237d0ab327708b47a6a28c8078921ef207e5a8ce5d2be183c001": {
+      "clusterId": "cls-ea870fb8865f",
+      "orgId": "org-8a28a346b54a"
+    },
+    "c469fb9b1312fb1740ab2c8f2da00db99f146ab48f9efeb87a6c47f423f704e4": {
+      "clusterId": "cls-cda51c9f5838",
+      "orgId": "org-bc458f47b696"
+    },
+    "30eb2a7334737c5b64461449a9369f201fc175e573e0faee99b2e0a647fadf7b": {
+      "clusterId": "cls-0b78eea21dec",
+      "orgId": "org-be145d527978"
+    },
+    "d91071639305ac8f54207dc23235fa9779cdfa3b105f076faa56aba7c6bb9430": {
+      "clusterId": "cls-3e1c0043a475",
+      "orgId": "org-ac20a4430a6c"
+    },
+    "c9c95e98d044245680043347a68d1d443bdaaf067e0cf59c7c2fa8edf8207ebd": {
+      "clusterId": "cls-c0a481dd6423",
+      "orgId": "org-d004d5063247"
+    },
+    "e6ed5bffe0b400298fee45287cc4240b2bb23b5a64dec71f1b0395312bb849cb": {
+      "clusterId": "cls-526835716b45",
+      "orgId": "org-9b89a5ac8446"
+    },
+    "281ad112bf053fa8fe8e05928f123fc583087c1f6f9f1f343eb1ae0fd0321402": {
+      "clusterId": "cls-6eb8d8fcb3e5",
+      "orgId": "org-c3fdbc8d6ad9"
+    },
+    "44f077239b4d884f1af7fef645a6883c643033c885e29c7f767985ce5005f840": {
+      "clusterId": "cls-fbd62b928ef7",
+      "orgId": "org-d8e3aec08b6b"
+    },
+    "19378400a7517a4c01a987060777f20d3f44290a2b2facf182d55c0fafe63148": {
+      "clusterId": "cls-f0ac0fc57662",
+      "orgId": "org-b9930fc1e429"
+    },
+    "4883c781a0c23db5cdaf8417e28b642e434fbb4e319762e421188c35da0b4d7f": {
+      "clusterId": "cls-d9eefe662a62",
+      "orgId": "org-c96b8ee74698"
+    },
+    "0a41d820ce5753707f233743d694f69899461e04059054a6ff1907265a07fd3e": {
+      "clusterId": "cls-2406486aa94b",
+      "orgId": "org-c366abc9b3e9"
+    },
+    "516460d7eaa374d033c1a019adcdb67a20668a5ed3c3db67e8a27d6a34014fa6": {
+      "clusterId": "cls-23b167df9c49",
+      "orgId": "org-2acfd14e5517"
     }
   },
   "resources": {
@@ -2970,61 +4337,6 @@
     "cls-ea233f047272": [],
     "cls-603f23ba3c5a": [],
     "cls-91a80cb2a4a5": [],
-    "cls-b1afcab85567": [
-      {
-        "id": "res-66a4c91d",
-        "clusterId": "cls-b1afcab85567",
-        "kind": "Pod",
-        "namespace": "production",
-        "name": "payments-api-7b8f95c-k2m9x",
-        "status": "Running",
-        "health": "CRITICAL",
-        "createdAt": 1789202003666,
-        "updatedAt": 1789205603666,
-        "specSummary": {
-          "nodeName": "k8s-node-worker-01"
-        },
-        "statusSummary": {
-          "phase": "Running",
-          "podIP": "10.244.2.88"
-        },
-        "containers": [
-          {
-            "name": "payments-api",
-            "image": "registry.skyops.io/payments/api:v1.4.2",
-            "restartCount": 3,
-            "ready": true,
-            "state": "running",
-            "cpuUsage": "495m",
-            "cpuLimit": "500m",
-            "memoryUsage": "380Mi",
-            "memoryLimit": "512Mi"
-          }
-        ],
-        "conditions": [
-          {
-            "type": "Ready",
-            "status": "True"
-          },
-          {
-            "type": "ContainersReady",
-            "status": "True"
-          }
-        ],
-        "events": [
-          {
-            "id": "evt-395d4e96",
-            "timestamp": 1789205543666,
-            "type": "Warning",
-            "reason": "ResourceExhaustion",
-            "objectKind": "Pod",
-            "objectName": "payments-api-7b8f95c-k2m9x",
-            "namespace": "production",
-            "message": "Container payments-api cpu usage reached 99.0% of limit (495m/500m). CPU throttling throttled 84% of execution periods."
-          }
-        ]
-      }
-    ],
     "cls-cb8b31f9d77f": [
       {
         "id": "cls-cb8b31f9d77f-pod-nginx-test",
@@ -3761,7 +5073,476 @@
         ]
       }
     ],
-    "cls-c3e7b4323d64": []
+    "cls-c3e7b4323d64": [],
+    "cls-6e6e3814f5b3": [
+      {
+        "id": "cls-6e6e3814f5b3-pod-nginx-test",
+        "clusterId": "cls-6e6e3814f5b3",
+        "kind": "Pod",
+        "name": "nginx-test",
+        "namespace": "default",
+        "status": "Pending",
+        "health": "WARNING",
+        "createdAt": 1789442924928,
+        "updatedAt": 1789442984928,
+        "events": [
+          {
+            "id": "evt-1",
+            "timestamp": 1700000000000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 1,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000000000
+          },
+          {
+            "id": "evt-2",
+            "timestamp": 1700000060000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 2,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000060000
+          }
+        ]
+      }
+    ],
+    "cls-4042c9ca76a7": [],
+    "cls-ddd2bd379253": [
+      {
+        "id": "cls-ddd2bd379253-pod-simple-app",
+        "clusterId": "cls-ddd2bd379253",
+        "kind": "Pod",
+        "name": "simple-app",
+        "namespace": "default",
+        "status": "Running",
+        "health": "HEALTHY",
+        "createdAt": 1789442924936,
+        "updatedAt": 1789442984936,
+        "containers": [
+          {
+            "name": "app",
+            "image": "app:v1",
+            "restartCount": 0,
+            "ready": true,
+            "state": "running",
+            "cpuRequest": "100m",
+            "memoryRequest": "128Mi"
+          }
+        ]
+      }
+    ],
+    "cls-e5f024f2934e": [],
+    "cls-0d62c9ad568b": [
+      {
+        "id": "cls-0d62c9ad568b-pod-nginx-test",
+        "clusterId": "cls-0d62c9ad568b",
+        "kind": "Pod",
+        "name": "nginx-test",
+        "namespace": "default",
+        "status": "Pending",
+        "health": "WARNING",
+        "createdAt": 1789443544769,
+        "updatedAt": 1789443604769,
+        "events": [
+          {
+            "id": "evt-1",
+            "timestamp": 1700000000000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 1,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000000000
+          },
+          {
+            "id": "evt-2",
+            "timestamp": 1700000060000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 2,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000060000
+          }
+        ]
+      }
+    ],
+    "cls-bee83c84cb91": [],
+    "cls-982bf1fe44a7": [
+      {
+        "id": "cls-982bf1fe44a7-pod-simple-app",
+        "clusterId": "cls-982bf1fe44a7",
+        "kind": "Pod",
+        "name": "simple-app",
+        "namespace": "default",
+        "status": "Running",
+        "health": "HEALTHY",
+        "createdAt": 1789443544780,
+        "updatedAt": 1789443604780,
+        "containers": [
+          {
+            "name": "app",
+            "image": "app:v1",
+            "restartCount": 0,
+            "ready": true,
+            "state": "running",
+            "cpuRequest": "100m",
+            "memoryRequest": "128Mi"
+          }
+        ]
+      }
+    ],
+    "cls-66315277a675": [],
+    "cls-7d222adaab29": [
+      {
+        "id": "cls-7d222adaab29-pod-nginx-test",
+        "clusterId": "cls-7d222adaab29",
+        "kind": "Pod",
+        "name": "nginx-test",
+        "namespace": "default",
+        "status": "Pending",
+        "health": "WARNING",
+        "createdAt": 1789443620940,
+        "updatedAt": 1789443680940,
+        "events": [
+          {
+            "id": "evt-1",
+            "timestamp": 1700000000000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 1,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000000000
+          },
+          {
+            "id": "evt-2",
+            "timestamp": 1700000060000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 2,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000060000
+          }
+        ]
+      }
+    ],
+    "cls-2c347e4f24ce": [],
+    "cls-7d04356e5c55": [
+      {
+        "id": "cls-7d04356e5c55-pod-simple-app",
+        "clusterId": "cls-7d04356e5c55",
+        "kind": "Pod",
+        "name": "simple-app",
+        "namespace": "default",
+        "status": "Running",
+        "health": "HEALTHY",
+        "createdAt": 1789443620948,
+        "updatedAt": 1789443680948,
+        "containers": [
+          {
+            "name": "app",
+            "image": "app:v1",
+            "restartCount": 0,
+            "ready": true,
+            "state": "running",
+            "cpuRequest": "100m",
+            "memoryRequest": "128Mi"
+          }
+        ]
+      }
+    ],
+    "cls-1c138c5ed9f0": [],
+    "cls-db455736085f": [
+      {
+        "id": "cls-db455736085f-pod-nginx-test",
+        "clusterId": "cls-db455736085f",
+        "kind": "Pod",
+        "name": "nginx-test",
+        "namespace": "default",
+        "status": "Pending",
+        "health": "WARNING",
+        "createdAt": 1789444246156,
+        "updatedAt": 1789444306156,
+        "events": [
+          {
+            "id": "evt-1",
+            "timestamp": 1700000000000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 1,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000000000
+          },
+          {
+            "id": "evt-2",
+            "timestamp": 1700000060000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 2,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000060000
+          }
+        ]
+      }
+    ],
+    "cls-3a3f66085ab8": [],
+    "cls-a5c62b30f7df": [
+      {
+        "id": "cls-a5c62b30f7df-pod-simple-app",
+        "clusterId": "cls-a5c62b30f7df",
+        "kind": "Pod",
+        "name": "simple-app",
+        "namespace": "default",
+        "status": "Running",
+        "health": "HEALTHY",
+        "createdAt": 1789444246163,
+        "updatedAt": 1789444306163,
+        "containers": [
+          {
+            "name": "app",
+            "image": "app:v1",
+            "restartCount": 0,
+            "ready": true,
+            "state": "running",
+            "cpuRequest": "100m",
+            "memoryRequest": "128Mi"
+          }
+        ]
+      }
+    ],
+    "cls-fb2b01be37d7": [],
+    "cls-ea870fb8865f": [
+      {
+        "id": "cls-ea870fb8865f-pod-nginx-test",
+        "clusterId": "cls-ea870fb8865f",
+        "kind": "Pod",
+        "name": "nginx-test",
+        "namespace": "default",
+        "status": "Pending",
+        "health": "WARNING",
+        "createdAt": 1789444797605,
+        "updatedAt": 1789444857605,
+        "events": [
+          {
+            "id": "evt-1",
+            "timestamp": 1700000000000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 1,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000000000
+          },
+          {
+            "id": "evt-2",
+            "timestamp": 1700000060000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 2,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000060000
+          }
+        ]
+      }
+    ],
+    "cls-cda51c9f5838": [],
+    "cls-0b78eea21dec": [
+      {
+        "id": "cls-0b78eea21dec-pod-simple-app",
+        "clusterId": "cls-0b78eea21dec",
+        "kind": "Pod",
+        "name": "simple-app",
+        "namespace": "default",
+        "status": "Running",
+        "health": "HEALTHY",
+        "createdAt": 1789444797613,
+        "updatedAt": 1789444857613,
+        "containers": [
+          {
+            "name": "app",
+            "image": "app:v1",
+            "restartCount": 0,
+            "ready": true,
+            "state": "running",
+            "cpuRequest": "100m",
+            "memoryRequest": "128Mi"
+          }
+        ]
+      }
+    ],
+    "cls-3e1c0043a475": [],
+    "cls-c0a481dd6423": [
+      {
+        "id": "cls-c0a481dd6423-pod-nginx-test",
+        "clusterId": "cls-c0a481dd6423",
+        "kind": "Pod",
+        "name": "nginx-test",
+        "namespace": "default",
+        "status": "Pending",
+        "health": "WARNING",
+        "createdAt": 1789444830563,
+        "updatedAt": 1789444890563,
+        "events": [
+          {
+            "id": "evt-1",
+            "timestamp": 1700000000000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 1,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000000000
+          },
+          {
+            "id": "evt-2",
+            "timestamp": 1700000060000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 2,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000060000
+          }
+        ]
+      }
+    ],
+    "cls-526835716b45": [],
+    "cls-6eb8d8fcb3e5": [
+      {
+        "id": "cls-6eb8d8fcb3e5-pod-simple-app",
+        "clusterId": "cls-6eb8d8fcb3e5",
+        "kind": "Pod",
+        "name": "simple-app",
+        "namespace": "default",
+        "status": "Running",
+        "health": "HEALTHY",
+        "createdAt": 1789444830571,
+        "updatedAt": 1789444890571,
+        "containers": [
+          {
+            "name": "app",
+            "image": "app:v1",
+            "restartCount": 0,
+            "ready": true,
+            "state": "running",
+            "cpuRequest": "100m",
+            "memoryRequest": "128Mi"
+          }
+        ]
+      }
+    ],
+    "cls-fbd62b928ef7": [],
+    "cls-f0ac0fc57662": [
+      {
+        "id": "cls-f0ac0fc57662-pod-nginx-test",
+        "clusterId": "cls-f0ac0fc57662",
+        "kind": "Pod",
+        "name": "nginx-test",
+        "namespace": "default",
+        "status": "Pending",
+        "health": "WARNING",
+        "createdAt": 1789445162593,
+        "updatedAt": 1789445222593,
+        "events": [
+          {
+            "id": "evt-1",
+            "timestamp": 1700000000000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 1,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000000000
+          },
+          {
+            "id": "evt-2",
+            "timestamp": 1700000060000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 2,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000060000
+          }
+        ]
+      }
+    ],
+    "cls-d9eefe662a62": [],
+    "cls-2406486aa94b": [
+      {
+        "id": "cls-2406486aa94b-pod-simple-app",
+        "clusterId": "cls-2406486aa94b",
+        "kind": "Pod",
+        "name": "simple-app",
+        "namespace": "default",
+        "status": "Running",
+        "health": "HEALTHY",
+        "createdAt": 1789445162601,
+        "updatedAt": 1789445222601,
+        "containers": [
+          {
+            "name": "app",
+            "image": "app:v1",
+            "restartCount": 0,
+            "ready": true,
+            "state": "running",
+            "cpuRequest": "100m",
+            "memoryRequest": "128Mi"
+          }
+        ]
+      }
+    ],
+    "cls-23b167df9c49": []
   },
   "incidents": {
     "SKY-1001": {
@@ -3815,99 +5596,6 @@
         ]
       },
       "updatedAt": 1789035704914
-    },
-    "SKY-1002": {
-      "id": "SKY-1002",
-      "fingerprint": "5df76229e369aba7c245e6119ed505fc9d027345a833fac22446747f5ab6f57e",
-      "orgId": "org-production-sre",
-      "clusterId": "cls-b1afcab85567",
-      "clusterName": "production-us-east-1",
-      "namespace": "production",
-      "resourceKind": "Pod",
-      "resourceName": "payments-api-7b8f95c-k2m9x",
-      "incidentType": "CrashLoopBackOff",
-      "title": "High CPU on payments-api",
-      "severity": "HIGH",
-      "confidence": "HIGH",
-      "status": "OPEN",
-      "occurrenceCount": 2,
-      "firstSeenAt": 1789205603673,
-      "lastSeenAt": 1789205603683,
-      "technicalDetails": {
-        "podName": "payments-api-7b8f95c-k2m9x",
-        "containerName": "payments-api",
-        "image": "registry.skyops.io/payments/api:v1.4.2",
-        "restartCount": 3,
-        "reason": "ResourceExhaustion",
-        "message": "Container payments-api CPU usage reached 99.0% of limit (495m/500m). CPU throttling throttled 84% of execution periods.",
-        "nodeName": "k8s-node-worker-01",
-        "containers": [
-          {
-            "name": "payments-api",
-            "image": "registry.skyops.io/payments/api:v1.4.2",
-            "restartCount": 3,
-            "ready": true,
-            "state": "running",
-            "cpuUsage": "495m",
-            "cpuLimit": "500m",
-            "memoryUsage": "380Mi",
-            "memoryLimit": "512Mi"
-          }
-        ],
-        "conditions": [
-          {
-            "type": "Ready",
-            "status": "True"
-          },
-          {
-            "type": "ContainersReady",
-            "status": "True"
-          }
-        ],
-        "events": [
-          {
-            "id": "evt-395d4e96",
-            "timestamp": 1789205543666,
-            "type": "Warning",
-            "reason": "ResourceExhaustion",
-            "objectKind": "Pod",
-            "objectName": "payments-api-7b8f95c-k2m9x",
-            "namespace": "production",
-            "message": "Container payments-api cpu usage reached 99.0% of limit (495m/500m). CPU throttling throttled 84% of execution periods."
-          }
-        ],
-        "impact": "The affected workload or infrastructure component is unavailable or degraded.",
-        "rootCause": "Container is repeatedly terminating with a non-zero exit code.",
-        "resourceUid": "res-66a4c91d",
-        "observedState": "Running",
-        "rootCauseCategory": "CRASH",
-        "recommendation": "Inspect container logs and the application configuration, then correct the failing process before redeploying.",
-        "recommendedAction": "Inspect container logs and the application configuration, then correct the failing process before redeploying.",
-        "confidence": "HIGH",
-        "relatedResources": [],
-        "evidence": [
-          {
-            "source": "kubernetes-status",
-            "reason": "ResourceExhaustion",
-            "message": "Container payments-api CPU usage reached 99.0% of limit (495m/500m). CPU throttling throttled 84% of execution periods."
-          },
-          {
-            "source": "kubernetes-event",
-            "reason": "ResourceExhaustion",
-            "message": "Container payments-api cpu usage reached 99.0% of limit (495m/500m). CPU throttling throttled 84% of execution periods.",
-            "timestamp": 1789205543666
-          }
-        ]
-      },
-      "updatedAt": 1789205603683,
-      "resolvedAt": null,
-      "resolutionSource": "AUTOMATIC_VERIFIED",
-      "resolution": {
-        "source": "AUTOMATIC_VERIFIED",
-        "resolvedAt": 1789205603682,
-        "reason": "Pod payments-api-7b8f95c-k2m9x is now Running and all containers are in Ready state",
-        "verificationDetails": "Authoritative telemetry verified healthy workload state"
-      }
     },
     "SKY-1003": {
       "id": "SKY-1003",
@@ -4810,6 +6498,580 @@
         ]
       },
       "updatedAt": 1789441137192
+    },
+    "SKY-1014": {
+      "id": "SKY-1014",
+      "fingerprint": "00213ed2f6836d804ec0d2e5d7a1acc7f7ff313800e99733b07f9496216226bf",
+      "orgId": "org-a71bf1dff095",
+      "clusterId": "cls-6e6e3814f5b3",
+      "clusterName": "event-cluster",
+      "namespace": "default",
+      "resourceKind": "Pod",
+      "resourceName": "nginx-test",
+      "incidentType": "PodSchedulingFailed",
+      "title": "Pod nginx-test cannot be scheduled",
+      "severity": "MEDIUM",
+      "confidence": "HIGH",
+      "status": "OPEN",
+      "occurrenceCount": 1,
+      "firstSeenAt": 1789442984933,
+      "lastSeenAt": 1789442984933,
+      "technicalDetails": {
+        "podName": "nginx-test",
+        "reason": "FailedScheduling",
+        "message": "0/3 nodes are available: insufficient cpu",
+        "nodeName": "unknown",
+        "containers": [],
+        "events": [
+          {
+            "id": "evt-1",
+            "timestamp": 1700000000000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 1,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000000000
+          },
+          {
+            "id": "evt-2",
+            "timestamp": 1700000060000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 2,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000060000
+          }
+        ],
+        "resourceUid": "cls-6e6e3814f5b3-pod-nginx-test",
+        "observedState": "Pending",
+        "rootCause": "Pod cannot be scheduled because the cluster has insufficient CPU.",
+        "rootCauseCategory": "SCHEDULING",
+        "impact": "A localized component is degraded.",
+        "recommendation": "Adjust workload requests or scheduling constraints, or add compatible cluster capacity.",
+        "recommendedAction": "Adjust workload requests or scheduling constraints, or add compatible cluster capacity.",
+        "confidence": "HIGH",
+        "relatedResources": [],
+        "evidence": [
+          {
+            "source": "kubernetes-status",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu"
+          },
+          {
+            "source": "kubernetes-event",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "timestamp": 1700000000000
+          },
+          {
+            "source": "kubernetes-event",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "timestamp": 1700000060000
+          }
+        ]
+      },
+      "updatedAt": 1789442984933
+    },
+    "SKY-1015": {
+      "id": "SKY-1015",
+      "fingerprint": "b87c93c525450cf5d9cdb54f1b187a5255742d29839dbc146de8238228e155fc",
+      "orgId": "org-8e0fa58acb18",
+      "clusterId": "cls-0d62c9ad568b",
+      "clusterName": "event-cluster",
+      "namespace": "default",
+      "resourceKind": "Pod",
+      "resourceName": "nginx-test",
+      "incidentType": "PodSchedulingFailed",
+      "title": "Pod nginx-test cannot be scheduled",
+      "severity": "MEDIUM",
+      "confidence": "HIGH",
+      "status": "OPEN",
+      "occurrenceCount": 1,
+      "firstSeenAt": 1789443604774,
+      "lastSeenAt": 1789443604774,
+      "technicalDetails": {
+        "podName": "nginx-test",
+        "reason": "FailedScheduling",
+        "message": "0/3 nodes are available: insufficient cpu",
+        "nodeName": "unknown",
+        "containers": [],
+        "events": [
+          {
+            "id": "evt-1",
+            "timestamp": 1700000000000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 1,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000000000
+          },
+          {
+            "id": "evt-2",
+            "timestamp": 1700000060000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 2,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000060000
+          }
+        ],
+        "resourceUid": "cls-0d62c9ad568b-pod-nginx-test",
+        "observedState": "Pending",
+        "rootCause": "Pod cannot be scheduled because the cluster has insufficient CPU.",
+        "rootCauseCategory": "SCHEDULING",
+        "impact": "A localized component is degraded.",
+        "recommendation": "Adjust workload requests or scheduling constraints, or add compatible cluster capacity.",
+        "recommendedAction": "Adjust workload requests or scheduling constraints, or add compatible cluster capacity.",
+        "confidence": "HIGH",
+        "relatedResources": [],
+        "evidence": [
+          {
+            "source": "kubernetes-status",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu"
+          },
+          {
+            "source": "kubernetes-event",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "timestamp": 1700000000000
+          },
+          {
+            "source": "kubernetes-event",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "timestamp": 1700000060000
+          }
+        ]
+      },
+      "updatedAt": 1789443604774
+    },
+    "SKY-1016": {
+      "id": "SKY-1016",
+      "fingerprint": "22548266a68e439b92b03ae70873b12c3f39fdd5fa16f33da2fc336852a8bb5a",
+      "orgId": "org-dd4e4159cf98",
+      "clusterId": "cls-7d222adaab29",
+      "clusterName": "event-cluster",
+      "namespace": "default",
+      "resourceKind": "Pod",
+      "resourceName": "nginx-test",
+      "incidentType": "PodSchedulingFailed",
+      "title": "Pod nginx-test cannot be scheduled",
+      "severity": "MEDIUM",
+      "confidence": "HIGH",
+      "status": "OPEN",
+      "occurrenceCount": 1,
+      "firstSeenAt": 1789443680944,
+      "lastSeenAt": 1789443680944,
+      "technicalDetails": {
+        "podName": "nginx-test",
+        "reason": "FailedScheduling",
+        "message": "0/3 nodes are available: insufficient cpu",
+        "nodeName": "unknown",
+        "containers": [],
+        "events": [
+          {
+            "id": "evt-1",
+            "timestamp": 1700000000000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 1,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000000000
+          },
+          {
+            "id": "evt-2",
+            "timestamp": 1700000060000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 2,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000060000
+          }
+        ],
+        "resourceUid": "cls-7d222adaab29-pod-nginx-test",
+        "observedState": "Pending",
+        "rootCause": "Pod cannot be scheduled because the cluster has insufficient CPU.",
+        "rootCauseCategory": "SCHEDULING",
+        "impact": "A localized component is degraded.",
+        "recommendation": "Adjust workload requests or scheduling constraints, or add compatible cluster capacity.",
+        "recommendedAction": "Adjust workload requests or scheduling constraints, or add compatible cluster capacity.",
+        "confidence": "HIGH",
+        "relatedResources": [],
+        "evidence": [
+          {
+            "source": "kubernetes-status",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu"
+          },
+          {
+            "source": "kubernetes-event",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "timestamp": 1700000000000
+          },
+          {
+            "source": "kubernetes-event",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "timestamp": 1700000060000
+          }
+        ]
+      },
+      "updatedAt": 1789443680944
+    },
+    "SKY-1017": {
+      "id": "SKY-1017",
+      "fingerprint": "923f3dcf2685512895581f530257f63c31a5df26aed40d212e2c5a7f5d96497c",
+      "orgId": "org-f4b8fa72ca40",
+      "clusterId": "cls-db455736085f",
+      "clusterName": "event-cluster",
+      "namespace": "default",
+      "resourceKind": "Pod",
+      "resourceName": "nginx-test",
+      "incidentType": "PodSchedulingFailed",
+      "title": "Pod nginx-test cannot be scheduled",
+      "severity": "MEDIUM",
+      "confidence": "HIGH",
+      "status": "OPEN",
+      "occurrenceCount": 1,
+      "firstSeenAt": 1789444306160,
+      "lastSeenAt": 1789444306160,
+      "technicalDetails": {
+        "podName": "nginx-test",
+        "reason": "FailedScheduling",
+        "message": "0/3 nodes are available: insufficient cpu",
+        "nodeName": "unknown",
+        "containers": [],
+        "events": [
+          {
+            "id": "evt-1",
+            "timestamp": 1700000000000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 1,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000000000
+          },
+          {
+            "id": "evt-2",
+            "timestamp": 1700000060000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 2,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000060000
+          }
+        ],
+        "resourceUid": "cls-db455736085f-pod-nginx-test",
+        "observedState": "Pending",
+        "rootCause": "Pod cannot be scheduled because the cluster has insufficient CPU.",
+        "rootCauseCategory": "SCHEDULING",
+        "impact": "A localized component is degraded.",
+        "recommendation": "Adjust workload requests or scheduling constraints, or add compatible cluster capacity.",
+        "recommendedAction": "Adjust workload requests or scheduling constraints, or add compatible cluster capacity.",
+        "confidence": "HIGH",
+        "relatedResources": [],
+        "evidence": [
+          {
+            "source": "kubernetes-status",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu"
+          },
+          {
+            "source": "kubernetes-event",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "timestamp": 1700000000000
+          },
+          {
+            "source": "kubernetes-event",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "timestamp": 1700000060000
+          }
+        ]
+      },
+      "updatedAt": 1789444306160
+    },
+    "SKY-1018": {
+      "id": "SKY-1018",
+      "fingerprint": "3638c5d02e5a1eda63f99e9f4d0625b159052af96677b7a437cf057ba368d445",
+      "orgId": "org-8a28a346b54a",
+      "clusterId": "cls-ea870fb8865f",
+      "clusterName": "event-cluster",
+      "namespace": "default",
+      "resourceKind": "Pod",
+      "resourceName": "nginx-test",
+      "incidentType": "PodSchedulingFailed",
+      "title": "Pod nginx-test cannot be scheduled",
+      "severity": "MEDIUM",
+      "confidence": "HIGH",
+      "status": "OPEN",
+      "occurrenceCount": 1,
+      "firstSeenAt": 1789444857609,
+      "lastSeenAt": 1789444857609,
+      "technicalDetails": {
+        "podName": "nginx-test",
+        "reason": "FailedScheduling",
+        "message": "0/3 nodes are available: insufficient cpu",
+        "nodeName": "unknown",
+        "containers": [],
+        "events": [
+          {
+            "id": "evt-1",
+            "timestamp": 1700000000000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 1,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000000000
+          },
+          {
+            "id": "evt-2",
+            "timestamp": 1700000060000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 2,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000060000
+          }
+        ],
+        "resourceUid": "cls-ea870fb8865f-pod-nginx-test",
+        "observedState": "Pending",
+        "rootCause": "Pod cannot be scheduled because the cluster has insufficient CPU.",
+        "rootCauseCategory": "SCHEDULING",
+        "impact": "A localized component is degraded.",
+        "recommendation": "Adjust workload requests or scheduling constraints, or add compatible cluster capacity.",
+        "recommendedAction": "Adjust workload requests or scheduling constraints, or add compatible cluster capacity.",
+        "confidence": "HIGH",
+        "relatedResources": [],
+        "evidence": [
+          {
+            "source": "kubernetes-status",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu"
+          },
+          {
+            "source": "kubernetes-event",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "timestamp": 1700000000000
+          },
+          {
+            "source": "kubernetes-event",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "timestamp": 1700000060000
+          }
+        ]
+      },
+      "updatedAt": 1789444857609
+    },
+    "SKY-1019": {
+      "id": "SKY-1019",
+      "fingerprint": "3ed66394535b6597b5e131787812a3a6d7a6d372954536b4c99608104bda6433",
+      "orgId": "org-d004d5063247",
+      "clusterId": "cls-c0a481dd6423",
+      "clusterName": "event-cluster",
+      "namespace": "default",
+      "resourceKind": "Pod",
+      "resourceName": "nginx-test",
+      "incidentType": "PodSchedulingFailed",
+      "title": "Pod nginx-test cannot be scheduled",
+      "severity": "MEDIUM",
+      "confidence": "HIGH",
+      "status": "OPEN",
+      "occurrenceCount": 1,
+      "firstSeenAt": 1789444890567,
+      "lastSeenAt": 1789444890567,
+      "technicalDetails": {
+        "podName": "nginx-test",
+        "reason": "FailedScheduling",
+        "message": "0/3 nodes are available: insufficient cpu",
+        "nodeName": "unknown",
+        "containers": [],
+        "events": [
+          {
+            "id": "evt-1",
+            "timestamp": 1700000000000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 1,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000000000
+          },
+          {
+            "id": "evt-2",
+            "timestamp": 1700000060000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 2,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000060000
+          }
+        ],
+        "resourceUid": "cls-c0a481dd6423-pod-nginx-test",
+        "observedState": "Pending",
+        "rootCause": "Pod cannot be scheduled because the cluster has insufficient CPU.",
+        "rootCauseCategory": "SCHEDULING",
+        "impact": "A localized component is degraded.",
+        "recommendation": "Adjust workload requests or scheduling constraints, or add compatible cluster capacity.",
+        "recommendedAction": "Adjust workload requests or scheduling constraints, or add compatible cluster capacity.",
+        "confidence": "HIGH",
+        "relatedResources": [],
+        "evidence": [
+          {
+            "source": "kubernetes-status",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu"
+          },
+          {
+            "source": "kubernetes-event",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "timestamp": 1700000000000
+          },
+          {
+            "source": "kubernetes-event",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "timestamp": 1700000060000
+          }
+        ]
+      },
+      "updatedAt": 1789444890567
+    },
+    "SKY-1020": {
+      "id": "SKY-1020",
+      "fingerprint": "0b6984a7f7187515811544600c8ff1dab4677f98485927dc9cbda31394874a3f",
+      "orgId": "org-b9930fc1e429",
+      "clusterId": "cls-f0ac0fc57662",
+      "clusterName": "event-cluster",
+      "namespace": "default",
+      "resourceKind": "Pod",
+      "resourceName": "nginx-test",
+      "incidentType": "PodSchedulingFailed",
+      "title": "Pod nginx-test cannot be scheduled",
+      "severity": "MEDIUM",
+      "confidence": "HIGH",
+      "status": "OPEN",
+      "occurrenceCount": 1,
+      "firstSeenAt": 1789445222597,
+      "lastSeenAt": 1789445222597,
+      "technicalDetails": {
+        "podName": "nginx-test",
+        "reason": "FailedScheduling",
+        "message": "0/3 nodes are available: insufficient cpu",
+        "nodeName": "unknown",
+        "containers": [],
+        "events": [
+          {
+            "id": "evt-1",
+            "timestamp": 1700000000000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 1,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000000000
+          },
+          {
+            "id": "evt-2",
+            "timestamp": 1700000060000,
+            "type": "Warning",
+            "reason": "FailedScheduling",
+            "objectKind": "Pod",
+            "objectName": "nginx-test",
+            "namespace": "default",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "count": 2,
+            "firstObserved": 1700000000000,
+            "lastObserved": 1700000060000
+          }
+        ],
+        "resourceUid": "cls-f0ac0fc57662-pod-nginx-test",
+        "observedState": "Pending",
+        "rootCause": "Pod cannot be scheduled because the cluster has insufficient CPU.",
+        "rootCauseCategory": "SCHEDULING",
+        "impact": "A localized component is degraded.",
+        "recommendation": "Adjust workload requests or scheduling constraints, or add compatible cluster capacity.",
+        "recommendedAction": "Adjust workload requests or scheduling constraints, or add compatible cluster capacity.",
+        "confidence": "HIGH",
+        "relatedResources": [],
+        "evidence": [
+          {
+            "source": "kubernetes-status",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu"
+          },
+          {
+            "source": "kubernetes-event",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "timestamp": 1700000000000
+          },
+          {
+            "source": "kubernetes-event",
+            "reason": "FailedScheduling",
+            "message": "0/3 nodes are available: insufficient cpu",
+            "timestamp": 1700000060000
+          }
+        ]
+      },
+      "updatedAt": 1789445222597
     }
   },
   "incidentTimeline": {
@@ -4824,47 +7086,6 @@
           "name": "SkyOps Engine"
         },
         "description": "Incident created: Deployment checkout-api is degraded (0/1 ready)"
-      }
-    ],
-    "SKY-1002": [
-      {
-        "id": "evt-ca1a10da931a",
-        "incidentId": "SKY-1002",
-        "timestamp": 1789205603673,
-        "type": "DETECTION",
-        "actor": {
-          "type": "SYSTEM",
-          "name": "SkyOps Engine"
-        },
-        "description": "Incident created: High CPU on payments-api"
-      },
-      {
-        "id": "evt-86a06970672d",
-        "incidentId": "SKY-1002",
-        "timestamp": 1789205603682,
-        "type": "RECOVERY",
-        "actor": {
-          "type": "AGENT",
-          "name": "SkyOps Telemetry Engine"
-        },
-        "description": "Auto-resolved: Pod payments-api-7b8f95c-k2m9x is now Running and all containers are in Ready state",
-        "metadata": {
-          "resolutionSource": "AUTOMATIC_VERIFIED"
-        }
-      },
-      {
-        "id": "evt-c96afd483259",
-        "incidentId": "SKY-1002",
-        "timestamp": 1789205603683,
-        "type": "OCCURRENCE",
-        "actor": {
-          "type": "AGENT",
-          "name": "SkyOps Agent"
-        },
-        "description": "Incident recurred: failure condition detected again on Pod payments-api-7b8f95c-k2m9x (Occurrence #2)",
-        "metadata": {
-          "occurrenceCount": 2
-        }
       }
     ],
     "SKY-1003": [
@@ -5009,11 +7230,101 @@
         },
         "description": "Incident created: Pod nginx-test cannot be scheduled"
       }
+    ],
+    "SKY-1014": [
+      {
+        "id": "evt-fa4f37a1feb9",
+        "incidentId": "SKY-1014",
+        "timestamp": 1789442984933,
+        "type": "DETECTION",
+        "actor": {
+          "type": "SYSTEM",
+          "name": "SkyOps Engine"
+        },
+        "description": "Incident created: Pod nginx-test cannot be scheduled"
+      }
+    ],
+    "SKY-1015": [
+      {
+        "id": "evt-26eebdd4538b",
+        "incidentId": "SKY-1015",
+        "timestamp": 1789443604774,
+        "type": "DETECTION",
+        "actor": {
+          "type": "SYSTEM",
+          "name": "SkyOps Engine"
+        },
+        "description": "Incident created: Pod nginx-test cannot be scheduled"
+      }
+    ],
+    "SKY-1016": [
+      {
+        "id": "evt-460a5d914085",
+        "incidentId": "SKY-1016",
+        "timestamp": 1789443680945,
+        "type": "DETECTION",
+        "actor": {
+          "type": "SYSTEM",
+          "name": "SkyOps Engine"
+        },
+        "description": "Incident created: Pod nginx-test cannot be scheduled"
+      }
+    ],
+    "SKY-1017": [
+      {
+        "id": "evt-bfef5eecbce0",
+        "incidentId": "SKY-1017",
+        "timestamp": 1789444306160,
+        "type": "DETECTION",
+        "actor": {
+          "type": "SYSTEM",
+          "name": "SkyOps Engine"
+        },
+        "description": "Incident created: Pod nginx-test cannot be scheduled"
+      }
+    ],
+    "SKY-1018": [
+      {
+        "id": "evt-53289ea715e9",
+        "incidentId": "SKY-1018",
+        "timestamp": 1789444857610,
+        "type": "DETECTION",
+        "actor": {
+          "type": "SYSTEM",
+          "name": "SkyOps Engine"
+        },
+        "description": "Incident created: Pod nginx-test cannot be scheduled"
+      }
+    ],
+    "SKY-1019": [
+      {
+        "id": "evt-4575482a8a58",
+        "incidentId": "SKY-1019",
+        "timestamp": 1789444890568,
+        "type": "DETECTION",
+        "actor": {
+          "type": "SYSTEM",
+          "name": "SkyOps Engine"
+        },
+        "description": "Incident created: Pod nginx-test cannot be scheduled"
+      }
+    ],
+    "SKY-1020": [
+      {
+        "id": "evt-508d2f13fd00",
+        "incidentId": "SKY-1020",
+        "timestamp": 1789445222597,
+        "type": "DETECTION",
+        "actor": {
+          "type": "SYSTEM",
+          "name": "SkyOps Engine"
+        },
+        "description": "Incident created: Pod nginx-test cannot be scheduled"
+      }
     ]
   },
   "incidentNotes": {
     "SKY-1001": [],
-    "SKY-1002": [],
     "SKY-1003": [],
     "SKY-1004": [],
     "SKY-1005": [],
@@ -5024,14 +7335,21 @@
     "SKY-1010": [],
     "SKY-1011": [],
     "SKY-1012": [],
-    "SKY-1013": []
+    "SKY-1013": [],
+    "SKY-1014": [],
+    "SKY-1015": [],
+    "SKY-1016": [],
+    "SKY-1017": [],
+    "SKY-1018": [],
+    "SKY-1019": [],
+    "SKY-1020": []
   },
   "remediationActions": {},
   "remediations": {},
   "aiAnalyses": {},
   "policies": {},
   "incidentFailures": {},
-  "incidentCounter": 1014,
+  "incidentCounter": 1021,
   "userNotificationSettings": {
     "user_test_123": {
       "incidentEmailEnabled": true,
@@ -5517,6 +7835,307 @@
     "cls-c3e7b4323d64": [
       {
         "timestamp": 1789441137198,
+        "cpuUsageMillicores": 1500,
+        "cpuRequestMillicores": 2000,
+        "cpuCapacityMillicores": 4000,
+        "memoryUsageBytes": 536870912,
+        "memoryRequestBytes": 1073741824,
+        "memoryCapacityBytes": 2147483648,
+        "isUsageAvailable": true,
+        "source": "METRICS_SERVER"
+      }
+    ],
+    "cls-6e6e3814f5b3": [
+      {
+        "timestamp": 1789442984928,
+        "cpuRequestMillicores": 0,
+        "cpuCapacityMillicores": 0,
+        "cpuRequestedPercent": 0,
+        "cpuLimitPercent": 0,
+        "memoryRequestBytes": 0,
+        "memoryCapacityBytes": 0,
+        "memoryRequestedPercent": 0,
+        "memoryLimitPercent": 0,
+        "isUsageAvailable": false,
+        "source": "spec-derived"
+      }
+    ],
+    "cls-ddd2bd379253": [
+      {
+        "timestamp": 1789442984936,
+        "cpuRequestMillicores": 0,
+        "cpuCapacityMillicores": 0,
+        "cpuRequestedPercent": 0,
+        "cpuLimitPercent": 0,
+        "memoryRequestBytes": 0,
+        "memoryCapacityBytes": 0,
+        "memoryRequestedPercent": 0,
+        "memoryLimitPercent": 0,
+        "isUsageAvailable": false,
+        "source": "spec-derived"
+      }
+    ],
+    "cls-e5f024f2934e": [
+      {
+        "timestamp": 1789442984937,
+        "cpuUsageMillicores": 1500,
+        "cpuRequestMillicores": 2000,
+        "cpuCapacityMillicores": 4000,
+        "memoryUsageBytes": 536870912,
+        "memoryRequestBytes": 1073741824,
+        "memoryCapacityBytes": 2147483648,
+        "isUsageAvailable": true,
+        "source": "METRICS_SERVER"
+      }
+    ],
+    "cls-0d62c9ad568b": [
+      {
+        "timestamp": 1789443604769,
+        "cpuRequestMillicores": 0,
+        "cpuCapacityMillicores": 0,
+        "cpuRequestedPercent": 0,
+        "cpuLimitPercent": 0,
+        "memoryRequestBytes": 0,
+        "memoryCapacityBytes": 0,
+        "memoryRequestedPercent": 0,
+        "memoryLimitPercent": 0,
+        "isUsageAvailable": false,
+        "source": "spec-derived"
+      }
+    ],
+    "cls-982bf1fe44a7": [
+      {
+        "timestamp": 1789443604780,
+        "cpuRequestMillicores": 0,
+        "cpuCapacityMillicores": 0,
+        "cpuRequestedPercent": 0,
+        "cpuLimitPercent": 0,
+        "memoryRequestBytes": 0,
+        "memoryCapacityBytes": 0,
+        "memoryRequestedPercent": 0,
+        "memoryLimitPercent": 0,
+        "isUsageAvailable": false,
+        "source": "spec-derived"
+      }
+    ],
+    "cls-66315277a675": [
+      {
+        "timestamp": 1789443604781,
+        "cpuUsageMillicores": 1500,
+        "cpuRequestMillicores": 2000,
+        "cpuCapacityMillicores": 4000,
+        "memoryUsageBytes": 536870912,
+        "memoryRequestBytes": 1073741824,
+        "memoryCapacityBytes": 2147483648,
+        "isUsageAvailable": true,
+        "source": "METRICS_SERVER"
+      }
+    ],
+    "cls-7d222adaab29": [
+      {
+        "timestamp": 1789443680940,
+        "cpuRequestMillicores": 0,
+        "cpuCapacityMillicores": 0,
+        "cpuRequestedPercent": 0,
+        "cpuLimitPercent": 0,
+        "memoryRequestBytes": 0,
+        "memoryCapacityBytes": 0,
+        "memoryRequestedPercent": 0,
+        "memoryLimitPercent": 0,
+        "isUsageAvailable": false,
+        "source": "spec-derived"
+      }
+    ],
+    "cls-7d04356e5c55": [
+      {
+        "timestamp": 1789443680948,
+        "cpuRequestMillicores": 0,
+        "cpuCapacityMillicores": 0,
+        "cpuRequestedPercent": 0,
+        "cpuLimitPercent": 0,
+        "memoryRequestBytes": 0,
+        "memoryCapacityBytes": 0,
+        "memoryRequestedPercent": 0,
+        "memoryLimitPercent": 0,
+        "isUsageAvailable": false,
+        "source": "spec-derived"
+      }
+    ],
+    "cls-1c138c5ed9f0": [
+      {
+        "timestamp": 1789443680949,
+        "cpuUsageMillicores": 1500,
+        "cpuRequestMillicores": 2000,
+        "cpuCapacityMillicores": 4000,
+        "memoryUsageBytes": 536870912,
+        "memoryRequestBytes": 1073741824,
+        "memoryCapacityBytes": 2147483648,
+        "isUsageAvailable": true,
+        "source": "METRICS_SERVER"
+      }
+    ],
+    "cls-db455736085f": [
+      {
+        "timestamp": 1789444306156,
+        "cpuRequestMillicores": 0,
+        "cpuCapacityMillicores": 0,
+        "cpuRequestedPercent": 0,
+        "cpuLimitPercent": 0,
+        "memoryRequestBytes": 0,
+        "memoryCapacityBytes": 0,
+        "memoryRequestedPercent": 0,
+        "memoryLimitPercent": 0,
+        "isUsageAvailable": false,
+        "source": "spec-derived"
+      }
+    ],
+    "cls-a5c62b30f7df": [
+      {
+        "timestamp": 1789444306163,
+        "cpuRequestMillicores": 0,
+        "cpuCapacityMillicores": 0,
+        "cpuRequestedPercent": 0,
+        "cpuLimitPercent": 0,
+        "memoryRequestBytes": 0,
+        "memoryCapacityBytes": 0,
+        "memoryRequestedPercent": 0,
+        "memoryLimitPercent": 0,
+        "isUsageAvailable": false,
+        "source": "spec-derived"
+      }
+    ],
+    "cls-fb2b01be37d7": [
+      {
+        "timestamp": 1789444306164,
+        "cpuUsageMillicores": 1500,
+        "cpuRequestMillicores": 2000,
+        "cpuCapacityMillicores": 4000,
+        "memoryUsageBytes": 536870912,
+        "memoryRequestBytes": 1073741824,
+        "memoryCapacityBytes": 2147483648,
+        "isUsageAvailable": true,
+        "source": "METRICS_SERVER"
+      }
+    ],
+    "cls-ea870fb8865f": [
+      {
+        "timestamp": 1789444857605,
+        "cpuRequestMillicores": 0,
+        "cpuCapacityMillicores": 0,
+        "cpuRequestedPercent": 0,
+        "cpuLimitPercent": 0,
+        "memoryRequestBytes": 0,
+        "memoryCapacityBytes": 0,
+        "memoryRequestedPercent": 0,
+        "memoryLimitPercent": 0,
+        "isUsageAvailable": false,
+        "source": "spec-derived"
+      }
+    ],
+    "cls-0b78eea21dec": [
+      {
+        "timestamp": 1789444857613,
+        "cpuRequestMillicores": 0,
+        "cpuCapacityMillicores": 0,
+        "cpuRequestedPercent": 0,
+        "cpuLimitPercent": 0,
+        "memoryRequestBytes": 0,
+        "memoryCapacityBytes": 0,
+        "memoryRequestedPercent": 0,
+        "memoryLimitPercent": 0,
+        "isUsageAvailable": false,
+        "source": "spec-derived"
+      }
+    ],
+    "cls-3e1c0043a475": [
+      {
+        "timestamp": 1789444857614,
+        "cpuUsageMillicores": 1500,
+        "cpuRequestMillicores": 2000,
+        "cpuCapacityMillicores": 4000,
+        "memoryUsageBytes": 536870912,
+        "memoryRequestBytes": 1073741824,
+        "memoryCapacityBytes": 2147483648,
+        "isUsageAvailable": true,
+        "source": "METRICS_SERVER"
+      }
+    ],
+    "cls-c0a481dd6423": [
+      {
+        "timestamp": 1789444890563,
+        "cpuRequestMillicores": 0,
+        "cpuCapacityMillicores": 0,
+        "cpuRequestedPercent": 0,
+        "cpuLimitPercent": 0,
+        "memoryRequestBytes": 0,
+        "memoryCapacityBytes": 0,
+        "memoryRequestedPercent": 0,
+        "memoryLimitPercent": 0,
+        "isUsageAvailable": false,
+        "source": "spec-derived"
+      }
+    ],
+    "cls-6eb8d8fcb3e5": [
+      {
+        "timestamp": 1789444890571,
+        "cpuRequestMillicores": 0,
+        "cpuCapacityMillicores": 0,
+        "cpuRequestedPercent": 0,
+        "cpuLimitPercent": 0,
+        "memoryRequestBytes": 0,
+        "memoryCapacityBytes": 0,
+        "memoryRequestedPercent": 0,
+        "memoryLimitPercent": 0,
+        "isUsageAvailable": false,
+        "source": "spec-derived"
+      }
+    ],
+    "cls-fbd62b928ef7": [
+      {
+        "timestamp": 1789444890573,
+        "cpuUsageMillicores": 1500,
+        "cpuRequestMillicores": 2000,
+        "cpuCapacityMillicores": 4000,
+        "memoryUsageBytes": 536870912,
+        "memoryRequestBytes": 1073741824,
+        "memoryCapacityBytes": 2147483648,
+        "isUsageAvailable": true,
+        "source": "METRICS_SERVER"
+      }
+    ],
+    "cls-f0ac0fc57662": [
+      {
+        "timestamp": 1789445222593,
+        "cpuRequestMillicores": 0,
+        "cpuCapacityMillicores": 0,
+        "cpuRequestedPercent": 0,
+        "cpuLimitPercent": 0,
+        "memoryRequestBytes": 0,
+        "memoryCapacityBytes": 0,
+        "memoryRequestedPercent": 0,
+        "memoryLimitPercent": 0,
+        "isUsageAvailable": false,
+        "source": "spec-derived"
+      }
+    ],
+    "cls-2406486aa94b": [
+      {
+        "timestamp": 1789445222601,
+        "cpuRequestMillicores": 0,
+        "cpuCapacityMillicores": 0,
+        "cpuRequestedPercent": 0,
+        "cpuLimitPercent": 0,
+        "memoryRequestBytes": 0,
+        "memoryCapacityBytes": 0,
+        "memoryRequestedPercent": 0,
+        "memoryLimitPercent": 0,
+        "isUsageAvailable": false,
+        "source": "spec-derived"
+      }
+    ],
+    "cls-23b167df9c49": [
+      {
+        "timestamp": 1789445222603,
         "cpuUsageMillicores": 1500,
         "cpuRequestMillicores": 2000,
         "cpuCapacityMillicores": 4000,
@@ -7857,6 +10476,1595 @@
           1789437600000,
           {
             "timestamp": 1789437600000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-6e6e3814f5b3": {
+      "clusterId": "cls-6e6e3814f5b3",
+      "rawPoints": [
+        {
+          "timestamp": 1789442984928,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "spec-derived",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789442700000,
+          {
+            "timestamp": 1789442700000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789441200000,
+          {
+            "timestamp": 1789441200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": [
+        {
+          "timestamp": 1789442984928,
+          "cpuRequestMillicores": 0,
+          "cpuLimitMillicores": 0,
+          "cpuAllocatableMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "memoryRequestBytes": 0,
+          "memoryLimitBytes": 0,
+          "memoryAllocatableBytes": 0,
+          "memoryCapacityBytes": 0,
+          "nodeCount": 0,
+          "podCount": 1
+        }
+      ],
+      "lastSpecSignature": "0:0:0:0:0:0:0:1"
+    },
+    "cls-ddd2bd379253": {
+      "clusterId": "cls-ddd2bd379253",
+      "rawPoints": [
+        {
+          "timestamp": 1789442984936,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "spec-derived",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789442700000,
+          {
+            "timestamp": 1789442700000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789441200000,
+          {
+            "timestamp": 1789441200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": [
+        {
+          "timestamp": 1789442984936,
+          "cpuRequestMillicores": 0,
+          "cpuLimitMillicores": 0,
+          "cpuAllocatableMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "memoryRequestBytes": 0,
+          "memoryLimitBytes": 0,
+          "memoryAllocatableBytes": 0,
+          "memoryCapacityBytes": 0,
+          "nodeCount": 0,
+          "podCount": 1
+        }
+      ],
+      "lastSpecSignature": "0:0:0:0:0:0:0:1"
+    },
+    "cls-e5f024f2934e": {
+      "clusterId": "cls-e5f024f2934e",
+      "rawPoints": [
+        {
+          "timestamp": 1789442984937,
+          "cpuUsageMillicores": 1500,
+          "cpuRequestMillicores": 2000,
+          "cpuCapacityMillicores": 4000,
+          "memoryUsageBytes": 536870912,
+          "memoryRequestBytes": 1073741824,
+          "memoryCapacityBytes": 2147483648,
+          "isUsageAvailable": true,
+          "source": "METRICS_SERVER",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789442700000,
+          {
+            "timestamp": 1789442700000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789441200000,
+          {
+            "timestamp": 1789441200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-0d62c9ad568b": {
+      "clusterId": "cls-0d62c9ad568b",
+      "rawPoints": [
+        {
+          "timestamp": 1789443604769,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "spec-derived",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789443600000,
+          {
+            "timestamp": 1789443600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789441200000,
+          {
+            "timestamp": 1789441200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": [
+        {
+          "timestamp": 1789443604769,
+          "cpuRequestMillicores": 0,
+          "cpuLimitMillicores": 0,
+          "cpuAllocatableMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "memoryRequestBytes": 0,
+          "memoryLimitBytes": 0,
+          "memoryAllocatableBytes": 0,
+          "memoryCapacityBytes": 0,
+          "nodeCount": 0,
+          "podCount": 1
+        }
+      ],
+      "lastSpecSignature": "0:0:0:0:0:0:0:1"
+    },
+    "cls-982bf1fe44a7": {
+      "clusterId": "cls-982bf1fe44a7",
+      "rawPoints": [
+        {
+          "timestamp": 1789443604780,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "spec-derived",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789443600000,
+          {
+            "timestamp": 1789443600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789441200000,
+          {
+            "timestamp": 1789441200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": [
+        {
+          "timestamp": 1789443604780,
+          "cpuRequestMillicores": 0,
+          "cpuLimitMillicores": 0,
+          "cpuAllocatableMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "memoryRequestBytes": 0,
+          "memoryLimitBytes": 0,
+          "memoryAllocatableBytes": 0,
+          "memoryCapacityBytes": 0,
+          "nodeCount": 0,
+          "podCount": 1
+        }
+      ],
+      "lastSpecSignature": "0:0:0:0:0:0:0:1"
+    },
+    "cls-66315277a675": {
+      "clusterId": "cls-66315277a675",
+      "rawPoints": [
+        {
+          "timestamp": 1789443604781,
+          "cpuUsageMillicores": 1500,
+          "cpuRequestMillicores": 2000,
+          "cpuCapacityMillicores": 4000,
+          "memoryUsageBytes": 536870912,
+          "memoryRequestBytes": 1073741824,
+          "memoryCapacityBytes": 2147483648,
+          "isUsageAvailable": true,
+          "source": "METRICS_SERVER",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789443600000,
+          {
+            "timestamp": 1789443600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789441200000,
+          {
+            "timestamp": 1789441200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-7d222adaab29": {
+      "clusterId": "cls-7d222adaab29",
+      "rawPoints": [
+        {
+          "timestamp": 1789443680940,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "spec-derived",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789443600000,
+          {
+            "timestamp": 1789443600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789441200000,
+          {
+            "timestamp": 1789441200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": [
+        {
+          "timestamp": 1789443680940,
+          "cpuRequestMillicores": 0,
+          "cpuLimitMillicores": 0,
+          "cpuAllocatableMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "memoryRequestBytes": 0,
+          "memoryLimitBytes": 0,
+          "memoryAllocatableBytes": 0,
+          "memoryCapacityBytes": 0,
+          "nodeCount": 0,
+          "podCount": 1
+        }
+      ],
+      "lastSpecSignature": "0:0:0:0:0:0:0:1"
+    },
+    "cls-7d04356e5c55": {
+      "clusterId": "cls-7d04356e5c55",
+      "rawPoints": [
+        {
+          "timestamp": 1789443680948,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "spec-derived",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789443600000,
+          {
+            "timestamp": 1789443600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789441200000,
+          {
+            "timestamp": 1789441200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": [
+        {
+          "timestamp": 1789443680948,
+          "cpuRequestMillicores": 0,
+          "cpuLimitMillicores": 0,
+          "cpuAllocatableMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "memoryRequestBytes": 0,
+          "memoryLimitBytes": 0,
+          "memoryAllocatableBytes": 0,
+          "memoryCapacityBytes": 0,
+          "nodeCount": 0,
+          "podCount": 1
+        }
+      ],
+      "lastSpecSignature": "0:0:0:0:0:0:0:1"
+    },
+    "cls-1c138c5ed9f0": {
+      "clusterId": "cls-1c138c5ed9f0",
+      "rawPoints": [
+        {
+          "timestamp": 1789443680949,
+          "cpuUsageMillicores": 1500,
+          "cpuRequestMillicores": 2000,
+          "cpuCapacityMillicores": 4000,
+          "memoryUsageBytes": 536870912,
+          "memoryRequestBytes": 1073741824,
+          "memoryCapacityBytes": 2147483648,
+          "isUsageAvailable": true,
+          "source": "METRICS_SERVER",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789443600000,
+          {
+            "timestamp": 1789443600000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789441200000,
+          {
+            "timestamp": 1789441200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-db455736085f": {
+      "clusterId": "cls-db455736085f",
+      "rawPoints": [
+        {
+          "timestamp": 1789444306156,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "spec-derived",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789444200000,
+          {
+            "timestamp": 1789444200000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789441200000,
+          {
+            "timestamp": 1789441200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": [
+        {
+          "timestamp": 1789444306156,
+          "cpuRequestMillicores": 0,
+          "cpuLimitMillicores": 0,
+          "cpuAllocatableMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "memoryRequestBytes": 0,
+          "memoryLimitBytes": 0,
+          "memoryAllocatableBytes": 0,
+          "memoryCapacityBytes": 0,
+          "nodeCount": 0,
+          "podCount": 1
+        }
+      ],
+      "lastSpecSignature": "0:0:0:0:0:0:0:1"
+    },
+    "cls-a5c62b30f7df": {
+      "clusterId": "cls-a5c62b30f7df",
+      "rawPoints": [
+        {
+          "timestamp": 1789444306163,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "spec-derived",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789444200000,
+          {
+            "timestamp": 1789444200000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789441200000,
+          {
+            "timestamp": 1789441200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": [
+        {
+          "timestamp": 1789444306163,
+          "cpuRequestMillicores": 0,
+          "cpuLimitMillicores": 0,
+          "cpuAllocatableMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "memoryRequestBytes": 0,
+          "memoryLimitBytes": 0,
+          "memoryAllocatableBytes": 0,
+          "memoryCapacityBytes": 0,
+          "nodeCount": 0,
+          "podCount": 1
+        }
+      ],
+      "lastSpecSignature": "0:0:0:0:0:0:0:1"
+    },
+    "cls-fb2b01be37d7": {
+      "clusterId": "cls-fb2b01be37d7",
+      "rawPoints": [
+        {
+          "timestamp": 1789444306164,
+          "cpuUsageMillicores": 1500,
+          "cpuRequestMillicores": 2000,
+          "cpuCapacityMillicores": 4000,
+          "memoryUsageBytes": 536870912,
+          "memoryRequestBytes": 1073741824,
+          "memoryCapacityBytes": 2147483648,
+          "isUsageAvailable": true,
+          "source": "METRICS_SERVER",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789444200000,
+          {
+            "timestamp": 1789444200000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789441200000,
+          {
+            "timestamp": 1789441200000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-ea870fb8865f": {
+      "clusterId": "cls-ea870fb8865f",
+      "rawPoints": [
+        {
+          "timestamp": 1789444857605,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "spec-derived",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789444800000,
+          {
+            "timestamp": 1789444800000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789444800000,
+          {
+            "timestamp": 1789444800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": [
+        {
+          "timestamp": 1789444857605,
+          "cpuRequestMillicores": 0,
+          "cpuLimitMillicores": 0,
+          "cpuAllocatableMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "memoryRequestBytes": 0,
+          "memoryLimitBytes": 0,
+          "memoryAllocatableBytes": 0,
+          "memoryCapacityBytes": 0,
+          "nodeCount": 0,
+          "podCount": 1
+        }
+      ],
+      "lastSpecSignature": "0:0:0:0:0:0:0:1"
+    },
+    "cls-0b78eea21dec": {
+      "clusterId": "cls-0b78eea21dec",
+      "rawPoints": [
+        {
+          "timestamp": 1789444857613,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "spec-derived",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789444800000,
+          {
+            "timestamp": 1789444800000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789444800000,
+          {
+            "timestamp": 1789444800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": [
+        {
+          "timestamp": 1789444857613,
+          "cpuRequestMillicores": 0,
+          "cpuLimitMillicores": 0,
+          "cpuAllocatableMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "memoryRequestBytes": 0,
+          "memoryLimitBytes": 0,
+          "memoryAllocatableBytes": 0,
+          "memoryCapacityBytes": 0,
+          "nodeCount": 0,
+          "podCount": 1
+        }
+      ],
+      "lastSpecSignature": "0:0:0:0:0:0:0:1"
+    },
+    "cls-3e1c0043a475": {
+      "clusterId": "cls-3e1c0043a475",
+      "rawPoints": [
+        {
+          "timestamp": 1789444857614,
+          "cpuUsageMillicores": 1500,
+          "cpuRequestMillicores": 2000,
+          "cpuCapacityMillicores": 4000,
+          "memoryUsageBytes": 536870912,
+          "memoryRequestBytes": 1073741824,
+          "memoryCapacityBytes": 2147483648,
+          "isUsageAvailable": true,
+          "source": "METRICS_SERVER",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789444800000,
+          {
+            "timestamp": 1789444800000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789444800000,
+          {
+            "timestamp": 1789444800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-c0a481dd6423": {
+      "clusterId": "cls-c0a481dd6423",
+      "rawPoints": [
+        {
+          "timestamp": 1789444890563,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "spec-derived",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789444800000,
+          {
+            "timestamp": 1789444800000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789444800000,
+          {
+            "timestamp": 1789444800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": [
+        {
+          "timestamp": 1789444890563,
+          "cpuRequestMillicores": 0,
+          "cpuLimitMillicores": 0,
+          "cpuAllocatableMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "memoryRequestBytes": 0,
+          "memoryLimitBytes": 0,
+          "memoryAllocatableBytes": 0,
+          "memoryCapacityBytes": 0,
+          "nodeCount": 0,
+          "podCount": 1
+        }
+      ],
+      "lastSpecSignature": "0:0:0:0:0:0:0:1"
+    },
+    "cls-6eb8d8fcb3e5": {
+      "clusterId": "cls-6eb8d8fcb3e5",
+      "rawPoints": [
+        {
+          "timestamp": 1789444890571,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "spec-derived",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789444800000,
+          {
+            "timestamp": 1789444800000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789444800000,
+          {
+            "timestamp": 1789444800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": [
+        {
+          "timestamp": 1789444890571,
+          "cpuRequestMillicores": 0,
+          "cpuLimitMillicores": 0,
+          "cpuAllocatableMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "memoryRequestBytes": 0,
+          "memoryLimitBytes": 0,
+          "memoryAllocatableBytes": 0,
+          "memoryCapacityBytes": 0,
+          "nodeCount": 0,
+          "podCount": 1
+        }
+      ],
+      "lastSpecSignature": "0:0:0:0:0:0:0:1"
+    },
+    "cls-fbd62b928ef7": {
+      "clusterId": "cls-fbd62b928ef7",
+      "rawPoints": [
+        {
+          "timestamp": 1789444890573,
+          "cpuUsageMillicores": 1500,
+          "cpuRequestMillicores": 2000,
+          "cpuCapacityMillicores": 4000,
+          "memoryUsageBytes": 536870912,
+          "memoryRequestBytes": 1073741824,
+          "memoryCapacityBytes": 2147483648,
+          "isUsageAvailable": true,
+          "source": "METRICS_SERVER",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789444800000,
+          {
+            "timestamp": 1789444800000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789444800000,
+          {
+            "timestamp": 1789444800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "specHistory": []
+    },
+    "cls-f0ac0fc57662": {
+      "clusterId": "cls-f0ac0fc57662",
+      "rawPoints": [
+        {
+          "timestamp": 1789445222593,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "spec-derived",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789445100000,
+          {
+            "timestamp": 1789445100000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789444800000,
+          {
+            "timestamp": 1789444800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": [
+        {
+          "timestamp": 1789445222593,
+          "cpuRequestMillicores": 0,
+          "cpuLimitMillicores": 0,
+          "cpuAllocatableMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "memoryRequestBytes": 0,
+          "memoryLimitBytes": 0,
+          "memoryAllocatableBytes": 0,
+          "memoryCapacityBytes": 0,
+          "nodeCount": 0,
+          "podCount": 1
+        }
+      ],
+      "lastSpecSignature": "0:0:0:0:0:0:0:1"
+    },
+    "cls-2406486aa94b": {
+      "clusterId": "cls-2406486aa94b",
+      "rawPoints": [
+        {
+          "timestamp": 1789445222601,
+          "cpuRequestMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "cpuRequestedPercent": 0,
+          "cpuLimitPercent": 0,
+          "memoryRequestBytes": 0,
+          "memoryCapacityBytes": 0,
+          "memoryRequestedPercent": 0,
+          "memoryLimitPercent": 0,
+          "isUsageAvailable": false,
+          "source": "spec-derived",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789445100000,
+          {
+            "timestamp": 1789445100000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789444800000,
+          {
+            "timestamp": 1789444800000,
+            "resolution": "1h",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 0,
+            "cpuCapacityMillicores": 0,
+            "cpuRequestedPercent": 0,
+            "cpuLimitPercent": 0,
+            "memoryRequestBytes": 0,
+            "memoryCapacityBytes": 0,
+            "memoryRequestedPercent": 0,
+            "memoryLimitPercent": 0,
+            "cpuUsageSum": 0,
+            "memoryUsageSum": 0,
+            "isUsageAvailable": false,
+            "source": "spec-derived"
+          }
+        ]
+      ],
+      "specHistory": [
+        {
+          "timestamp": 1789445222601,
+          "cpuRequestMillicores": 0,
+          "cpuLimitMillicores": 0,
+          "cpuAllocatableMillicores": 0,
+          "cpuCapacityMillicores": 0,
+          "memoryRequestBytes": 0,
+          "memoryLimitBytes": 0,
+          "memoryAllocatableBytes": 0,
+          "memoryCapacityBytes": 0,
+          "nodeCount": 0,
+          "podCount": 1
+        }
+      ],
+      "lastSpecSignature": "0:0:0:0:0:0:0:1"
+    },
+    "cls-23b167df9c49": {
+      "clusterId": "cls-23b167df9c49",
+      "rawPoints": [
+        {
+          "timestamp": 1789445222603,
+          "cpuUsageMillicores": 1500,
+          "cpuRequestMillicores": 2000,
+          "cpuCapacityMillicores": 4000,
+          "memoryUsageBytes": 536870912,
+          "memoryRequestBytes": 1073741824,
+          "memoryCapacityBytes": 2147483648,
+          "isUsageAvailable": true,
+          "source": "METRICS_SERVER",
+          "resolution": "raw",
+          "pinned": false
+        }
+      ],
+      "rollups5m": [
+        [
+          1789445100000,
+          {
+            "timestamp": 1789445100000,
+            "resolution": "5m",
+            "sampleCount": 1,
+            "cpuRequestMillicores": 2000,
+            "cpuCapacityMillicores": 4000,
+            "memoryRequestBytes": 1073741824,
+            "memoryCapacityBytes": 2147483648,
+            "cpuUsageSum": 1500,
+            "cpuUsageMin": 1500,
+            "cpuUsageMax": 1500,
+            "cpuUsageLatest": 1500,
+            "memoryUsageSum": 536870912,
+            "memoryUsageMin": 536870912,
+            "memoryUsageMax": 536870912,
+            "memoryUsageLatest": 536870912,
+            "isUsageAvailable": true,
+            "source": "METRICS_SERVER"
+          }
+        ]
+      ],
+      "rollups1h": [
+        [
+          1789444800000,
+          {
+            "timestamp": 1789444800000,
             "resolution": "1h",
             "sampleCount": 1,
             "cpuRequestMillicores": 2000,

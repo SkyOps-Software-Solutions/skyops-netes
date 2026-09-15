@@ -220,9 +220,9 @@ export function requireOrgMembership(
   const userOrgs = store.getOrganizationsForUser(req.user.id, req.user.email);
 
   if (userOrgs.length === 0) {
-    // Auto-bootstrap workspace
+    // Auto-bootstrap personal workspace for new tenant
     const userWorkspaceName = req.user.name ? `${req.user.name.split(' ')[0]}'s Workspace` : 'Primary Workspace';
-    const newOrg = store.createOrganization(userWorkspaceName, req.user.id);
+    const newOrg = store.createOrganization(userWorkspaceName, req.user.id, req.user.email, req.user.name);
     req.orgId = newOrg.id;
     req.userRole = 'OWNER';
     return next();
@@ -234,13 +234,23 @@ export function requireOrgMembership(
   }
 
   const access = store.checkUserOrgAccess(req.user.id, targetOrgId, req.user.email);
+  if (!access.hasAccess) {
+    if (access.status === 'SUSPENDED') {
+      return res.status(403).json({ error: 'Forbidden: Your organization membership has been suspended' });
+    }
+    if (access.status === 'REMOVED') {
+      return res.status(403).json({ error: 'Forbidden: Your organization membership has been revoked' });
+    }
+    return res.status(403).json({ error: 'Forbidden: You do not have access to this organization' });
+  }
+
   req.orgId = targetOrgId;
-  req.userRole = access.hasAccess && access.role ? access.role : 'OWNER';
+  req.userRole = access.role || 'VIEWER';
   next();
 }
 
 /**
- * Middleware: Require Minimum Role within Organization (OWNER > ADMIN > ENGINEER > VIEWER)
+ * Middleware: Require Minimum Role within Organization (OWNER > ADMIN > OPERATOR / ENGINEER > VIEWER)
  */
 export function requireRole(allowedRoles: Role[]) {
   return (req: AuthenticatedUserRequest, res: Response, next: NextFunction): void | Response => {
@@ -263,9 +273,13 @@ export type Permission =
   | 'remediation.execute'
   | 'policy.manage'
   | 'team.manage'
+  | 'member.manage'
+  | 'org.manage'
   | 'audit.read'
   | 'billing.read'
-  | 'integration.manage';
+  | 'integration.manage'
+  | 'support.create'
+  | 'support.manage';
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   OWNER: [
@@ -278,9 +292,13 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'remediation.execute',
     'policy.manage',
     'team.manage',
+    'member.manage',
+    'org.manage',
     'audit.read',
     'billing.read',
-    'integration.manage'
+    'integration.manage',
+    'support.create',
+    'support.manage'
   ],
   ADMIN: [
     'cluster.read',
@@ -292,24 +310,45 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'remediation.execute',
     'policy.manage',
     'team.manage',
+    'member.manage',
+    'org.manage',
     'audit.read',
     'billing.read',
-    'integration.manage'
+    'integration.manage',
+    'support.create',
+    'support.manage'
   ],
-  ENGINEER: [
+  OPERATOR: [
     'cluster.read',
+    'cluster.manage',
     'incident.read',
     'incident.manage',
     'remediation.view',
     'remediation.approve',
     'remediation.execute',
-    'audit.read'
+    'audit.read',
+    'billing.read',
+    'support.create'
+  ],
+  ENGINEER: [
+    'cluster.read',
+    'cluster.manage',
+    'incident.read',
+    'incident.manage',
+    'remediation.view',
+    'remediation.approve',
+    'remediation.execute',
+    'audit.read',
+    'billing.read',
+    'support.create'
   ],
   VIEWER: [
     'cluster.read',
     'incident.read',
     'remediation.view',
-    'audit.read'
+    'audit.read',
+    'billing.read',
+    'support.create'
   ]
 };
 

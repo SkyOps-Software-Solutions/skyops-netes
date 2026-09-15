@@ -8,11 +8,14 @@ import {
   CreditCard,
   Flame,
   HardDrive,
+  Headphones,
   HeartPulse,
   Key,
   Layers,
+  Lock,
   Play,
   RefreshCw,
+  Save,
   Server,
   Shield,
   Users,
@@ -22,10 +25,12 @@ import {
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { Cluster } from '../../types/index';
+import { Cluster, OrganizationSettings } from '../../types/index';
 import { Button, CodeBlock, CopyButton } from '../common/UI';
 import { NotificationsManager } from './NotificationsManager';
+import { SupportManager } from './SupportManager';
 import { SystemHealthManager } from './SystemHealthManager';
+import { TeamManager } from './TeamManager';
 import { UsageManager } from './UsageManager';
 import { WebhooksManager } from './WebhooksManager';
 
@@ -35,22 +40,64 @@ interface SettingsViewProps {
   onRefresh: () => void;
 }
 
-type SettingsTab = 'org' | 'notifications' | 'webhooks' | 'usage' | 'system' | 'testbed';
+type SettingsTab = 'org' | 'team' | 'support' | 'notifications' | 'webhooks' | 'usage' | 'system' | 'testbed';
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIncident, onRefresh }) => {
-  const { currentOrg, members, role, user } = useAuth();
+  const { currentOrg, role, user } = useAuth();
   const safeClusters = Array.isArray(clusters) ? clusters : [];
-  const safeMembers = Array.isArray(members) ? members : [];
   const [activeTab, setActiveTab] = useState<SettingsTab>('org');
   const [selectedClusterId, setSelectedClusterId] = useState<string>(safeClusters[0]?.id || '');
   const [simulating, setSimulating] = useState(false);
   const [simResult, setSimResult] = useState<{ success: boolean; message: string; incidentId?: string } | null>(null);
+
+  // Org Settings Form state
+  const isOwnerOrAdmin = role === 'OWNER' || role === 'ADMIN';
+  const [orgName, setOrgName] = useState(currentOrg?.name || '');
+  const [timezone, setTimezone] = useState(currentOrg?.settings?.general?.timezone || 'UTC');
+  const [enforceMfa, setEnforceMfa] = useState(currentOrg?.settings?.security?.enforceMfa || false);
+  const [sessionTimeout, setSessionTimeout] = useState(currentOrg?.settings?.security?.sessionTimeoutMinutes || 1440);
+  const [savingOrg, setSavingOrg] = useState(false);
+  const [orgSuccessMsg, setOrgSuccessMsg] = useState<string | null>(null);
+  const [orgError, setOrgError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (currentOrg) {
+      setOrgName(currentOrg.name || '');
+      setTimezone(currentOrg.settings?.general?.timezone || 'UTC');
+      setEnforceMfa(currentOrg.settings?.security?.enforceMfa || false);
+      setSessionTimeout(currentOrg.settings?.security?.sessionTimeoutMinutes || 1440);
+    }
+  }, [currentOrg]);
 
   useEffect(() => {
     if (!selectedClusterId && safeClusters.length > 0) {
       setSelectedClusterId(safeClusters[0].id);
     }
   }, [safeClusters, selectedClusterId]);
+
+  const handleSaveOrgSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentOrg?.id || !isOwnerOrAdmin) return;
+
+    try {
+      setSavingOrg(true);
+      setOrgError(null);
+      await api.updateOrganization(currentOrg.id, {
+        name: orgName.trim(),
+        settings: {
+          general: { name: orgName.trim(), timezone },
+          security: { enforceMfa, sessionTimeoutMinutes: Number(sessionTimeout) }
+        }
+      });
+      setOrgSuccessMsg('Organization profile and security policies saved.');
+      setTimeout(() => setOrgSuccessMsg(null), 4000);
+      onRefresh();
+    } catch (err: any) {
+      setOrgError(err.message || 'Failed to update organization settings');
+    } finally {
+      setSavingOrg(false);
+    }
+  };
 
   const handleSimulate = async (
     scenario:
@@ -149,7 +196,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
         {/* Tab Navigation */}
         <div className="flex items-center gap-2 mt-5 border-b border-zinc-800 -mb-5 pb-px overflow-x-auto no-scrollbar">
           {[
-            { id: 'org', label: 'Organization & Team', icon: <Building2 className="w-3.5 h-3.5" /> },
+            { id: 'org', label: 'Organization & Policies', icon: <Building2 className="w-3.5 h-3.5" /> },
+            { id: 'team', label: 'Team Members & RBAC', icon: <Users className="w-3.5 h-3.5" /> },
+            { id: 'support', label: 'Enterprise Helpdesk', icon: <Headphones className="w-3.5 h-3.5" /> },
             { id: 'notifications', label: 'Notifications', icon: <Bell className="w-3.5 h-3.5" /> },
             { id: 'webhooks', label: 'Webhooks & Integrations', icon: <Webhook className="w-3.5 h-3.5" /> },
             { id: 'usage', label: 'Usage & Quotas', icon: <CreditCard className="w-3.5 h-3.5" /> },
@@ -172,10 +221,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
         </div>
       </div>
 
-      {/* Tab 1: Organization & Team */}
+      {/* Tab 1: Organization & Security Policies */}
       {activeTab === 'org' && (
         <div className="space-y-6">
-          {/* Tenant Profile */}
+          {orgSuccessMsg && (
+            <div className="p-3 bg-emerald-950/40 border border-emerald-800/80 rounded-lg text-emerald-300 text-xs font-mono flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{orgSuccessMsg}</span>
+            </div>
+          )}
+
+          {orgError && (
+            <div className="p-3 bg-rose-950/40 border border-rose-800/80 rounded-lg text-rose-300 text-xs font-mono flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{orgError}</span>
+            </div>
+          )}
+
+          {/* Tenant Profile Summary */}
           <div className="p-6 rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-4">
             <h3 className="text-xs font-bold text-zinc-200 font-mono uppercase tracking-wider flex items-center gap-2">
               <Building2 className="w-4 h-4 text-sky-400" />
@@ -200,68 +263,120 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
             </div>
           </div>
 
-          {/* Team Members List */}
+          {/* Organization Settings & Security Policy Form */}
           <div className="p-6 rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-4">
-            <h3 className="text-xs font-bold text-zinc-200 font-mono uppercase tracking-wider flex items-center gap-2">
-              <Users className="w-4 h-4 text-sky-400" />
-              Team Members & Access Roles ({safeMembers.length})
-            </h3>
-
-            <div className="bg-zinc-950 border border-zinc-800/80 rounded-lg overflow-hidden">
-              <table className="w-full text-left text-xs font-mono">
-                <thead className="bg-zinc-900 text-zinc-400 uppercase text-[10px] border-b border-zinc-800">
-                  <tr>
-                    <th className="px-4 py-2.5">Name</th>
-                    <th className="px-4 py-2.5">Email</th>
-                    <th className="px-4 py-2.5">Role</th>
-                    <th className="px-4 py-2.5">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-800/60 text-zinc-300">
-                  {safeMembers.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="px-4 py-6 text-center text-zinc-500">
-                        No team members registered in this organization.
-                      </td>
-                    </tr>
-                  ) : (
-                    safeMembers.map((m) => (
-                      <tr key={m.userId} className="hover:bg-zinc-900/40">
-                        <td className="px-4 py-3 font-semibold text-zinc-200">{m.name}</td>
-                        <td className="px-4 py-3 text-zinc-400">{m.email}</td>
-                        <td className="px-4 py-3">
-                          <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700 text-[10px]">
-                            {m.role}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="inline-flex items-center gap-1 text-emerald-400 text-[11px]">
-                            <CheckCircle2 className="w-3 h-3" /> Active
-                          </span>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+            <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
+              <div>
+                <h3 className="text-xs font-bold text-zinc-200 font-mono uppercase tracking-wider flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-sky-400" />
+                  Enterprise Configuration & Security Controls
+                </h3>
+                <p className="text-xs text-zinc-400 font-mono mt-1">
+                  Adjust workspace metadata, session policies, and authentication requirements.
+                </p>
+              </div>
             </div>
+
+            <form onSubmit={handleSaveOrgSettings} className="space-y-4 font-mono text-xs max-w-2xl">
+              <div>
+                <label className="text-zinc-400 block mb-1.5 text-[11px] uppercase">Organization Display Name</label>
+                <input
+                  type="text"
+                  required
+                  disabled={!isOwnerOrAdmin}
+                  value={orgName}
+                  onChange={(e) => setOrgName(e.target.value)}
+                  className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded text-zinc-200 focus:outline-none focus:border-sky-500 disabled:opacity-60"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-zinc-400 block mb-1.5 text-[11px] uppercase">Default Timezone</label>
+                  <select
+                    disabled={!isOwnerOrAdmin}
+                    value={timezone}
+                    onChange={(e) => setTimezone(e.target.value)}
+                    className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded text-zinc-200 focus:outline-none focus:border-sky-500 disabled:opacity-60"
+                  >
+                    <option value="UTC">UTC (Universal Coordinated Time)</option>
+                    <option value="America/New_York">America/New_York (EST/EDT)</option>
+                    <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT)</option>
+                    <option value="Europe/London">Europe/London (GMT/BST)</option>
+                    <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+                    <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-zinc-400 block mb-1.5 text-[11px] uppercase">Session Timeout (Minutes)</label>
+                  <input
+                    type="number"
+                    min={15}
+                    max={10080}
+                    disabled={!isOwnerOrAdmin}
+                    value={sessionTimeout}
+                    onChange={(e) => setSessionTimeout(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded text-zinc-200 focus:outline-none focus:border-sky-500 disabled:opacity-60"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    disabled={!isOwnerOrAdmin}
+                    checked={enforceMfa}
+                    onChange={(e) => setEnforceMfa(e.target.checked)}
+                    className="w-4 h-4 rounded border-zinc-700 bg-zinc-950 text-sky-500 focus:ring-0 cursor-pointer disabled:opacity-60"
+                  />
+                  <span className="text-zinc-300 font-semibold text-xs">
+                    Enforce Multi-Factor Authentication (MFA) for all workspace members
+                  </span>
+                </label>
+                <p className="text-[11px] text-zinc-500 mt-1 pl-6">
+                  When enabled, all users accessing this organization must satisfy enterprise 2FA verification.
+                </p>
+              </div>
+
+              {isOwnerOrAdmin && (
+                <div className="pt-3 border-t border-zinc-800/80">
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="sm"
+                    disabled={savingOrg}
+                    icon={<Save className="w-3.5 h-3.5" />}
+                  >
+                    {savingOrg ? 'Saving Settings...' : 'Save Configuration'}
+                  </Button>
+                </div>
+              )}
+            </form>
           </div>
         </div>
       )}
 
+      {/* Tab 2: Team Members & RBAC */}
+      {activeTab === 'team' && <TeamManager />}
+
+      {/* Tab 3: Enterprise Support & SLAs */}
+      {activeTab === 'support' && <SupportManager clusters={safeClusters} />}
+
       {/* Tab: Incident Email Notifications */}
       {activeTab === 'notifications' && <NotificationsManager />}
 
-      {/* Tab 2: Webhooks & Integrations */}
+      {/* Tab 4: Webhooks & Integrations */}
       {activeTab === 'webhooks' && <WebhooksManager />}
 
-      {/* Tab 3: Usage & Quotas */}
+      {/* Tab 5: Usage & Quotas */}
       {activeTab === 'usage' && <UsageManager />}
 
-      {/* Tab 4: Platform Self-Observability Probes */}
+      {/* Tab 6: Platform Self-Observability Probes */}
       {activeTab === 'system' && <SystemHealthManager />}
 
-      {/* Tab 5: QA Scenario Testbed */}
+      {/* Tab 7: QA Scenario Testbed */}
       {activeTab === 'testbed' && (
         <div className="p-6 rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800/80 pb-3">

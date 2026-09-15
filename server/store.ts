@@ -36,7 +36,15 @@ import {
   TelemetryQueryOptions,
   TelemetryResponse,
   ResourceBaseline,
-  TelemetryAnomaly
+  TelemetryAnomaly,
+  OrgInvitation,
+  OrgMemberStatus,
+  OrganizationSettings,
+  SupportTicket,
+  TicketCategory,
+  TicketSeverity,
+  TicketStatus,
+  OrgUsageMetrics
 } from '../src/types/index';
 import { TelemetryStore } from './telemetry_store';
 import { AGENT_VERSION } from '../src/config/version';
@@ -60,6 +68,8 @@ export class DataStore {
   private userNotificationSettings: Map<string, UserNotificationSettings> = new Map(); // userId -> settings
   private orgs: Map<string, Organization> = new Map();
   private members: Map<string, OrgMember[]> = new Map(); // orgId -> members
+  private invitations: Map<string, OrgInvitation> = new Map(); // invitationId -> OrgInvitation
+  private supportTickets: Map<string, SupportTicket> = new Map(); // ticketId -> SupportTicket
   private clusters: Map<string, Cluster> = new Map(); // clusterId -> cluster
   private clusterTokens: Map<string, { clusterId: string; orgId: string }> = new Map(); // tokenHash -> info
   private resources: Map<string, KubernetesResource[]> = new Map(); // clusterId -> resources
@@ -98,6 +108,8 @@ export class DataStore {
         if (data.users) this.users = new Map(Object.entries(data.users));
         if (data.orgs) this.orgs = new Map(Object.entries(data.orgs));
         if (data.members) this.members = new Map(Object.entries(data.members));
+        if (data.invitations) this.invitations = new Map(Object.entries(data.invitations));
+        if (data.supportTickets) this.supportTickets = new Map(Object.entries(data.supportTickets));
         if (data.clusters) this.clusters = new Map(Object.entries(data.clusters));
         if (data.clusterTokens) this.clusterTokens = new Map(Object.entries(data.clusterTokens));
         if (data.resources) this.resources = new Map(Object.entries(data.resources));
@@ -161,6 +173,8 @@ export class DataStore {
           users: Object.fromEntries(this.users),
           orgs: Object.fromEntries(this.orgs),
           members: Object.fromEntries(this.members),
+          invitations: Object.fromEntries(this.invitations),
+          supportTickets: Object.fromEntries(this.supportTickets),
           clusters: Object.fromEntries(this.clusters),
           clusterTokens: Object.fromEntries(this.clusterTokens),
           resources: Object.fromEntries(this.resources),
@@ -198,6 +212,8 @@ export class DataStore {
         users: Object.fromEntries(this.users),
         orgs: Object.fromEntries(this.orgs),
         members: Object.fromEntries(this.members),
+        invitations: Object.fromEntries(this.invitations),
+        supportTickets: Object.fromEntries(this.supportTickets),
         clusters: Object.fromEntries(this.clusters),
         clusterTokens: Object.fromEntries(this.clusterTokens),
         resources: Object.fromEntries(this.resources),
@@ -227,11 +243,11 @@ export class DataStore {
     // Only in explicit development mode
     if (process.env.NODE_ENV === 'production') return;
 
-    const devOrgId = 'org-production-sre';
+    const devOrgId = 'org-dev-sandbox';
     const devOrg: Organization = {
       id: devOrgId,
-      name: 'Acme Platform Engineering',
-      slug: 'acme-platform',
+      name: 'Acme Sandbox Workspace',
+      slug: 'acme-sandbox',
       createdAt: Date.now() - 30 * 86400000,
       membersCount: 3
     };
@@ -352,7 +368,10 @@ export class DataStore {
     const normalizedEmail = userEmail?.trim().toLowerCase();
     for (const [orgId, members] of this.members.entries()) {
       const match = members.find(
-        (m) => m.userId === userId || (normalizedEmail && m.email && m.email.trim().toLowerCase() === normalizedEmail)
+        (m) =>
+          (m.userId === userId || (normalizedEmail && m.email && m.email.trim().toLowerCase() === normalizedEmail)) &&
+          m.status !== 'SUSPENDED' &&
+          m.status !== 'REMOVED'
       );
       if (match) {
         if (match.userId !== userId) {
@@ -362,55 +381,110 @@ export class DataStore {
         if (org && !userOrgs.some((o) => o.id === org.id)) userOrgs.push(org);
       }
     }
-    // If no org found, check if there is an org in the store to assign to the active user
-    if (userOrgs.length === 0 && this.orgs.size > 0) {
-      const firstOrg = Array.from(this.orgs.values())[0];
-      const orgMembers = this.members.get(firstOrg.id) || [];
-      if (!orgMembers.some((m) => m.userId === userId)) {
-        orgMembers.push({
-          userId,
-          email: userEmail || 'user@skyops.internal',
-          name: userEmail ? userEmail.split('@')[0] : 'Workspace Member',
-          role: 'OWNER',
-          joinedAt: Date.now()
-        });
-        this.members.set(firstOrg.id, orgMembers);
-        this.saveSnapshot();
-      }
-      userOrgs.push(firstOrg);
-    }
     return userOrgs;
   }
 
-  public createOrganization(name: string, ownerUserId: string): Organization {
+  public createOrganization(
+    name: string,
+    ownerUserId: string,
+    ownerEmail?: string,
+    ownerName?: string
+  ): Organization {
     const orgId = `org-${crypto.randomBytes(6).toString('hex')}`;
-    const slug = name
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '-')
-      .replace(/-+/g, '-')
-      .slice(0, 30);
+    const slug =
+      name
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 30) || 'workspace';
+
+    const user = this.users.get(ownerUserId);
+    const email = ownerEmail || user?.email || '';
+    const memberName = ownerName || user?.name || (email ? email.split('@')[0] : 'Workspace Owner');
 
     const org: Organization = {
       id: orgId,
       name,
       slug,
+      status: 'ACTIVE',
       createdAt: Date.now(),
-      membersCount: 1
+      updatedAt: Date.now(),
+      membersCount: 1,
+      ownerUserId,
+      settings: {
+        general: { name, timezone: 'UTC' },
+        notifications: { incidentEmailEnabled: true, digestEmailEnabled: false, alertSeverityThreshold: 'HIGH' },
+        security: { enforceMfa: false, sessionTimeoutMinutes: 1440 }
+      }
     };
     this.orgs.set(orgId, org);
 
-    const user = this.users.get(ownerUserId);
     this.members.set(orgId, [
       {
         userId: ownerUserId,
-        email: user?.email || '',
-        name: user?.name || 'Workspace Owner',
+        orgId,
+        email,
+        name: memberName,
         role: 'OWNER',
-        joinedAt: Date.now()
+        status: 'ACTIVE',
+        joinedAt: Date.now(),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        lastActiveAt: Date.now()
       }
     ]);
 
     this.saveSnapshot();
+    auditService.record({
+      orgId,
+      actorId: ownerUserId,
+      actorName: memberName,
+      actorType: 'USER',
+      action: 'organization.create',
+      resourceType: 'ORGANIZATION',
+      resourceId: orgId,
+      result: 'SUCCESS',
+      details: { name, slug }
+    });
+
+    return org;
+  }
+
+  public updateOrganization(
+    orgId: string,
+    updates: { name?: string; settings?: OrganizationSettings },
+    actor?: { id: string; name: string }
+  ): Organization | null {
+    const org = this.orgs.get(orgId);
+    if (!org) return null;
+    if (updates.name && updates.name.trim()) {
+      org.name = updates.name.trim();
+    }
+    if (updates.settings) {
+      org.settings = {
+        ...org.settings,
+        ...updates.settings,
+        general: { ...(org.settings?.general || {}), ...(updates.settings.general || {}) },
+        notifications: { ...(org.settings?.notifications || {}), ...(updates.settings.notifications || {}) },
+        security: { ...(org.settings?.security || {}), ...(updates.settings.security || {}) }
+      };
+    }
+    org.updatedAt = Date.now();
+    this.saveSnapshot();
+    if (actor) {
+      auditService.record({
+        orgId,
+        actorId: actor.id,
+        actorName: actor.name,
+        actorType: 'USER',
+        action: 'organization.update',
+        resourceType: 'ORGANIZATION',
+        resourceId: orgId,
+        result: 'SUCCESS',
+        details: updates
+      });
+    }
     return org;
   }
 
@@ -422,11 +496,33 @@ export class DataStore {
     return this.orgs.get(orgId) || null;
   }
 
-  public getOrgMembers(orgId: string): OrgMember[] {
-    return this.members.get(orgId) || [];
+  public getOrgMembers(
+    orgId: string,
+    options?: { search?: string; role?: Role; status?: OrgMemberStatus }
+  ): OrgMember[] {
+    let list = (this.members.get(orgId) || []).slice();
+    if (options?.status) {
+      list = list.filter((m) => (m.status || 'ACTIVE') === options.status);
+    } else {
+      list = list.filter((m) => m.status !== 'REMOVED');
+    }
+    if (options?.role) {
+      list = list.filter((m) => m.role === options.role);
+    }
+    if (options?.search) {
+      const q = options.search.toLowerCase();
+      list = list.filter(
+        (m) => m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)
+      );
+    }
+    return list;
   }
 
-  public checkUserOrgAccess(userId: string, orgId: string, userEmail?: string): { hasAccess: boolean; role?: Role } {
+  public checkUserOrgAccess(
+    userId: string,
+    orgId: string,
+    userEmail?: string
+  ): { hasAccess: boolean; role?: Role; status?: OrgMemberStatus } {
     const orgMembers = this.members.get(orgId) || [];
     const normalizedEmail = userEmail?.trim().toLowerCase();
     const member = orgMembers.find(
@@ -436,7 +532,590 @@ export class DataStore {
     if (member.userId !== userId) {
       member.userId = userId;
     }
-    return { hasAccess: true, role: member.role };
+    const memberStatus = member.status || 'ACTIVE';
+    if (memberStatus === 'SUSPENDED' || memberStatus === 'REMOVED') {
+      return { hasAccess: false, role: member.role, status: memberStatus };
+    }
+    return { hasAccess: true, role: member.role, status: memberStatus };
+  }
+
+  public inviteMember(
+    orgId: string,
+    email: string,
+    role: Role,
+    inviter: { id: string; name: string; email: string }
+  ): OrgInvitation {
+    const org = this.orgs.get(orgId);
+    if (!org) throw new Error('Organization not found');
+
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      throw new Error('Valid email address is required');
+    }
+
+    const orgMembers = this.members.get(orgId) || [];
+    const existingActive = orgMembers.find(
+      (m) => m.email.toLowerCase() === cleanEmail && m.status !== 'REMOVED'
+    );
+    if (existingActive) {
+      throw new Error(`User with email '${cleanEmail}' is already a member of this organization`);
+    }
+
+    // Check for existing pending invitation
+    for (const inv of this.invitations.values()) {
+      if (inv.orgId === orgId && inv.email === cleanEmail && inv.status === 'PENDING') {
+        if (inv.expiresAt > Date.now()) {
+          inv.role = role;
+          inv.expiresAt = Date.now() + 7 * 86400000;
+          this.saveSnapshot();
+          return inv;
+        } else {
+          inv.status = 'EXPIRED';
+        }
+      }
+    }
+
+    const token = `inv_${crypto.randomBytes(24).toString('hex')}`;
+    const invitation: OrgInvitation = {
+      id: `inv-${crypto.randomBytes(8).toString('hex')}`,
+      orgId,
+      email: cleanEmail,
+      role,
+      token,
+      status: 'PENDING',
+      invitedByUserId: inviter.id,
+      invitedByEmail: inviter.email,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 7 * 86400000
+    };
+
+    this.invitations.set(invitation.id, invitation);
+    this.saveSnapshot();
+
+    auditService.record({
+      orgId,
+      actorId: inviter.id,
+      actorName: inviter.name,
+      actorType: 'USER',
+      action: 'member.invite',
+      resourceType: 'ORGANIZATION',
+      resourceId: invitation.id,
+      result: 'SUCCESS',
+      details: { email: cleanEmail, role }
+    });
+
+    return invitation;
+  }
+
+  public getOrgInvitations(orgId: string): OrgInvitation[] {
+    const list: OrgInvitation[] = [];
+    const now = Date.now();
+    for (const inv of this.invitations.values()) {
+      if (inv.orgId === orgId) {
+        if (inv.status === 'PENDING' && inv.expiresAt <= now) {
+          inv.status = 'EXPIRED';
+        }
+        list.push(inv);
+      }
+    }
+    return list.sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  public getInvitationByToken(token: string): OrgInvitation | null {
+    if (!token) return null;
+    const now = Date.now();
+    for (const inv of this.invitations.values()) {
+      if (inv.token === token) {
+        if (inv.status === 'PENDING' && inv.expiresAt <= now) {
+          inv.status = 'EXPIRED';
+        }
+        return inv;
+      }
+    }
+    return null;
+  }
+
+  public verifyInvitation(token: string): {
+    valid: boolean;
+    email: string;
+    role: Role;
+    orgName: string;
+    expiresAt: number;
+    status: string;
+  } {
+    const inv = this.getInvitationByToken(token);
+    if (!inv) {
+      throw new Error('Invalid or expired invitation token');
+    }
+    const org = this.orgs.get(inv.orgId);
+    return {
+      valid: inv.status === 'PENDING' && inv.expiresAt > Date.now(),
+      email: inv.email,
+      role: inv.role,
+      orgName: org?.name || 'Workspace',
+      expiresAt: inv.expiresAt,
+      status: inv.status
+    };
+  }
+
+  public revokeInvitation(
+    orgId: string,
+    invitationId: string,
+    actor: { id: string; name: string }
+  ): boolean {
+    const inv = this.invitations.get(invitationId);
+    if (!inv || inv.orgId !== orgId) return false;
+    inv.status = 'REVOKED';
+    inv.revokedAt = Date.now();
+    this.saveSnapshot();
+
+    auditService.record({
+      orgId,
+      actorId: actor.id,
+      actorName: actor.name,
+      actorType: 'USER',
+      action: 'invitation.revoke',
+      resourceType: 'ORGANIZATION',
+      resourceId: invitationId,
+      result: 'SUCCESS',
+      details: { email: inv.email }
+    });
+    return true;
+  }
+
+  public resendInvitation(
+    orgId: string,
+    invitationId: string,
+    actor: { id: string; name: string }
+  ): OrgInvitation {
+    const inv = this.invitations.get(invitationId);
+    if (!inv || inv.orgId !== orgId) {
+      throw new Error('Invitation not found');
+    }
+    inv.status = 'PENDING';
+    inv.expiresAt = Date.now() + 7 * 86400000;
+    this.saveSnapshot();
+
+    auditService.record({
+      orgId,
+      actorId: actor.id,
+      actorName: actor.name,
+      actorType: 'USER',
+      action: 'invitation.resend',
+      resourceType: 'ORGANIZATION',
+      resourceId: invitationId,
+      result: 'SUCCESS',
+      details: { email: inv.email }
+    });
+    return inv;
+  }
+
+  public acceptInvitation(
+    token: string,
+    user: { id: string; email: string; name: string }
+  ): { org: Organization; role: Role } {
+    const inv = this.getInvitationByToken(token);
+    if (!inv) {
+      throw new Error('Invalid or expired invitation');
+    }
+    if (inv.status !== 'PENDING') {
+      throw new Error(`Invitation is no longer valid (status: ${inv.status.toLowerCase()})`);
+    }
+    if (inv.expiresAt <= Date.now()) {
+      inv.status = 'EXPIRED';
+      this.saveSnapshot();
+      throw new Error('This invitation has expired');
+    }
+
+    const org = this.orgs.get(inv.orgId);
+    if (!org) {
+      throw new Error('Organization no longer exists');
+    }
+
+    const members = this.members.get(inv.orgId) || [];
+    const existing = members.find(
+      (m) => m.userId === user.id || m.email.toLowerCase() === user.email.toLowerCase()
+    );
+    if (existing) {
+      existing.userId = user.id;
+      existing.name = user.name || existing.name;
+      existing.email = user.email;
+      existing.role = inv.role;
+      existing.status = 'ACTIVE';
+      existing.updatedAt = Date.now();
+      existing.lastActiveAt = Date.now();
+    } else {
+      members.push({
+        userId: user.id,
+        orgId: inv.orgId,
+        email: user.email,
+        name: user.name || user.email.split('@')[0],
+        role: inv.role,
+        status: 'ACTIVE',
+        joinedAt: Date.now(),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        lastActiveAt: Date.now()
+      });
+      this.members.set(inv.orgId, members);
+      org.membersCount = members.filter((m) => m.status !== 'REMOVED').length;
+    }
+
+    inv.status = 'ACCEPTED';
+    inv.acceptedAt = Date.now();
+    this.saveSnapshot();
+
+    auditService.record({
+      orgId: inv.orgId,
+      actorId: user.id,
+      actorName: user.name || user.email,
+      actorType: 'USER',
+      action: 'invitation.accept',
+      resourceType: 'ORGANIZATION',
+      resourceId: inv.id,
+      result: 'SUCCESS',
+      details: { email: user.email, role: inv.role }
+    });
+
+    return { org, role: inv.role };
+  }
+
+  public updateMemberRole(
+    orgId: string,
+    targetUserId: string,
+    newRole: Role,
+    actor: { id: string; name: string; role: Role }
+  ): OrgMember {
+    if (actor.id === targetUserId) {
+      throw new Error('Users cannot modify their own organization role');
+    }
+    if (actor.role !== 'OWNER' && newRole === 'OWNER') {
+      throw new Error('Only organization owners can promote members to Owner');
+    }
+
+    const members = this.members.get(orgId) || [];
+    const member = members.find((m) => m.userId === targetUserId);
+    if (!member) {
+      throw new Error('Member not found in organization');
+    }
+
+    // Final active owner protection
+    if (member.role === 'OWNER' && newRole !== 'OWNER') {
+      const activeOwners = members.filter(
+        (m) => m.role === 'OWNER' && m.status !== 'SUSPENDED' && m.status !== 'REMOVED'
+      );
+      if (activeOwners.length <= 1) {
+        throw new Error('Cannot demote the final active owner of the organization');
+      }
+    }
+
+    const prevRole = member.role;
+    member.role = newRole;
+    member.updatedAt = Date.now();
+    this.saveSnapshot();
+
+    auditService.record({
+      orgId,
+      actorId: actor.id,
+      actorName: actor.name,
+      actorType: 'USER',
+      action: 'member.role_change',
+      resourceType: 'ORGANIZATION',
+      resourceId: targetUserId,
+      result: 'SUCCESS',
+      details: { previousRole: prevRole, newRole, memberEmail: member.email }
+    });
+
+    return member;
+  }
+
+  public updateMemberStatus(
+    orgId: string,
+    targetUserId: string,
+    newStatus: OrgMemberStatus,
+    actor: { id: string; name: string; role: Role }
+  ): OrgMember {
+    if (actor.id === targetUserId) {
+      throw new Error('You cannot modify your own membership status');
+    }
+
+    const members = this.members.get(orgId) || [];
+    const member = members.find((m) => m.userId === targetUserId);
+    if (!member) {
+      throw new Error('Member not found in organization');
+    }
+
+    // Final active owner protection
+    if (member.role === 'OWNER' && (newStatus === 'SUSPENDED' || newStatus === 'REMOVED')) {
+      const activeOwners = members.filter(
+        (m) => m.role === 'OWNER' && m.status !== 'SUSPENDED' && m.status !== 'REMOVED'
+      );
+      if (activeOwners.length <= 1) {
+        throw new Error('Cannot suspend or deactivate the final active owner of the organization');
+      }
+    }
+
+    const prevStatus = member.status || 'ACTIVE';
+    member.status = newStatus;
+    member.updatedAt = Date.now();
+    const org = this.orgs.get(orgId);
+    if (org) {
+      org.membersCount = members.filter((m) => m.status !== 'REMOVED').length;
+    }
+    this.saveSnapshot();
+
+    auditService.record({
+      orgId,
+      actorId: actor.id,
+      actorName: actor.name,
+      actorType: 'USER',
+      action: 'member.status_change',
+      resourceType: 'ORGANIZATION',
+      resourceId: targetUserId,
+      result: 'SUCCESS',
+      details: { previousStatus: prevStatus, newStatus, memberEmail: member.email }
+    });
+
+    return member;
+  }
+
+  public removeMember(
+    orgId: string,
+    targetUserId: string,
+    actor: { id: string; name: string; role: Role }
+  ): boolean {
+    if (actor.id === targetUserId) {
+      throw new Error('You cannot remove yourself from the organization');
+    }
+
+    const members = this.members.get(orgId) || [];
+    const member = members.find((m) => m.userId === targetUserId);
+    if (!member) {
+      throw new Error('Member not found in organization');
+    }
+
+    if (member.role === 'OWNER') {
+      const activeOwners = members.filter(
+        (m) => m.role === 'OWNER' && m.status !== 'SUSPENDED' && m.status !== 'REMOVED'
+      );
+      if (activeOwners.length <= 1) {
+        throw new Error('Cannot remove the final active owner of the organization');
+      }
+    }
+
+    member.status = 'REMOVED';
+    member.updatedAt = Date.now();
+    const org = this.orgs.get(orgId);
+    if (org) {
+      org.membersCount = members.filter((m) => m.status !== 'REMOVED').length;
+    }
+    this.saveSnapshot();
+
+    auditService.record({
+      orgId,
+      actorId: actor.id,
+      actorName: actor.name,
+      actorType: 'USER',
+      action: 'member.remove',
+      resourceType: 'ORGANIZATION',
+      resourceId: targetUserId,
+      result: 'SUCCESS',
+      details: { memberEmail: member.email }
+    });
+
+    return true;
+  }
+
+  public createSupportTicket(data: {
+    orgId: string;
+    userId: string;
+    userName: string;
+    userEmail: string;
+    subject: string;
+    category: TicketCategory;
+    severity: TicketSeverity;
+    description: string;
+    clusterId?: string;
+    incidentId?: string;
+  }): SupportTicket {
+    const ticketId = `tkt-${crypto.randomBytes(6).toString('hex')}`;
+    const ticket: SupportTicket = {
+      id: ticketId,
+      orgId: data.orgId,
+      userId: data.userId,
+      userName: data.userName,
+      userEmail: data.userEmail,
+      subject: data.subject.trim(),
+      category: data.category,
+      severity: data.severity,
+      description: data.description.trim(),
+      clusterId: data.clusterId,
+      incidentId: data.incidentId,
+      status: 'OPEN',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    this.supportTickets.set(ticketId, ticket);
+    this.saveSnapshot();
+
+    auditService.record({
+      orgId: data.orgId,
+      actorId: data.userId,
+      actorName: data.userName,
+      actorType: 'USER',
+      action: 'support.ticket_create',
+      resourceType: 'SUPPORT_TICKET',
+      resourceId: ticketId,
+      result: 'SUCCESS',
+      details: { subject: ticket.subject, category: ticket.category, severity: ticket.severity }
+    });
+
+    return ticket;
+  }
+
+  public getSupportTickets(orgId: string): SupportTicket[] {
+    const list: SupportTicket[] = [];
+    for (const t of this.supportTickets.values()) {
+      if (t.orgId === orgId) {
+        list.push(t);
+      }
+    }
+    return list.sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  // --- Usage Metering Foundation (Structural Enterprise Metric Tracking) ---
+  public getUsageMetrics(orgId: string): OrgUsageMetrics {
+    const now = Date.now();
+    const thirtyDaysAgo = now - 30 * 86400000;
+
+    // 1. Clusters
+    const orgClusters = Array.from(this.clusters.values()).filter((c) => c.orgId === orgId);
+    const clusterIds = new Set(orgClusters.map((c) => c.id));
+    const connectedClusters = orgClusters.filter(
+      (c) => c.status === 'HEALTHY' || c.status === 'WARNING' || c.status === 'connected'
+    ).length;
+
+    // 2. Nodes and Pods across clusters
+    let totalNodes = 0;
+    let readyNodes = 0;
+    let totalPods = 0;
+    let runningPods = 0;
+
+    for (const cluster of orgClusters) {
+      const resources = this.resources.get(cluster.id) || [];
+      for (const res of resources) {
+        if (res.kind === 'Node') {
+          totalNodes++;
+          const conditions = (res.status as any)?.conditions || [];
+          const readyCond = conditions.find((c: any) => c.type === 'Ready');
+          if (readyCond && readyCond.status === 'True') {
+            readyNodes++;
+          }
+        } else if (res.kind === 'Pod') {
+          totalPods++;
+          const phase = (res.status as any)?.phase;
+          if (phase === 'Running') {
+            runningPods++;
+          }
+        }
+      }
+    }
+
+    // 3. Incidents
+    let activeIncidents = 0;
+    let resolvedLast30Days = 0;
+    let totalDetected = 0;
+
+    for (const inc of this.incidents.values()) {
+      if (clusterIds.has(inc.clusterId) || inc.orgId === orgId) {
+        totalDetected++;
+        if (inc.status === 'RESOLVED') {
+          if ((inc.resolvedAt && inc.resolvedAt >= thirtyDaysAgo) || (inc.lastSeen && inc.lastSeen >= thirtyDaysAgo)) {
+            resolvedLast30Days++;
+          }
+        } else {
+          activeIncidents++;
+        }
+      }
+    }
+
+    // 4. Remediations
+    let proposalsGenerated = 0;
+    let proposalsExecuted = 0;
+    let proposalsRejected = 0;
+
+    for (const rem of this.remediations.values()) {
+      if (clusterIds.has(rem.clusterId) || rem.orgId === orgId) {
+        proposalsGenerated++;
+        if (rem.status === 'EXECUTED' || rem.status === 'RESOLVED') {
+          proposalsExecuted++;
+        } else if (rem.status === 'REJECTED') {
+          proposalsRejected++;
+        }
+      }
+    }
+
+    // 5. Telemetry
+    let dataPointsIngested = 0;
+    for (const cid of clusterIds) {
+      const history = this.clusterMetricHistory.get(cid) || [];
+      dataPointsIngested += history.length;
+    }
+    const storageUsageBytes = (dataPointsIngested * 512) + (orgClusters.length * 1024 * 64);
+
+    // 6. Audit Logs
+    const totalEvents = auditService.getCount(orgId);
+
+    // 7. Team
+    const members = (this.members.get(orgId) || []).filter((m) => m.status !== 'REMOVED');
+    const activeMembers = members.filter((m) => !m.status || m.status === 'ACTIVE').length;
+    let pendingInvitations = 0;
+    for (const inv of this.invitations.values()) {
+      if (inv.orgId === orgId && inv.status === 'PENDING' && inv.expiresAt > now) {
+        pendingInvitations++;
+      }
+    }
+
+    return {
+      orgId,
+      calculatedAt: now,
+      periodStart: thirtyDaysAgo,
+      periodEnd: now,
+      clusters: {
+        total: orgClusters.length,
+        connected: connectedClusters,
+        disconnected: orgClusters.length - connectedClusters
+      },
+      nodes: {
+        total: totalNodes,
+        ready: readyNodes
+      },
+      pods: {
+        total: totalPods,
+        running: runningPods
+      },
+      incidents: {
+        active: activeIncidents,
+        resolvedLast30Days,
+        totalDetected
+      },
+      remediations: {
+        proposalsGenerated,
+        proposalsExecuted,
+        proposalsRejected
+      },
+      telemetry: {
+        dataPointsIngested,
+        storageUsageBytes
+      },
+      auditLogs: {
+        totalEvents
+      },
+      team: {
+        activeMembers,
+        pendingInvitations
+      }
+    };
   }
 
   // --- Cluster Management ---
@@ -453,6 +1132,7 @@ export class DataStore {
   public getCluster(clusterId: string, orgId?: string, includeToken = false): Cluster | null {
     const cluster = this.clusters.get(clusterId);
     if (!cluster) return null;
+    if (orgId && cluster.orgId !== orgId) return null;
     if (includeToken) return cluster;
     const { agentToken, ...sanitized } = cluster;
     return sanitized as Cluster;
@@ -676,7 +1356,7 @@ export class DataStore {
     return true;
   }
 
-  public deleteCluster(clusterId: string, orgId: string): boolean {
+  public deleteCluster(clusterId: string, orgId: string, actor?: { id: string; name: string }): boolean {
     const cluster = this.clusters.get(clusterId);
     if (!cluster || cluster.orgId !== orgId) return false;
 
@@ -700,6 +1380,19 @@ export class DataStore {
     }
 
     this.saveSnapshot();
+
+    auditService.record({
+      orgId,
+      actorId: actor?.id || 'system',
+      actorName: actor?.name || 'Operator',
+      actorType: actor ? 'USER' : 'SYSTEM',
+      action: 'cluster.delete',
+      resourceType: 'CLUSTER',
+      resourceId: clusterId,
+      result: 'SUCCESS',
+      details: { clusterName: cluster.name }
+    });
+
     return true;
   }
 

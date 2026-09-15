@@ -146,15 +146,15 @@ export class SkyOpsIntelligenceEngine {
       : primaryHypothesis.category;
 
     // 11. Derive Evidence-Grounded Customer Impact (Zero Fabrication)
-    let customerImpact = 'UNKNOWN - Ingress / external APM telemetry not connected to cluster';
+    let customerImpact = 'UNKNOWN: Ingress and external APM telemetry are not connected to this cluster';
     const isServiceTarget = target.kind === 'Service' || relationships.some((r) => r.source.kind === 'Service' || r.target.kind === 'Service');
     const isWorkloadDegraded = target.health === 'CRITICAL' || target.health === 'WARNING' || incident.severity === 'CRITICAL';
     if (isServiceTarget && isWorkloadDegraded) {
       customerImpact = `POTENTIAL SERVICE IMPACT: Workload ${target.name} (${target.kind}) in namespace "${targetNs}" is non-operational and backs active cluster networking endpoints.`;
     } else if (isWorkloadDegraded) {
-      customerImpact = `INTERNAL WORKLOAD IMPACT: Resource ${target.name} (${target.kind}) in namespace "${targetNs}" is degraded internally; no external ingress degradation recorded.`;
+      customerImpact = `INTERNAL WORKLOAD IMPACT: Resource ${target.name} (${target.kind}) in namespace "${targetNs}" is degraded internally; external ingress impact remains UNKNOWN without connected edge APM.`;
     } else {
-      customerImpact = 'NO DETECTED EXTERNAL IMPACT: Cluster control plane and networking report normal baseline operation.';
+      customerImpact = 'UNKNOWN: External traffic and edge APM metrics are not connected. No internal controller degradation observed on target resource.';
     }
 
     // 12. Derive What Remains Unknown & Next Steps
@@ -1015,9 +1015,14 @@ export class SkyOpsIntelligenceEngine {
 
     if (q.includes('why') || q.includes('root cause') || q.includes('cause')) {
       const primary = analysis.primaryHypothesis;
-      const answer = primary
-        ? `Definitive root cause identified: ${primary.title}. Grounded in ${primary.supportingEvidence.length} corroborating cluster facts (${primary.whySelectedOrRejected || primary.description}).`
-        : `Root cause undetermined due to insufficient cluster telemetry (${analysis.confidenceExplanation}).`;
+      let answer = '';
+      if (!primary || analysis.confidenceLevel === 'LOW' || analysis.rootCause.includes('UNKNOWN') || analysis.rootCause.includes('UNDETERMINED')) {
+        answer = `Root cause undetermined due to insufficient cluster telemetry (${analysis.confidenceExplanation}).`;
+      } else if (analysis.confidenceLevel === 'HIGH' && primary.score >= 95 && facts.length >= 2) {
+        answer = `Primary root cause identified: ${primary.title}. Grounded in ${primary.supportingEvidence.length} corroborating cluster facts (${primary.whySelectedOrRejected || primary.description}).`;
+      } else {
+        answer = `Probable root cause (${analysis.confidenceLevel} confidence, ${Math.round(analysis.confidence * 100)}%): ${primary.title}. Grounded in ${primary.supportingEvidence.length} cluster observations (${primary.whySelectedOrRejected || primary.description}).`;
+      }
       return {
         question,
         answer,
@@ -1052,12 +1057,14 @@ export class SkyOpsIntelligenceEngine {
     }
 
     if (q.includes('impact') || q.includes('customer') || q.includes('traffic')) {
+      const impactText = analysis.customerImpact || 'UNKNOWN: Ingress and external traffic metrics are not connected to this cluster.';
+      const isUnknown = impactText.startsWith('UNKNOWN');
       return {
         question,
-        answer: analysis.customerImpact || 'No external traffic impact detected in cluster telemetry.',
+        answer: impactText,
         category: 'IMPACT_ASSESSMENT',
-        confidence: 0.9,
-        confidenceLevel: 'HIGH',
+        confidence: isUnknown ? 0.6 : 0.85,
+        confidenceLevel: isUnknown ? 'LOW' : 'HIGH',
         supportingEvidence: [],
         facts: [`Incident severity: ${analysis.incidentType}`, `Namespace: ${analysis.clusterName}`],
         inferences: [],

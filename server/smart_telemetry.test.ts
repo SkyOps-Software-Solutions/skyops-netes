@@ -248,6 +248,97 @@ describe('Phase 2 Smart Telemetry, Tiered Retention & Historical Intelligence', 
       assert.ok(overcommit !== undefined);
       assert.equal(overcommit!.severity, 'WARNING');
     });
+
+    it('detects baseline deviation anomalies with complete evidence and sustained flags', () => {
+      const store = new TelemetryStore();
+      const clusterId = 'deviation-cluster';
+      const now = Date.now();
+
+      // Seed 20 baseline points around 25% CPU and 30% memory
+      for (let i = 0; i < 20; i++) {
+        store.recordObservation(clusterId, {
+          timestamp: now - (25 - i) * 60000,
+          cpuCapacityMillicores: 4000,
+          cpuRequestMillicores: 2000,
+          cpuLimitMillicores: 3000,
+          cpuUsageMillicores: 1000,
+          cpuUsagePercent: 25,
+          memoryCapacityBytes: 16 * 1024 * 1024 * 1024,
+          memoryRequestBytes: 8 * 1024 * 1024 * 1024,
+          memoryLimitBytes: 12 * 1024 * 1024 * 1024,
+          memoryUsageBytes: 4800000000,
+          memoryUsagePercent: 30,
+          isUsageAvailable: true,
+          source: 'metrics.k8s.io'
+        });
+      }
+
+      // Now inject sustained spike of 80% CPU (far above 25% avg and > avg + 15%) across 4 observations
+      for (let i = 0; i < 4; i++) {
+        store.recordObservation(clusterId, {
+          timestamp: now - (4 - i) * 15000,
+          cpuCapacityMillicores: 4000,
+          cpuRequestMillicores: 2000,
+          cpuLimitMillicores: 3000,
+          cpuUsageMillicores: 3200,
+          cpuUsagePercent: 80,
+          memoryCapacityBytes: 16 * 1024 * 1024 * 1024,
+          memoryRequestBytes: 8 * 1024 * 1024 * 1024,
+          memoryLimitBytes: 12 * 1024 * 1024 * 1024,
+          memoryUsageBytes: 4800000000,
+          memoryUsagePercent: 30,
+          isUsageAvailable: true,
+          source: 'metrics.k8s.io'
+        });
+      }
+
+      const anomalies = store.detectAnomalies(clusterId, now);
+      const baselineDev = anomalies.find((a) => a.id.includes('CPU_BASELINE_DEVIATION'));
+      assert.ok(baselineDev !== undefined, 'Should detect CPU_BASELINE_DEVIATION');
+      assert.ok(String(baselineDev!.observedValue).includes('sustained'), 'Should flag sustained deviation');
+      assert.ok(String(baselineDev!.expectedValue).includes('baseline normal range'));
+      assert.ok(baselineDev!.deviationReason.includes('exceeds baseline upper bound'));
+      assert.ok(baselineDev!.evidenceReferences.length >= 2);
+      assert.equal(baselineDev!.source, 'metrics.k8s.io');
+      assert.ok(baselineDev!.confidence >= 0.85);
+    });
+
+    it('reports INSUFFICIENT_HISTORY when insufficient samples exist for baseline calculation', () => {
+      const store = new TelemetryStore();
+      const clusterId = 'new-empty-cluster';
+      const now = Date.now();
+
+      // Only 2 points recorded
+      store.recordObservation(clusterId, {
+        timestamp: now - 30000,
+        cpuCapacityMillicores: 4000,
+        cpuRequestMillicores: 1000,
+        cpuLimitMillicores: 2000,
+        cpuUsagePercent: 20,
+        memoryCapacityBytes: 16 * 1024 * 1024 * 1024,
+        memoryRequestBytes: 8 * 1024 * 1024 * 1024,
+        isUsageAvailable: true,
+        source: 'metrics.k8s.io'
+      });
+      store.recordObservation(clusterId, {
+        timestamp: now,
+        cpuCapacityMillicores: 4000,
+        cpuRequestMillicores: 1000,
+        cpuLimitMillicores: 2000,
+        cpuUsagePercent: 25,
+        memoryCapacityBytes: 16 * 1024 * 1024 * 1024,
+        memoryRequestBytes: 8 * 1024 * 1024 * 1024,
+        isUsageAvailable: true,
+        source: 'metrics.k8s.io'
+      });
+
+      const baseline = store.calculateBaseline(clusterId, '24h', now);
+      assert.ok(baseline !== null);
+      assert.equal(baseline!.status, 'INSUFFICIENT_EVIDENCE');
+      assert.equal(baseline!.quality, 'INSUFFICIENT_HISTORY');
+      assert.equal(baseline!.confidence, 'LOW');
+      assert.equal(baseline!.sampleSize, 2);
+    });
   });
 
   describe('Telemetry Snapshot Persistence & DataStore Integration', () => {

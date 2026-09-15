@@ -6,6 +6,7 @@
 import { Loader2, Server } from 'lucide-react';
 import React, { useState } from 'react';
 import { AuthView } from './components/auth/AuthView';
+import { InvitationAcceptanceModal } from './components/auth/InvitationAcceptanceModal';
 import { LandingPage } from './components/landing/LandingPage';
 import { AppShell } from './components/layout/AppShell';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -30,36 +31,50 @@ function MainRouter() {
 
   // If authenticated, take user directly into the SkyOps Dashboard application
   if (isAuthenticated) {
-    return <AppShell onSignOut={() => setCurrentView('home')} />;
+    return (
+      <>
+        <AppShell onSignOut={() => setCurrentView('home')} />
+        <InvitationAcceptanceModal />
+      </>
+    );
   }
 
   // Public Routes for unauthenticated visitors
   if (currentView === 'signin') {
     return (
-      <AuthView
-        initialMode="signin"
-        onBackToHome={() => setCurrentView('home')}
-        onAuthSuccess={() => setCurrentView('home')}
-      />
+      <>
+        <AuthView
+          initialMode="signin"
+          onBackToHome={() => setCurrentView('home')}
+          onAuthSuccess={() => setCurrentView('home')}
+        />
+        <InvitationAcceptanceModal />
+      </>
     );
   }
 
   if (currentView === 'signup') {
     return (
-      <AuthView
-        initialMode="signup"
-        onBackToHome={() => setCurrentView('home')}
-        onAuthSuccess={() => setCurrentView('home')}
-      />
+      <>
+        <AuthView
+          initialMode="signup"
+          onBackToHome={() => setCurrentView('home')}
+          onAuthSuccess={() => setCurrentView('home')}
+        />
+        <InvitationAcceptanceModal />
+      </>
     );
   }
 
   // Default: Public SaaS Home / Landing Page
   return (
-    <LandingPage
-      onSignIn={() => setCurrentView('signin')}
-      onSignUp={() => setCurrentView('signup')}
-    />
+    <>
+      <LandingPage
+        onSignIn={() => setCurrentView('signin')}
+        onSignUp={() => setCurrentView('signup')}
+      />
+      <InvitationAcceptanceModal />
+    </>
   );
 }
 

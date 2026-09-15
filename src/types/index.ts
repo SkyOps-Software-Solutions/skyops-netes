@@ -1,4 +1,4 @@
-export type Role = 'OWNER' | 'ADMIN' | 'ENGINEER' | 'VIEWER';
+export type Role = 'OWNER' | 'ADMIN' | 'OPERATOR' | 'ENGINEER' | 'VIEWER';
 
 export interface User {
   id: string;
@@ -24,20 +24,129 @@ export interface NotificationDeliveryRecord {
   timestamp: number;
 }
 
+export interface OrganizationSettings {
+  general?: {
+    name?: string;
+    timezone?: string;
+  };
+  notifications?: {
+    incidentEmailEnabled?: boolean;
+    digestEmailEnabled?: boolean;
+    alertSeverityThreshold?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+    webhookUrl?: string;
+  };
+  security?: {
+    enforceMfa?: boolean;
+    sessionTimeoutMinutes?: number;
+  };
+}
+
+export type OrgStatus = 'ACTIVE' | 'SUSPENDED';
+
 export interface Organization {
   id: string;
   name: string;
   slug: string;
+  status?: OrgStatus;
   createdAt: number;
+  updatedAt?: number;
   membersCount: number;
+  ownerUserId?: string;
+  settings?: OrganizationSettings;
 }
+
+export type OrgMemberStatus = 'ACTIVE' | 'INVITED' | 'SUSPENDED' | 'REMOVED';
 
 export interface OrgMember {
   userId: string;
+  orgId?: string;
   email: string;
   name: string;
   role: Role;
+  status?: OrgMemberStatus;
   joinedAt: number;
+  createdAt?: number;
+  updatedAt?: number;
+  lastActiveAt?: number;
+}
+
+export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
+
+export interface OrgInvitation {
+  id: string;
+  orgId: string;
+  email: string;
+  role: Role;
+  token: string;
+  status: InvitationStatus;
+  invitedByUserId: string;
+  invitedByEmail: string;
+  createdAt: number;
+  expiresAt: number;
+  acceptedAt?: number;
+  revokedAt?: number;
+}
+
+export type TicketCategory = 'INCIDENT' | 'AGENT' | 'PLATFORM' | 'BILLING_QUERY' | 'GENERAL';
+export type TicketSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type TicketStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+
+export interface SupportTicket {
+  id: string;
+  orgId: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  subject: string;
+  category: TicketCategory;
+  severity: TicketSeverity;
+  description: string;
+  clusterId?: string;
+  incidentId?: string;
+  status: TicketStatus;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface OrgUsageMetrics {
+  orgId: string;
+  calculatedAt: number;
+  periodStart: number;
+  periodEnd: number;
+  clusters: {
+    total: number;
+    connected: number;
+    disconnected: number;
+  };
+  nodes: {
+    total: number;
+    ready: number;
+  };
+  pods: {
+    total: number;
+    running: number;
+  };
+  incidents: {
+    active: number;
+    resolvedLast30Days: number;
+    totalDetected: number;
+  };
+  remediations: {
+    proposalsGenerated: number;
+    proposalsExecuted: number;
+    proposalsRejected: number;
+  };
+  telemetry: {
+    dataPointsIngested: number;
+    storageUsageBytes: number;
+  };
+  auditLogs: {
+    totalEvents: number;
+  };
+  team: {
+    activeMembers: number;
+    pendingInvitations: number;
+  };
 }
 
 export type ClusterStatus =

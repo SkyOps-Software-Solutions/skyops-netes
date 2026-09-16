@@ -196,7 +196,7 @@ describe('Observability Foundation: Logs, Events, and Deduplication', () => {
   });
 
   describe('Metrics Server Observability & Enablement Workflow', () => {
-    it('detects NOT_INSTALLED status and provides preflight and command diagnostics', () => {
+    it('detects NOT_INSTALLED status and provides preflight and command diagnostics', async () => {
       const org = store.createOrganization('MS Test Org 1', 'user-ms-test');
       const { cluster } = store.createCluster(org.id, 'uninstrumented-cluster');
 
@@ -224,13 +224,13 @@ describe('Observability Foundation: Logs, Events, and Deduplication', () => {
       assert.ok(status.commands.helm.includes('helm upgrade --install'));
       assert.ok(status.diagnostics.some(d => d.includes('No metrics-server deployment')));
 
-      const verification = store.verifyMetricsServer(cluster.id, org.id);
+      const verification = await store.verifyMetricsServer(cluster.id, org.id);
       assert.ok(verification);
       assert.equal(verification.success, false);
       assert.equal(verification.status.status, 'NOT_INSTALLED');
     });
 
-    it('detects INSTALLED_NOT_REPORTING when metrics-server deployment is present but API is not yet reporting', () => {
+    it('detects INSTALLED_NOT_REPORTING when metrics-server deployment is present but API is not yet reporting', async () => {
       const org = store.createOrganization('MS Test Org 2', 'user-ms-test');
       const { cluster } = store.createCluster(org.id, 'warmup-cluster');
 
@@ -254,13 +254,13 @@ describe('Observability Foundation: Logs, Events, and Deduplication', () => {
       assert.equal(status.status, 'INSTALLED_NOT_REPORTING');
       assert.ok(status.diagnostics.some(d => d.includes('--kubelet-insecure-tls')));
 
-      const verification = store.verifyMetricsServer(cluster.id, org.id);
+      const verification = await store.verifyMetricsServer(cluster.id, org.id);
       assert.ok(verification);
       assert.equal(verification.success, false);
       assert.ok(verification.message.includes('detected in the cluster'));
     });
 
-    it('detects ACTIVE status when live usage metrics are reported', () => {
+    it('detects ACTIVE status when live usage metrics are reported', async () => {
       const org = store.createOrganization('MS Test Org 3', 'user-ms-test');
       const { cluster } = store.createCluster(org.id, 'active-ms-cluster');
 
@@ -307,7 +307,7 @@ describe('Observability Foundation: Logs, Events, and Deduplication', () => {
       assert.equal(status.isActive, true);
       assert.equal(status.status, 'ACTIVE');
 
-      const verification = store.verifyMetricsServer(cluster.id, org.id);
+      const verification = await store.verifyMetricsServer(cluster.id, org.id);
       assert.ok(verification);
       assert.equal(verification.success, true);
       assert.ok(verification.message.includes('verified'));

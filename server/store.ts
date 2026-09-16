@@ -3794,14 +3794,9 @@ export class DataStore {
     if (cachedVerified?.status) {
       status = cachedVerified.status as MetricsServerStateType;
     } else if (isActive) {
-      status = 'READY_WITH_METRICS';
+      status = 'ACTIVE';
     } else if (isInstalled) {
-      const readyReplicas = Number(metricsServerDeployment?.statusSummary?.readyReplicas) || 0;
-      if (readyReplicas > 0 || metricsServerPod?.status === 'Running') {
-        status = 'READY_NO_METRICS';
-      } else {
-        status = 'INSTALLED_NOT_READY';
-      }
+      status = 'INSTALLED_NOT_REPORTING';
     }
 
     const now = Date.now();
@@ -3832,8 +3827,9 @@ export class DataStore {
       for (const d of cachedVerified.diagnostics) {
         if (!diagnostics.includes(d)) diagnostics.push(d);
       }
-    } else if (status === 'INSTALLED_NOT_READY') {
-      diagnostics.push('metrics-server deployment detected in cluster, but pod is not ready or has 0 ready replicas.');
+    } else if (status === 'INSTALLED_NOT_REPORTING' || status === 'INSTALLED_NOT_READY') {
+      diagnostics.push('metrics-server deployment detected in cluster, but API is not yet reporting or pod is not ready.');
+      diagnostics.push('If this is a local/dev cluster (Kind, Minikube, K3s), kubelet self-signed certificates require --kubelet-insecure-tls.');
       diagnostics.push('Inspect Metrics Server pod logs and events in kube-system namespace.');
     } else if (status === 'READY_NO_METRICS') {
       diagnostics.push('metrics-server pod is running, but metrics.k8s.io has not yet returned node/pod usage.');
@@ -3910,7 +3906,13 @@ export class DataStore {
     const now = Date.now();
     const isConnected = cluster.agentStatus === 'CONNECTED' && (now - (cluster.lastHeartbeat || 0)) < 60000;
 
-    if (isConnected) {
+    const resources = this.getClusterResources(clusterId, orgId);
+    const hasDeployment = resources.some((r) => r.kind === 'Deployment' && r.name.toLowerCase().includes('metrics-server'));
+    const hasPod = resources.some((r) => r.kind === 'Pod' && r.name.toLowerCase().includes('metrics-server'));
+    const metrics = this.getClusterObservabilityMetrics(clusterId, orgId);
+    const isActive = !!(metrics && metrics.isUsageAvailable);
+
+    if (isConnected && !isActive && (hasDeployment || hasPod)) {
       const reqId = this.queueMetricsServerVerificationRequest(clusterId);
       verifiedResult = await this.waitForMetricsServerVerification(clusterId, reqId, 4000);
     }
@@ -3919,16 +3921,42 @@ export class DataStore {
     if (!status) return null;
 
     if (verifiedResult) {
-      if (verifiedResult.status === 'READY_WITH_METRICS' && status.verification) {
+      if ((verifiedResult.status === 'READY_WITH_METRICS' || verifiedResult.status === 'ACTIVE') && status.verification) {
         this.reconcileMetricsServerIncidents(clusterId, cluster.orgId, status.verification);
       }
+    } else if (isActive) {
+      status.status = 'ACTIVE';
+      status.whatHappened = 'Metrics Server is verified and telemetry is actively flowing from metrics.k8s.io.';
     } else if (!isConnected) {
-      status.status = 'UNKNOWN';
-      status.whatHappened = 'SkyOps agent is not connected to this cluster.';
-      status.why = 'No active heartbeat or connection from cluster agent in the last 60 seconds.';
-      status.impact = 'Cannot perform live remote verification of Metrics Server.';
-      status.nextAction = 'Ensure the SkyOps agent pod is running and has network connectivity to the SkyOps control plane.';
-      status.diagnostics.unshift('Agent connection state: OFFLINE / DISCONNECTED');
+      if (!status.isInstalled && !isActive) {
+        status.status = 'NOT_INSTALLED';
+        status.whatHappened = 'No metrics-server deployment detected in the cluster.';
+        status.why = 'No deployment or pod named metrics-server was found in cluster resources.';
+        status.impact = 'Cluster health, events, and pod logs continue working normally without Metrics Server.';
+        status.nextAction = 'Install Metrics Server using kubectl or helm if you require live CPU/memory usage telemetry.';
+      } else if (status.isInstalled && !isActive) {
+        status.status = 'INSTALLED_NOT_REPORTING';
+        status.whatHappened = 'Metrics Server is detected in the cluster, but telemetry is not yet flowing to SkyOps.';
+        status.why = 'The metrics-server pod is warming up, or kubelet certificates require --kubelet-insecure-tls.';
+        status.impact = 'Resource requests and limits are tracked, but live CPU/memory utilization is unavailable.';
+        status.nextAction = 'Wait 30-60 seconds for scrape cycle or check metrics-server pod logs.';
+      } else {
+        status.status = 'ACTIVE';
+        status.whatHappened = 'Metrics Server is active and reporting telemetry.';
+      }
+    } else if (!hasDeployment && !hasPod && !isActive) {
+      status.status = 'NOT_INSTALLED';
+      status.whatHappened = 'No metrics-server deployment detected in the cluster.';
+      status.why = 'No deployment or pod named metrics-server was found in cluster resources.';
+      status.impact = 'Cluster health, events, and pod logs continue working normally without Metrics Server.';
+      status.nextAction = 'Install Metrics Server using kubectl or helm if you require live CPU/memory usage telemetry.';
+    } else if (hasDeployment || hasPod) {
+      status.status = 'INSTALLED_NOT_REPORTING';
+      status.whatHappened = 'Metrics Server is detected in the cluster, but telemetry is not yet flowing to SkyOps.';
+      status.why = 'The metrics-server pod is warming up, or kubelet certificates require --kubelet-insecure-tls.';
+      status.impact = 'Resource requests and limits are tracked, but live CPU/memory utilization is unavailable.';
+      status.nextAction = 'Wait 30-60 seconds for scrape cycle or check metrics-server pod logs.';
+      status.diagnostics.unshift('Metrics Server is detected in the cluster, but agent probe timed out after 4000ms');
     } else {
       // Timeout
       status.status = 'TIMEOUT';
@@ -3944,12 +3972,12 @@ export class DataStore {
     let message = status.whatHappened || '';
     if (status.status === 'READY_WITH_METRICS' || status.status === 'ACTIVE') {
       message = 'Metrics Server is verified and telemetry is actively flowing from metrics.k8s.io.';
-    } else if (status.status === 'INSTALLED_NOT_READY') {
-      message = 'Metrics Server deployment detected, but the workload or pod is not ready.';
+    } else if (status.status === 'INSTALLED_NOT_REPORTING' || status.status === 'INSTALLED_NOT_READY') {
+      message = 'Metrics Server is detected in the cluster, but telemetry is not yet flowing to SkyOps.';
     } else if (status.status === 'READY_NO_METRICS') {
       message = 'Metrics Server pod is ready, but metrics.k8s.io has not returned usage metrics yet. Check scrape interval or kubelet TLS.';
     } else if (status.status === 'NOT_INSTALLED') {
-      message = 'Metrics Server deployment was not detected in the cluster. Run the kubectl or helm command to install it.';
+      message = 'No metrics-server deployment detected in the cluster.';
     }
 
     return {
@@ -4244,7 +4272,7 @@ export class DataStore {
       } else if (statusCategory === 'POD_INITIALIZING') {
         unavailableReason = 'Pod is currently executing init containers. Application container logs will be available once init containers complete.';
       } else if (statusCategory === 'PERMISSION_DENIED') {
-        unavailableReason = 'SkyOps agent lacks RBAC permission to read logs (pods/log) in this namespace.';
+        unavailableReason = 'SkyOps cannot read logs for this container because the cluster agent lacks the required Kubernetes permission.';
       } else if (statusCategory === 'PREVIOUS_LOGS_UNAVAILABLE' || (options.previous && (!rawLogs || rawLogs.trim().length === 0))) {
         statusCategory = 'PREVIOUS_LOGS_UNAVAILABLE';
         unavailableReason = 'Previous container logs are not available from Kubernetes. The container may not have restarted yet.';

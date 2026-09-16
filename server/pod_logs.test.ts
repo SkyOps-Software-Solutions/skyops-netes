@@ -46,6 +46,7 @@ describe('Pod Logs Pipeline & Truthful Error Mapping', () => {
       status: 'Running',
       health: 'HEALTHY',
       createdAt: Date.now() - 3600000,
+      updatedAt: Date.now() - 3600000,
       containers: [
         {
           name: 'coredns',
@@ -106,6 +107,7 @@ describe('Pod Logs Pipeline & Truthful Error Mapping', () => {
       status: 'Running',
       health: 'HEALTHY',
       createdAt: Date.now(),
+      updatedAt: Date.now(),
       containers: [{ name: 'app', image: 'app:v1', ready: true, restartCount: 0, state: 'running' }]
     };
     store.syncClusterResources(cluster.id, [appPod]);
@@ -148,6 +150,7 @@ describe('Pod Logs Pipeline & Truthful Error Mapping', () => {
       status: 'Running',
       health: 'HEALTHY',
       createdAt: Date.now(),
+      updatedAt: Date.now(),
       containers: [{ name: 'web', image: 'nginx:alpine', ready: true, restartCount: 0, state: 'running' }]
     };
     store.syncClusterResources(cluster.id, [appPod]);
@@ -190,6 +193,7 @@ describe('Pod Logs Pipeline & Truthful Error Mapping', () => {
       status: 'Running',
       health: 'HEALTHY',
       createdAt: Date.now(),
+      updatedAt: Date.now(),
       containers: [{ name: 'main', image: 'busybox', ready: true, restartCount: 0, state: 'running' }]
     };
     store.syncClusterResources(cluster.id, [pod]);

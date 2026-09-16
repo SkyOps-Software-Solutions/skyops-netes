@@ -3790,13 +3790,31 @@ export class DataStore {
     const isActive = !!(metrics && metrics.isUsageAvailable);
     const isInstalled = hasMetricsServerDeployment || isActive;
 
+    const podContainers = metricsServerPod?.containers || [];
+    const podReady = !!(
+      metricsServerPod &&
+      metricsServerPod.status === 'Running' &&
+      (podContainers.length > 0 ? podContainers.every((c) => c.ready) : true)
+    );
+    const readyReplicas = Number(metricsServerDeployment?.statusSummary?.readyReplicas) || 0;
+    const deploymentReady = readyReplicas > 0;
+
+    const hasStatusSummary = !!metricsServerDeployment?.statusSummary;
+    const isExplicitlyNotReady =
+      (hasStatusSummary && Number(metricsServerDeployment?.statusSummary?.replicas || 0) > 0 && readyReplicas === 0) ||
+      (!!metricsServerPod && !podReady);
+
     let status: MetricsServerStateType = 'NOT_INSTALLED';
     if (cachedVerified?.status) {
       status = cachedVerified.status as MetricsServerStateType;
     } else if (isActive) {
       status = 'ACTIVE';
     } else if (isInstalled) {
-      status = 'INSTALLED_NOT_REPORTING';
+      if (isExplicitlyNotReady) {
+        status = 'INSTALLED_NOT_READY';
+      } else {
+        status = 'INSTALLED_NOT_REPORTING';
+      }
     }
 
     const now = Date.now();
@@ -3849,10 +3867,10 @@ export class DataStore {
       deploymentFound: cachedVerified ? cachedVerified.deploymentFound : hasMetricsServerDeployment,
       deploymentName: cachedVerified?.deploymentName || metricsServerDeployment?.name || 'metrics-server',
       deploymentNamespace: cachedVerified?.deploymentNamespace || metricsServerDeployment?.namespace || 'kube-system',
-      deploymentReady: cachedVerified ? cachedVerified.deploymentReady : (Number(metricsServerDeployment?.statusSummary?.readyReplicas) || 0) > 0,
-      readyReplicas: cachedVerified?.readyReplicas ?? (Number(metricsServerDeployment?.statusSummary?.readyReplicas) || 0),
+      deploymentReady: cachedVerified ? cachedVerified.deploymentReady : deploymentReady,
+      readyReplicas: cachedVerified?.readyReplicas ?? readyReplicas,
       expectedReplicas: cachedVerified?.expectedReplicas ?? metricsServerDeployment?.statusSummary?.replicas ?? 1,
-      podReady: cachedVerified ? cachedVerified.podReady : (metricsServerPod?.status === 'Running'),
+      podReady: cachedVerified ? cachedVerified.podReady : podReady,
       podPhase: cachedVerified?.podPhase || metricsServerPod?.status || 'Unknown',
       podName: cachedVerified?.podName || metricsServerPod?.name || '',
       apiReachable: cachedVerified ? cachedVerified.apiReachable : isActive,
@@ -3951,11 +3969,20 @@ export class DataStore {
       status.impact = 'Cluster health, events, and pod logs continue working normally without Metrics Server.';
       status.nextAction = 'Install Metrics Server using kubectl or helm if you require live CPU/memory usage telemetry.';
     } else if (hasDeployment || hasPod) {
-      status.status = 'INSTALLED_NOT_REPORTING';
-      status.whatHappened = 'Metrics Server is detected in the cluster, but telemetry is not yet flowing to SkyOps.';
-      status.why = 'The metrics-server pod is warming up, or kubelet certificates require --kubelet-insecure-tls.';
-      status.impact = 'Resource requests and limits are tracked, but live CPU/memory utilization is unavailable.';
-      status.nextAction = 'Wait 30-60 seconds for scrape cycle or check metrics-server pod logs.';
+      const isReady = !!(status.verification?.deploymentReady || status.verification?.podReady);
+      if (!isReady) {
+        status.status = 'INSTALLED_NOT_READY';
+        status.whatHappened = 'Metrics Server deployment detected (0/1 Ready), but the pod is not passing readiness checks.';
+        status.why = 'In development clusters (KillerCoda, Kind, Minikube), Kubelet uses self-signed certificates. Metrics Server cannot scrape metrics without the --kubelet-insecure-tls argument.';
+        status.impact = 'Resource requests and limits are tracked, but live CPU/memory utilization cannot be scraped.';
+        status.nextAction = 'Patch the metrics-server deployment with --kubelet-insecure-tls or reinstall with the insecure TLS flag enabled.';
+      } else {
+        status.status = 'INSTALLED_NOT_REPORTING';
+        status.whatHappened = 'Metrics Server is detected in the cluster, but telemetry is not yet flowing to SkyOps.';
+        status.why = 'The metrics-server pod is warming up, or kubelet certificates require --kubelet-insecure-tls.';
+        status.impact = 'Resource requests and limits are tracked, but live CPU/memory utilization is unavailable.';
+        status.nextAction = 'Wait 30-60 seconds for scrape cycle or check metrics-server pod logs.';
+      }
       status.diagnostics.unshift('Metrics Server is detected in the cluster, but agent probe timed out after 4000ms');
     } else {
       // Timeout

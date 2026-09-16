@@ -57,6 +57,9 @@ export const MetricsServerEnablementModal: React.FC<MetricsServerEnablementModal
     try {
       const data = await api.getMetricsServerStatus(clusterId);
       setStatus(data);
+      if (data?.status === 'INSTALLED_NOT_READY' || (data?.verification?.deploymentFound && !data?.verification?.deploymentReady)) {
+        setUseInsecureTls(true);
+      }
     } catch (err: any) {
       setError(err?.message || 'Failed to inspect Metrics Server status');
     } finally {
@@ -412,20 +415,58 @@ export const MetricsServerEnablementModal: React.FC<MetricsServerEnablementModal
                   </div>
                 </div>
 
-                {installMethod === 'manifest' && (
-                  <div className="flex items-center gap-2 pt-1">
-                    <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-300">
-                      <input
-                        type="checkbox"
-                        checked={useInsecureTls}
-                        onChange={(e) => setUseInsecureTls(e.target.checked)}
-                        className="rounded border-zinc-700 bg-zinc-800 text-sky-500 focus:ring-sky-500/30"
-                      />
-                      <span>Local or Development Cluster (Kind / Minikube / K3s)</span>
-                    </label>
-                    <span className="text-[10px] text-zinc-500">
-                      (Applies <code className="text-zinc-400">--kubelet-insecure-tls</code> patch)
-                    </span>
+                {/* Insecure TLS checkbox for dev clusters (Kind, Minikube, KillerCoda) */}
+                <div className="flex items-center gap-2 pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-300">
+                    <input
+                      type="checkbox"
+                      checked={useInsecureTls}
+                      onChange={(e) => setUseInsecureTls(e.target.checked)}
+                      className="rounded border-zinc-700 bg-zinc-800 text-sky-500 focus:ring-sky-500/30"
+                    />
+                    <span>Local or Development Cluster (KillerCoda / Kind / Minikube)</span>
+                  </label>
+                  <span className="text-[10px] text-zinc-500">
+                    (Applies <code className="text-zinc-400">--kubelet-insecure-tls</code> patch)
+                  </span>
+                </div>
+
+                {/* Quick Patch helper when already deployed but 0/1 Ready */}
+                {status?.verification?.deploymentFound && !status?.verification?.deploymentReady && (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/25 rounded-lg space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-amber-300 flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+                        Fix Existing Deployment (0/1 Ready)
+                      </span>
+                      <button
+                        onClick={() =>
+                          handleCopy(
+                            `kubectl patch deployment metrics-server -n kube-system --type='json' -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'`,
+                            'patch-cmd'
+                          )
+                        }
+                        className="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-[11px] font-medium rounded transition-colors flex items-center gap-1"
+                      >
+                        {copiedKey === 'patch-cmd' ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            <span>Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copy Quick Patch</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-zinc-400">
+                      In KillerCoda/dev clusters, Kubelet certificates are self-signed. Run this patch in your terminal to enable <code className="text-zinc-300">--kubelet-insecure-tls</code> without reinstalling:
+                    </p>
+                    <pre className="font-mono text-[11px] text-zinc-300 bg-zinc-950 p-2 rounded border border-zinc-800 overflow-x-auto whitespace-pre-wrap">
+                      {`kubectl patch deployment metrics-server -n kube-system --type='json' -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'`}
+                    </pre>
                   </div>
                 )}
 

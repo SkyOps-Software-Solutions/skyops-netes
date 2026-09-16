@@ -148,7 +148,8 @@ export async function fetchInClusterPodLogs(
           path,
           method: 'GET',
           headers: {
-            Authorization: `Bearer ${token}`
+            Authorization: `Bearer ${token}`,
+            Accept: 'text/plain, application/json, */*'
           },
           ca,
           rejectUnauthorized: !!ca,

@@ -4282,8 +4282,25 @@ export class DataStore {
         unavailableReason = errorMessage || `Container "${selectedContainerName}" not found in pod.`;
       } else if (statusCategory === 'TIMEOUT') {
         unavailableReason = 'Request to Kubernetes API timed out.';
-      } else if (statusCategory === 'KUBERNETES_API_UNAVAILABLE' || statusCategory === 'K8S_API_ERROR') {
-        unavailableReason = errorMessage || 'Kubernetes API server unavailable.';
+      } else if (statusCategory === 'KUBERNETES_API_UNAVAILABLE' || statusCategory === 'K8S_API_ERROR' || (errorMessage && /406|notacceptable/i.test(errorMessage))) {
+        statusCategory = 'KUBERNETES_API_UNAVAILABLE';
+        if (errorMessage && /406|notacceptable/i.test(errorMessage)) {
+          try {
+            const rawJsonMatch = errorMessage.match(/\{[\s\S]*"code":\s*406[\s\S]*\}/);
+            if (rawJsonMatch) {
+              const parsed = JSON.parse(rawJsonMatch[0]);
+              unavailableReason = parsed.message
+                ? `Kubernetes API content negotiation error: ${parsed.message}`
+                : 'Kubernetes API rejected log format (HTTP 406 NotAcceptable).';
+            } else {
+              unavailableReason = errorMessage;
+            }
+          } catch {
+            unavailableReason = errorMessage;
+          }
+        } else {
+          unavailableReason = errorMessage || 'Kubernetes API server unavailable.';
+        }
       } else if (statusCategory === 'EMPTY_LOGS' || statusCategory === 'NO_LOGS' || (!rawLogs && statusCategory === 'SUCCESS')) {
         statusCategory = 'EMPTY_LOGS';
         unavailableReason = 'The container is running, but standard output and error streams are currently empty.';

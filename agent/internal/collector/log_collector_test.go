@@ -63,6 +63,110 @@ func TestGetPodLogs_Success(t *testing.T) {
 	}
 }
 
+func TestGetPodLogs_ContentNegotiation(t *testing.T) {
+	var capturedAcceptHeader string
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAcceptHeader = r.Header.Get("Accept")
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("2026-09-16T10:00:00Z server listening on :8080\n"))
+	}))
+	defer ts.Close()
+
+	client := NewCustomK8sClient(ts.Client(), ts.URL, "test-token")
+	res, err := client.GetPodLogs(context.Background(), "default", "api-server", PodLogOptions{
+		Container: "api",
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Status != "SUCCESS" {
+		t.Fatalf("expected SUCCESS, got %s", res.Status)
+	}
+	// Verify that Accept header satisfies Kubernetes content negotiation
+	if !strings.Contains(capturedAcceptHeader, "text/plain") {
+		t.Errorf("expected Accept header to contain text/plain, got: %s", capturedAcceptHeader)
+	}
+	if !strings.Contains(capturedAcceptHeader, "application/json") {
+		t.Errorf("expected Accept header to contain application/json for status errors, got: %s", capturedAcceptHeader)
+	}
+	if !strings.Contains(capturedAcceptHeader, "*/*") {
+		t.Errorf("expected Accept header to contain wildcard */*, got: %s", capturedAcceptHeader)
+	}
+}
+
+func TestGetPodLogs_HTTP406_RetrySuccess(t *testing.T) {
+	attempts := 0
+	expectedLogs := "recovered logs after retry\n"
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts == 1 {
+			// First attempt returns 406 NotAcceptable
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotAcceptable)
+			_, _ = w.Write([]byte(`{"kind":"Status","apiVersion":"v1","status":"Failure","message":"only the following media types are accepted: application/json, application/yaml, application/vnd.kubernetes.protobuf","reason":"NotAcceptable","code":406}`))
+			return
+		}
+
+		// Second attempt with */* succeeds
+		if r.Header.Get("Accept") != "*/*" {
+			t.Errorf("expected retry with */*, got: %s", r.Header.Get("Accept"))
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(expectedLogs))
+	}))
+	defer ts.Close()
+
+	client := NewCustomK8sClient(ts.Client(), ts.URL, "test-token")
+	res, err := client.GetPodLogs(context.Background(), "default", "flaky-proxy-pod", PodLogOptions{
+		Container: "app",
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Status != "SUCCESS" {
+		t.Fatalf("expected SUCCESS after retry, got %s (err: %s)", res.Status, res.ErrorMessage)
+	}
+	if res.Logs != expectedLogs {
+		t.Fatalf("expected logs %q, got %q", expectedLogs, res.Logs)
+	}
+	if attempts != 2 {
+		t.Fatalf("expected exactly 2 attempts, got %d", attempts)
+	}
+}
+
+func TestGetPodLogs_HTTP406_TruthfulDiagnostic(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotAcceptable)
+		_, _ = w.Write([]byte(`{"kind":"Status","apiVersion":"v1","status":"Failure","message":"only the following media types are accepted: application/json, application/yaml, application/vnd.kubernetes.protobuf","reason":"NotAcceptable","code":406}`))
+	}))
+	defer ts.Close()
+
+	client := NewCustomK8sClient(ts.Client(), ts.URL, "test-token")
+	res, err := client.GetPodLogs(context.Background(), "default", "strict-gateway-pod", PodLogOptions{
+		Container: "app",
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Status != "KUBERNETES_API_UNAVAILABLE" {
+		t.Fatalf("expected KUBERNETES_API_UNAVAILABLE, got %s", res.Status)
+	}
+	if !strings.Contains(res.ErrorMessage, "406 NotAcceptable") {
+		t.Fatalf("expected 406 NotAcceptable diagnostic, got: %s", res.ErrorMessage)
+	}
+	if !strings.Contains(res.ErrorMessage, "media types") {
+		t.Fatalf("expected message to reference media types, got: %s", res.ErrorMessage)
+	}
+}
+
 func TestGetPodLogs_PreviousLogs(t *testing.T) {
 	expectedPrevLogs := "Terminating container gracefully\n"
 

@@ -225,4 +225,173 @@ describe('Pod Logs Pipeline & Truthful Error Mapping', () => {
       /access denied/i
     );
   });
+
+  it('handles HTTP 406 NotAcceptable truthfully without claiming "no logs produced"', async () => {
+    const store = new DataStore();
+    const org = store.createOrganization('406Org', 'admin@example.com');
+    const { cluster } = store.createCluster(org.id, 'Cluster 406');
+
+    store.recordAgentHeartbeat(cluster.id, 'v1.2.0', 'v1.30.0', 3, 10);
+
+    const appPod: KubernetesResource = {
+      id: `${cluster.id}:default:Pod:negotiation-pod`,
+      clusterId: cluster.id,
+      clusterName: cluster.name,
+      name: 'negotiation-pod',
+      namespace: 'default',
+      kind: 'Pod',
+      status: 'Running',
+      health: 'HEALTHY',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      containers: [{ name: 'app', image: 'app:v1', ready: true, restartCount: 0, state: 'running' }]
+    };
+    store.syncClusterResources(cluster.id, [appPod]);
+
+    // Agent reports 406 NotAcceptable error
+    store.storePodLogs(
+      cluster.id,
+      'default',
+      'negotiation-pod',
+      'app',
+      '',
+      false,
+      'KUBERNETES_API_UNAVAILABLE',
+      'Kubernetes API content negotiation rejected log stream format (HTTP 406 NotAcceptable): only the following media types are accepted'
+    );
+
+    const logResult = await store.getPodLogs(cluster.id, org.id, 'default', 'negotiation-pod', { container: 'app' });
+    assert.strictEqual(logResult.statusCategory, 'KUBERNETES_API_UNAVAILABLE');
+    assert.ok(logResult.unavailableReason?.includes('406 NotAcceptable'));
+    assert.ok(!logResult.unavailableReason?.includes('No log output is currently available'));
+  });
+
+  it('truthfully handles EMPTY_LOGS when container is running with no standard output', async () => {
+    const store = new DataStore();
+    const org = store.createOrganization('EmptyOrg', 'admin@example.com');
+    const { cluster } = store.createCluster(org.id, 'Empty Cluster');
+
+    store.recordAgentHeartbeat(cluster.id, 'v1.2.0', 'v1.30.0', 3, 10);
+
+    const silentPod: KubernetesResource = {
+      id: `${cluster.id}:default:Pod:silent-pod`,
+      clusterId: cluster.id,
+      clusterName: cluster.name,
+      name: 'silent-pod',
+      namespace: 'default',
+      kind: 'Pod',
+      status: 'Running',
+      health: 'HEALTHY',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      containers: [{ name: 'silent', image: 'busybox', ready: true, restartCount: 0, state: 'running' }]
+    };
+    store.syncClusterResources(cluster.id, [silentPod]);
+
+    store.storePodLogs(
+      cluster.id,
+      'default',
+      'silent-pod',
+      'silent',
+      '',
+      false,
+      'EMPTY_LOGS'
+    );
+
+    const logResult = await store.getPodLogs(cluster.id, org.id, 'default', 'silent-pod', { container: 'silent' });
+    assert.strictEqual(logResult.statusCategory, 'EMPTY_LOGS');
+    assert.strictEqual(
+      logResult.unavailableReason,
+      'The container is running, but standard output and error streams are currently empty.'
+    );
+    assert.strictEqual(logResult.lines.length, 0);
+  });
+
+  it('truthfully handles TIMEOUT, POD_NOT_FOUND, and CONTAINER_NOT_FOUND', async () => {
+    const store = new DataStore();
+    const org = store.createOrganization('DiagOrg', 'admin@example.com');
+    const { cluster } = store.createCluster(org.id, 'Diag Cluster');
+
+    store.recordAgentHeartbeat(cluster.id, 'v1.2.0', 'v1.30.0', 3, 10);
+
+    const slowPod: KubernetesResource = {
+      id: `${cluster.id}:default:Pod:slow-pod`,
+      clusterId: cluster.id,
+      clusterName: cluster.name,
+      name: 'slow-pod',
+      namespace: 'default',
+      kind: 'Pod',
+      status: 'Running',
+      health: 'HEALTHY',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      containers: [{ name: 'app', image: 'app:v1', ready: true, restartCount: 0, state: 'running' }]
+    };
+    const existPod: KubernetesResource = {
+      id: `${cluster.id}:default:Pod:exist-pod`,
+      clusterId: cluster.id,
+      clusterName: cluster.name,
+      name: 'exist-pod',
+      namespace: 'default',
+      kind: 'Pod',
+      status: 'Running',
+      health: 'HEALTHY',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      containers: [{ name: 'app', image: 'app:v1', ready: true, restartCount: 0, state: 'running' }]
+    };
+    store.syncClusterResources(cluster.id, [slowPod, existPod]);
+
+    // Timeout
+    store.storePodLogs(cluster.id, 'default', 'slow-pod', 'app', '', false, 'TIMEOUT', 'Request to Kubernetes API timed out.');
+    const timeoutRes = await store.getPodLogs(cluster.id, org.id, 'default', 'slow-pod', { container: 'app' });
+    assert.strictEqual(timeoutRes.statusCategory, 'TIMEOUT');
+    assert.ok(timeoutRes.unavailableReason?.includes('timed out'));
+
+    // Pod not found (not in cluster resources)
+    const missingPodRes = await store.getPodLogs(cluster.id, org.id, 'default', 'missing-pod', { container: 'app' });
+    assert.strictEqual(missingPodRes.statusCategory, 'POD_NOT_FOUND');
+    assert.ok(/not found/i.test(missingPodRes.unavailableReason || ''));
+
+    // Container not found
+    store.storePodLogs(cluster.id, 'default', 'exist-pod', 'non-existent', '', false, 'CONTAINER_NOT_FOUND', 'Container "non-existent" not found in pod.');
+    const missingContRes = await store.getPodLogs(cluster.id, org.id, 'default', 'exist-pod', { container: 'non-existent' });
+    assert.strictEqual(missingContRes.statusCategory, 'CONTAINER_NOT_FOUND');
+    assert.ok(/does not exist in pod|not found in pod/i.test(missingContRes.unavailableReason || ''));
+  });
+
+  it('bounds log lines according to tailLines parameter', async () => {
+    const store = new DataStore();
+    const org = store.createOrganization('BoundOrg', 'admin@example.com');
+    const { cluster } = store.createCluster(org.id, 'Bound Cluster');
+
+    store.recordAgentHeartbeat(cluster.id, 'v1.2.0', 'v1.30.0', 3, 10);
+
+    const busyPod: KubernetesResource = {
+      id: `${cluster.id}:default:Pod:busy-pod`,
+      clusterId: cluster.id,
+      clusterName: cluster.name,
+      name: 'busy-pod',
+      namespace: 'default',
+      kind: 'Pod',
+      status: 'Running',
+      health: 'HEALTHY',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      containers: [{ name: 'app', image: 'app:v1', ready: true, restartCount: 0, state: 'running' }]
+    };
+    store.syncClusterResources(cluster.id, [busyPod]);
+
+    const manyLines = Array.from({ length: 300 }, (_, i) => `2026-09-16T11:00:${String(i).padStart(2, '0')}Z log line ${i}`).join('\n');
+    store.storePodLogs(cluster.id, 'default', 'busy-pod', 'app', manyLines, false, 'SUCCESS');
+
+    const result = await store.getPodLogs(cluster.id, org.id, 'default', 'busy-pod', {
+      container: 'app',
+      tailLines: 50
+    });
+
+    assert.strictEqual(result.statusCategory, 'SUCCESS');
+    assert.strictEqual(result.lines.length, 50);
+    assert.ok(result.lines[49].raw.includes('log line 299'));
+  });
 });

@@ -922,6 +922,23 @@ app.get('/api/v1/clusters/:id/metrics/history', requireUserAuth, requireOrgMembe
   res.json({ history, timeRange: range });
 });
 
+// --- Metrics Server Observability & Enablement Endpoints ---
+app.get('/api/v1/clusters/:id/metrics-server', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const status = store.getMetricsServerStatus(req.params.id, req.orgId!);
+  if (!status) {
+    return res.status(404).json({ error: 'Cluster not found' });
+  }
+  res.json({ status });
+});
+
+app.post('/api/v1/clusters/:id/metrics-server/verify', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const verification = store.verifyMetricsServer(req.params.id, req.orgId!);
+  if (!verification) {
+    return res.status(404).json({ error: 'Cluster not found' });
+  }
+  res.json(verification);
+});
+
 // Phase 2 Smart Telemetry & Historical Intelligence Endpoints
 app.get('/api/v1/clusters/:id/telemetry', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
   const range = (req.query.range as '15m' | '1h' | '6h' | '24h' | '7d') || '1h';
@@ -1342,6 +1359,26 @@ app.post('/api/v1/agent/actions/:actionId/result', requireAgentAuth, (req: Authe
   res.json({ status: 'ACK', success: true, action });
 });
 
+const AgentLogIngestSchema = z.object({
+  namespace: z.string().min(1),
+  podName: z.string().min(1),
+  container: z.string().min(1),
+  logs: z.string(),
+  previous: z.boolean().optional()
+});
+
+app.post('/api/v1/agent/logs', requireAgentAuth, (req: AuthenticatedAgentRequest, res) => {
+  const parsed = AgentLogIngestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid log ingestion payload' });
+  }
+
+  const { namespace, podName, container, logs, previous } = parsed.data;
+  store.storePodLogs(req.clusterId!, namespace, podName, container, logs, !!previous);
+
+  res.json({ success: true, message: 'Pod logs ingested successfully' });
+});
+
 // --- Incidents Management ---
 app.get('/api/v1/incidents', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
   const { status, severity, clusterId, namespace, search } = req.query;
@@ -1567,6 +1604,41 @@ app.post(
     } catch (err: any) {
       console.error(`[SkyOps API] Remediation rejection error for ${req.params.id}:`, err);
       res.status(400).json({ error: err?.message || 'Failed to reject remediation' });
+    }
+  }
+);
+
+const RollbackRemediationSchema = z.object({
+  reason: z.string().max(500).optional()
+});
+
+app.post(
+  '/api/v1/incidents/:id/remediation/rollback',
+  requireUserAuth,
+  requireOrgMembership,
+  requirePermission('remediation.approve'),
+  (req: AuthenticatedUserRequest, res) => {
+    const parsed = RollbackRemediationSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid rollback payload' });
+    }
+
+    try {
+      const remediation = store.rollbackRemediation(
+        req.params.id,
+        req.orgId!,
+        { id: req.user!.id, name: req.user!.name, email: req.user!.email },
+        parsed.data.reason
+      );
+
+      res.json({
+        success: true,
+        message: `Rollback dispatched: reverting container to previous configuration on cluster "${remediation.clusterName}"`,
+        remediation
+      });
+    } catch (err: any) {
+      console.error(`[SkyOps API] Remediation rollback error for ${req.params.id}:`, err);
+      res.status(400).json({ error: err?.message || 'Failed to trigger remediation rollback' });
     }
   }
 );

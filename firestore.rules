@@ -23,7 +23,7 @@ service cloud.firestore {
         data.email.size() <= 320 &&
         (!('fullName' in data) || (data.fullName is string && data.fullName.size() <= 150)) &&
         (!('organisationName' in data) || (data.organisationName is string && data.organisationName.size() <= 150)) &&
-        (!('role' in data) || (data.role in ['OWNER', 'ADMIN', 'ENGINEER', 'VIEWER']));
+        (!('role' in data) || (data.role in ['OWNER', 'ADMIN', 'OPERATOR', 'ENGINEER', 'VIEWER']));
     }
 
     // User profiles - strictly restricted to each user's own UID

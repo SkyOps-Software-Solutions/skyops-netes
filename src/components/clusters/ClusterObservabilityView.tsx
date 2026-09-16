@@ -26,6 +26,7 @@ import {
 import { Button } from '../common/UI';
 import { ErrorBoundary } from '../common/ErrorBoundary';
 import { TelemetryIntelligenceView } from './TelemetryIntelligenceView';
+import { MetricsServerEnablementModal } from './MetricsServerEnablementModal';
 
 interface ClusterObservabilityViewProps {
   clusterId: string;
@@ -50,6 +51,7 @@ const ClusterObservabilityContent: React.FC<ClusterObservabilityViewProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'cluster' | 'nodes' | 'workloads' | 'history'>('cluster');
   const [workloadFilter, setWorkloadFilter] = useState<'all' | 'no-limits' | 'near-limit' | 'missing-usage'>('all');
   const [searchFilter, setSearchFilter] = useState('');
+  const [isMetricsServerModalOpen, setIsMetricsServerModalOpen] = useState(false);
 
   const loadData = async (background = false) => {
     try {
@@ -299,6 +301,18 @@ const ClusterObservabilityContent: React.FC<ClusterObservabilityViewProps> = ({
               Ingested: <strong className="text-zinc-400">{metrics?.ingestedAt ? new Date(metrics.ingestedAt).toLocaleTimeString() : 'N/A'}</strong>
             </div>
           </div>
+          {!isMetricsServerActive && (
+            <Button
+              id="header-enable-metrics-server-btn"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsMetricsServerModalOpen(true)}
+              className="flex items-center gap-1.5 border-amber-800/80 text-amber-300 hover:bg-amber-950/40 bg-amber-950/20"
+            >
+              <Activity className="w-3.5 h-3.5 text-amber-400" />
+              <span>Enable Metrics</span>
+            </Button>
+          )}
           <Button
             id="refresh-observability-btn"
             variant="outline"
@@ -312,6 +326,27 @@ const ClusterObservabilityContent: React.FC<ClusterObservabilityViewProps> = ({
           </Button>
         </div>
       </div>
+
+      {/* Optional Metrics Server Non-Intrusive Guidance Banner */}
+      {!isMetricsServerActive && (
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-start sm:items-center gap-3 text-amber-200/90">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+            <div>
+              <span className="font-semibold text-amber-300">Live Telemetry Notice:</span>{' '}
+              Metrics Server (`metrics.k8s.io`) is not reporting on this cluster. Resource requests and limits are active, but live CPU/memory usage requires Metrics Server.
+            </div>
+          </div>
+          <button
+            id="open-metrics-server-modal-btn"
+            onClick={() => setIsMetricsServerModalOpen(true)}
+            className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-semibold border border-amber-500/30 whitespace-nowrap self-start sm:self-auto transition-colors flex items-center gap-1.5 cursor-pointer"
+          >
+            <Activity className="w-3.5 h-3.5 text-amber-400" />
+            <span>Enable Metrics Server</span>
+          </button>
+        </div>
+      )}
 
       {/* Sub-tabs */}
       <div className="flex items-center gap-1 border-b border-zinc-800 overflow-x-auto no-scrollbar">
@@ -508,9 +543,14 @@ const ClusterObservabilityContent: React.FC<ClusterObservabilityViewProps> = ({
                       {cpuUsageFormatted} ({cpuUsagePercent ?? 0}% allocatable)
                     </span>
                   ) : (
-                    <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 text-[11px] font-mono border border-zinc-700">
-                      Usage Unavailable (No Metrics Server)
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsMetricsServerModalOpen(true)}
+                      className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700/80 text-amber-300 hover:text-amber-200 text-[11px] font-mono border border-amber-900/40 hover:border-amber-700/60 cursor-pointer transition-colors"
+                      title="Click to view Metrics Server setup guide and pre-flight checks"
+                    >
+                      Usage Unavailable (No Metrics Server) &rarr;
+                    </button>
                   )}
                 </div>
               </div>
@@ -558,9 +598,14 @@ const ClusterObservabilityContent: React.FC<ClusterObservabilityViewProps> = ({
                       {memUsageFormatted} ({memUsagePercent ?? 0}% allocatable)
                     </span>
                   ) : (
-                    <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 text-[11px] font-mono border border-zinc-700">
-                      Usage Unavailable (No Metrics Server)
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsMetricsServerModalOpen(true)}
+                      className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700/80 text-amber-300 hover:text-amber-200 text-[11px] font-mono border border-amber-900/40 hover:border-amber-700/60 cursor-pointer transition-colors"
+                      title="Click to view Metrics Server setup guide and pre-flight checks"
+                    >
+                      Usage Unavailable (No Metrics Server) &rarr;
+                    </button>
                   )}
                 </div>
               </div>
@@ -932,6 +977,17 @@ const ClusterObservabilityContent: React.FC<ClusterObservabilityViewProps> = ({
       {activeSubTab === 'history' && (
         <TelemetryIntelligenceView clusterId={clusterId} clusterName={clusterName} />
       )}
+
+      {/* Explicit User-Approved Metrics Server Enablement Modal */}
+      <MetricsServerEnablementModal
+        isOpen={isMetricsServerModalOpen}
+        onClose={() => setIsMetricsServerModalOpen(false)}
+        clusterId={clusterId}
+        clusterName={clusterName}
+        onVerified={() => {
+          loadData(true);
+        }}
+      />
     </div>
   );
 };

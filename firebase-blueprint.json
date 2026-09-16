@@ -24,7 +24,7 @@
         },
         "role": {
           "type": "string",
-          "enum": ["OWNER", "ADMIN", "ENGINEER", "VIEWER"],
+          "enum": ["OWNER", "ADMIN", "OPERATOR", "ENGINEER", "VIEWER"],
           "description": "SkyOps RBAC role"
         },
         "createdAt": {

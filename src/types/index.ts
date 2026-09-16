@@ -374,7 +374,8 @@ export type RemediationActionStatus =
   | 'PENDING'
   | 'DISPATCHED'
   | 'SUCCEEDED'
-  | 'FAILED';
+  | 'FAILED'
+  | 'ROLLED_BACK';
 
 export type RemediationMode = 'MANUAL_ONLY' | 'APPROVAL_REQUIRED' | 'CONTROLLED_AUTONOMOUS';
 
@@ -496,6 +497,9 @@ export type TimelineEventType =
   | 'REMEDIATION_VERIFICATION_FAILED'
   | 'REMEDIATION_CANCELLED'
   | 'REMEDIATION_EXPIRED'
+  | 'REMEDIATION_ROLLBACK_DISPATCHED'
+  | 'REMEDIATION_ROLLED_BACK'
+  | 'REMEDIATION_ROLLBACK_FAILED'
   | 'CIRCUIT_BREAKER_TRIPPED'
   | 'AUTOMATIC_ACTION';
 
@@ -897,6 +901,26 @@ export interface TelemetryAnomaly {
   };
 }
 
+export interface MetricsServerStatus {
+  clusterId: string;
+  clusterName: string;
+  isInstalled: boolean;
+  isActive: boolean;
+  status: 'ACTIVE' | 'INSTALLED_NOT_REPORTING' | 'NOT_INSTALLED';
+  clusterVersion: string;
+  preflight: {
+    connected: boolean;
+    versionCompatible: boolean;
+    rbacReady: boolean;
+  };
+  commands: {
+    kubectl: string;
+    kubectlInsecureTls: string;
+    helm: string;
+  };
+  diagnostics: string[];
+}
+
 export interface OverviewMetrics {
   totalClusters: number;
   healthyClusters: number;
@@ -962,7 +986,8 @@ export type RemediationStatus =
   | 'VERIFYING'
   | 'VERIFIED_RESOLVED'
   | 'VERIFICATION_FAILED'
-  | 'FAILED';
+  | 'FAILED'
+  | 'ROLLED_BACK';
 
 export interface RemediationApproval {
   approvedBy: {
@@ -1085,6 +1110,11 @@ export interface StructuredRemediation {
   approval?: RemediationApproval;
   execution?: RemediationExecution;
   verification?: RemediationVerification;
+  rollbackPlan?: {
+    supported: boolean;
+    strategy?: string;
+    rollbackValue?: string;
+  };
   createdAt: number;
   updatedAt: number;
 }

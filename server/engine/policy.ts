@@ -44,7 +44,8 @@ export const ALLOWED_TRANSITIONS: Record<RemediationActionStatus, RemediationAct
   STALE: [],
   PENDING: ['DELIVERED', 'QUEUED', 'DISPATCHED', 'CANCELLED', 'EXPIRED'],
   SUCCEEDED: ['VERIFYING', 'VERIFIED', 'VERIFIED_RESOLVED', 'VERIFICATION_FAILED'],
-  FAILED: []
+  FAILED: [],
+  ROLLED_BACK: []
 };
 
 export class RemediationPolicyEngine {

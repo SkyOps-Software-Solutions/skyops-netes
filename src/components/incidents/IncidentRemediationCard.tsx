@@ -15,7 +15,8 @@ import {
   Check,
   Server,
   FileCode,
-  Activity
+  Activity,
+  RotateCcw
 } from 'lucide-react';
 import { Incident, StructuredRemediation, SkyOpsAIAnalysis } from '../../types';
 import { api } from '../../api/client';
@@ -120,6 +121,37 @@ export const IncidentRemediationCard: React.FC<IncidentRemediationCardProps> = (
       setActionMessage({
         type: 'error',
         text: err?.message || 'Failed to decline remediation'
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRollback = async () => {
+    if (!remediation) return;
+    try {
+      setActionLoading(true);
+      setActionMessage(null);
+      const res = await api.rollbackRemediation(
+        incident.id,
+        'Operator initiated safe rollback to restore pre-incident container configuration'
+      );
+      setRemediation(res.remediation);
+      setActionMessage({
+        type: 'success',
+        text: res.message || 'Remediation rolled back successfully.'
+      });
+      if (onRemediationUpdated) {
+        onRemediationUpdated(res.remediation);
+      }
+      if (onRefresh) {
+        onRefresh();
+      }
+    } catch (err: any) {
+      console.error('Failed to rollback remediation:', err);
+      setActionMessage({
+        type: 'error',
+        text: err?.message || 'Failed to rollback remediation'
       });
     } finally {
       setActionLoading(false);
@@ -444,23 +476,43 @@ export const IncidentRemediationCard: React.FC<IncidentRemediationCardProps> = (
                 </div>
               </div>
 
-              {/* Step 6: Verified */}
+              {/* Step 6: Verified or Rolled Back */}
               <div
                 className={`p-2 rounded border flex items-center gap-1.5 ${
                   remediation.status === 'VERIFIED_RESOLVED'
                     ? 'bg-emerald-950/40 border-emerald-800 text-emerald-400'
+                    : remediation.status === 'ROLLED_BACK'
+                    ? 'bg-amber-950/40 border-amber-800 text-amber-400'
+                    : remediation.status === 'VERIFICATION_FAILED'
+                    ? 'bg-rose-950/40 border-rose-800 text-rose-400'
                     : 'bg-zinc-900/40 border-zinc-800 text-zinc-500'
                 }`}
               >
                 {remediation.status === 'VERIFIED_RESOLVED' ? (
                   <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                ) : remediation.status === 'ROLLED_BACK' ? (
+                  <RotateCcw className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                ) : remediation.status === 'VERIFICATION_FAILED' ? (
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
                 ) : (
                   <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
                 )}
                 <div className="min-w-0">
-                  <span className="font-bold block text-[10px] truncate">6. Verified</span>
+                  <span className="font-bold block text-[10px] truncate">
+                    {remediation.status === 'ROLLED_BACK'
+                      ? '6. Rolled Back'
+                      : remediation.status === 'VERIFICATION_FAILED'
+                      ? '6. Failed'
+                      : '6. Verified'}
+                  </span>
                   <span className="text-zinc-400 text-[9px] block truncate">
-                    {remediation.status === 'VERIFIED_RESOLVED' ? 'Zero errors' : 'Pending proof'}
+                    {remediation.status === 'VERIFIED_RESOLVED'
+                      ? 'Zero errors'
+                      : remediation.status === 'ROLLED_BACK'
+                      ? 'Restored'
+                      : remediation.status === 'VERIFICATION_FAILED'
+                      ? 'Check telemetry'
+                      : 'Pending proof'}
                   </span>
                 </div>
               </div>
@@ -512,6 +564,10 @@ export const IncidentRemediationCard: React.FC<IncidentRemediationCardProps> = (
               <p className="text-zinc-200 text-xs">
                 {remediation.status === 'VERIFIED_RESOLVED'
                   ? 'Fresh telemetry confirms the expected healthy state: error events ceased and pod ready.'
+                  : remediation.status === 'ROLLED_BACK'
+                  ? 'Safe rollback confirmed: previous container image restored and verified healthy via live telemetry.'
+                  : remediation.status === 'VERIFICATION_FAILED'
+                  ? remediation.verification?.observedState || 'Fresh telemetry detected persistent error state or timeout after patch application.'
                   : remediation.status === 'VERIFYING'
                   ? 'Waiting for fresh Kubernetes telemetry scrape to confirm error events have ceased.'
                   : remediation.verification?.observedState ||
@@ -565,6 +621,58 @@ export const IncidentRemediationCard: React.FC<IncidentRemediationCardProps> = (
               </div>
             </div>
           )}
+
+          {/* Rollback Notification Banner (When ROLLED_BACK) */}
+          {remediation.status === 'ROLLED_BACK' && (
+            <div className="p-3.5 rounded-lg bg-amber-950/30 border border-amber-800/60 flex items-center gap-3">
+              <RotateCcw className="w-5 h-5 text-amber-400 shrink-0" />
+              <div className="space-y-0.5 min-w-0">
+                <span className="text-xs font-bold text-amber-300 block">
+                  Workload Successfully Rolled Back
+                </span>
+                <p className="text-[11px] text-zinc-300 font-mono">
+                  Container restored to pre-incident configuration (<code className="text-amber-300">{remediation.parameters.proposedImage}</code>) and verified healthy via live cluster telemetry.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Rollback Action Controls (When in terminal or verified state, and rollback is available) */}
+          {canEdit &&
+            (remediation.status === 'VERIFIED_RESOLVED' ||
+              remediation.status === 'VERIFICATION_FAILED' ||
+              remediation.status === 'FAILED') &&
+            (remediation.rollbackPlan?.supported !== false &&
+              (remediation.rollbackPlan?.rollbackValue || remediation.parameters?.currentImage)) && (
+              <div className="p-3.5 rounded-lg bg-zinc-950/90 border border-amber-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-0.5 min-w-0">
+                  <span className="text-xs font-bold text-zinc-100 flex items-center gap-1.5">
+                    <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                    Safe Rollback Available
+                  </span>
+                  <p className="text-[11px] text-zinc-400 font-sans">
+                    Pre-action state recorded: Revert image to{' '}
+                    <code className="text-amber-300 font-mono">
+                      {remediation.rollbackPlan?.rollbackValue || remediation.parameters.currentImage}
+                    </code>
+                    . Verification will ensure pre-action readiness.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRollback}
+                    disabled={actionLoading}
+                    icon={<RotateCcw className="w-3.5 h-3.5 text-amber-400" />}
+                    className="text-xs text-amber-300 border-amber-800/80 hover:bg-amber-950/40 hover:border-amber-700"
+                  >
+                    {actionLoading ? 'Dispatching Rollback...' : 'Rollback Remediation'}
+                  </Button>
+                </div>
+              </div>
+            )}
         </div>
       )}
 

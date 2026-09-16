@@ -45,7 +45,8 @@ import {
   TicketCategory,
   TicketSeverity,
   TicketStatus,
-  OrgUsageMetrics
+  OrgUsageMetrics,
+  MetricsServerStatus
 } from '../src/types/index';
 import { TelemetryStore } from './telemetry_store';
 import { AGENT_VERSION } from '../src/config/version';
@@ -1882,7 +1883,9 @@ export class DataStore {
         rem.clusterId === clusterId &&
         (rem.status === 'DISPATCHED' || rem.status === 'EXECUTED' || rem.status === 'VERIFYING')
       ) {
-        const action = [...this.remediationActions.values()].find((a) => a.incidentId === rem.incidentId);
+        const action = [...this.remediationActions.values()]
+          .filter((a) => a.incidentId === rem.incidentId)
+          .sort((a, b) => b.createdAt - a.createdAt)[0];
         if (action?.status === 'FAILED') {
           rem.status = 'FAILED';
           rem.updatedAt = Date.now();
@@ -1934,18 +1937,21 @@ export class DataStore {
               matchingResource.health === 'HEALTHY');
 
           if (isHealthy) {
-            rem.status = 'VERIFIED_RESOLVED';
+            const isRollback = action.rollbackPlan?.supported === false;
+            rem.status = isRollback ? 'ROLLED_BACK' : 'VERIFIED_RESOLVED';
             rem.updatedAt = Date.now();
             rem.verification = {
               verifiedAt: Date.now(),
               status: 'VERIFIED_RESOLVED',
-              observedState: `Workload ${rem.targetResource.name} container ${rem.parameters.containerName} is healthy and running with verified image ${rem.parameters.proposedImage}.`,
+              observedState: isRollback
+                ? `Workload ${rem.targetResource.name} container ${rem.parameters.containerName} is healthy and running with restored image ${rem.parameters.proposedImage}.`
+                : `Workload ${rem.targetResource.name} container ${rem.parameters.containerName} is healthy and running with verified image ${rem.parameters.proposedImage}.`,
               details: 'Authoritative telemetry verified zero ImagePull errors and normal ready state.',
               checkCount: (rem.verification?.checkCount || 0) + 1
             };
 
             if (action) {
-              action.status = 'VERIFIED_RESOLVED';
+              action.status = isRollback ? 'ROLLED_BACK' : 'VERIFIED_RESOLVED';
               action.verifiedAt = Date.now();
               action.verificationResult = {
                 success: true,
@@ -1966,14 +1972,18 @@ export class DataStore {
               inc.resolution = {
                 source: 'AUTOMATIC_VERIFIED',
                 resolvedAt: inc.resolvedAt,
-                reason: `Remediation verified: ${rem.targetResource.kind} ${rem.targetResource.name} container image patched to ${rem.parameters.proposedImage}. Workload is Running & Ready.`,
+                reason: isRollback
+                  ? `Safe rollback verified: ${rem.targetResource.kind} ${rem.targetResource.name} container image restored to ${rem.parameters.proposedImage}. Workload is Running & Ready.`
+                  : `Remediation verified: ${rem.targetResource.kind} ${rem.targetResource.name} container image patched to ${rem.parameters.proposedImage}. Workload is Running & Ready.`,
                 verificationDetails: 'Observed healthy Running/Ready state from live cluster telemetry after agent execution.'
               };
               this.addTimelineEvent(inc.id, {
-                type: 'RECOVERY',
+                type: isRollback ? 'REMEDIATION_ROLLED_BACK' : 'RECOVERY',
                 actor: { type: 'AGENT', name: 'SkyOps Verification Engine' },
-                description: `Remediation verified: ${rem.targetResource.kind} ${rem.targetResource.name} container image patched to ${rem.parameters.proposedImage}. Workload is Running & Ready.`,
-                metadata: { resolutionSource: 'AUTOMATIC_VERIFIED', actionId: action?.id }
+                description: isRollback
+                  ? `Safe rollback verified: ${rem.targetResource.kind} ${rem.targetResource.name} container image restored to ${rem.parameters.proposedImage}. Workload is Running & Ready.`
+                  : `Remediation verified: ${rem.targetResource.kind} ${rem.targetResource.name} container image patched to ${rem.parameters.proposedImage}. Workload is Running & Ready.`,
+                metadata: { resolutionSource: 'AUTOMATIC_VERIFIED', actionId: action?.id, isRollback }
               });
             }
           } else {
@@ -1998,6 +2008,14 @@ export class DataStore {
                   evidence: [targetContainer?.waiting?.message || 'Container failed to enter Ready/Running state']
                 };
               }
+
+              this.addTimelineEvent(rem.incidentId, {
+                type: 'REMEDIATION_VERIFICATION_FAILED',
+                actor: { type: 'AGENT', name: 'SkyOps Verification Engine' },
+                description: `Remediation verification failed: target container entered error state (${targetContainer?.waiting?.reason || 'Timed out'}). Pre-action configuration is preserved. Safe rollback available.`,
+                metadata: { actionId: action?.id, failureReason: targetContainer?.waiting?.reason || 'Timed out' }
+              });
+
               const failures = this.recordIncidentFailure(rem.incidentId);
               const policy = this.getRemediationPolicy(action?.orgId || '', clusterId);
               if (failures >= policy.maxAttemptsPerIncident) {
@@ -2592,6 +2610,7 @@ export class DataStore {
     rem.clusterId = incident.clusterId;
     rem.clusterName = cluster?.name || incident.clusterName;
     rem.updatedAt = now;
+    rem.rollbackPlan = action.rollbackPlan;
     rem.approval = {
       approvedBy: {
         userId: approver.id,
@@ -2651,6 +2670,136 @@ export class DataStore {
       type: 'STATE_CHANGE',
       actor: { type: 'USER', id: rejecter.id, name: rejecter.name },
       description: `AI Remediation Declined by ${rejecter.name}${reason ? `: ${reason}` : '.'}`
+    });
+
+    this.saveSnapshot();
+    return rem;
+  }
+
+  public rollbackRemediation(
+    incidentId: string,
+    orgId: string,
+    operator: { id: string; name: string; email?: string },
+    reason?: string
+  ): StructuredRemediation {
+    const incident = this.incidents.get(incidentId);
+    if (!incident || incident.orgId !== orgId) {
+      throw new Error('Incident not found or unauthorized');
+    }
+
+    const rem = this.remediations.get(incidentId);
+    if (!rem) {
+      throw new Error(`No remediation proposal found for incident ${incidentId}`);
+    }
+
+    const previousActions = [...this.remediationActions.values()]
+      .filter((a) => a.incidentId === incidentId)
+      .sort((a, b) => b.createdAt - a.createdAt);
+    const lastAction = previousActions[0];
+
+    if (!lastAction) {
+      throw new Error('Rollback unavailable: No prior remediation action was executed for this incident.');
+    }
+
+    if (!lastAction.rollbackPlan || !lastAction.rollbackPlan.supported || !lastAction.rollbackPlan.rollbackValue) {
+      throw new Error('Rollback unavailable: Pre-action configuration is unrecorded or this action does not support automated rollback.');
+    }
+
+    const rollbackTargetImage = lastAction.rollbackPlan.rollbackValue;
+    const currentFailingImage = lastAction.proposedValue || rem.parameters.proposedImage;
+
+    // Automated execution is strictly constrained to supported Kubernetes mutation: ReplacePodImage
+    if (incident.resourceKind !== 'Pod') {
+      throw new Error(`Rollback unavailable: Resource kind "${incident.resourceKind}" is not supported for automated rollback. Only Pods can be mutated safely.`);
+    }
+
+    // Strictly forbid automated mutations on controller-managed Pods
+    const clusterRes = this.resources.get(incident.clusterId) || [];
+    const targetRes = clusterRes.find(
+      (r) =>
+        r.kind.toLowerCase() === 'pod' &&
+        (r.namespace || 'default').toLowerCase() === incident.namespace.toLowerCase() &&
+        r.name.toLowerCase() === incident.resourceName.toLowerCase()
+    );
+    const ownerRefs =
+      (targetRes?.ownerReferences && targetRes.ownerReferences.length > 0)
+        ? targetRes.ownerReferences
+        : (Array.isArray((incident.technicalDetails as any)?.ownerReferences) && (incident.technicalDetails as any).ownerReferences.length > 0)
+        ? (incident.technicalDetails as any).ownerReferences
+        : [];
+
+    if (ownerRefs.length > 0) {
+      const ownerList = ownerRefs.map((o: any) => o.kind || 'Controller').join(', ');
+      throw new Error(`Rollback unavailable: Pod "${incident.resourceName}" is managed by controller (${ownerList}). In-cluster agent strictly refuses to mutate controller-managed pods directly. Update the parent controller manifest instead.`);
+    }
+
+    const cluster = this.clusters.get(incident.clusterId);
+    const now = Date.now();
+    const policy = this.getRemediationPolicy(orgId, incident.clusterId);
+
+    // Register canonical RemediationAction for the rollback
+    const rollbackAction = this.createCanonicalRemediationAction({
+      incident,
+      containerName: lastAction.target.container || rem.parameters.containerName,
+      expectedCurrentValue: currentFailingImage,
+      proposedValue: rollbackTargetImage,
+      requestedBy: { type: 'USER', id: operator.id, name: operator.name },
+      approver: operator,
+      riskLevel: 'LOW',
+      policy
+    });
+    // Mark as terminal rollback action to avoid infinite rollback loops
+    rollbackAction.rollbackPlan = {
+      supported: false,
+      strategy: 'Terminal rollback action',
+      rollbackValue: ''
+    };
+
+    this.remediationActions.set(rollbackAction.id, rollbackAction);
+    this.recordClusterAction(incident.clusterId);
+
+    rem.status = 'DISPATCHED';
+    rem.orgId = orgId;
+    rem.clusterId = incident.clusterId;
+    rem.clusterName = cluster?.name || incident.clusterName;
+    rem.updatedAt = now;
+    rem.rollbackPlan = {
+      supported: false,
+      strategy: 'Rollback in progress; terminal reversal action',
+      rollbackValue: ''
+    };
+    rem.parameters.currentImage = currentFailingImage;
+    rem.parameters.proposedImage = rollbackTargetImage;
+    if (rem.changePreview) {
+      rem.changePreview.currentValue = currentFailingImage;
+      rem.changePreview.proposedValue = rollbackTargetImage;
+    }
+    rem.execution = {
+      dispatchedAt: now,
+      status: 'PENDING',
+      message: `Dispatched safe rollback action: reverting container image back to previous known value (${rollbackTargetImage}) on cluster "${cluster?.name || incident.clusterName}"`
+    };
+    rem.verification = {
+      status: 'PENDING',
+      checkCount: 0,
+      observedState: `Awaiting rollback execution and fresh telemetry confirmation of ${rollbackTargetImage}`
+    };
+
+    incident.status = 'IN_PROGRESS';
+    incident.updatedAt = now;
+
+    this.addTimelineEvent(incidentId, {
+      type: 'REMEDIATION_ROLLBACK_DISPATCHED',
+      actor: { type: 'USER', id: operator.id, name: operator.name },
+      description: `Remediation Rollback Initiated by ${operator.name}: Dispatched ReplacePodImage to revert container image back to previous known state (${rollbackTargetImage}). Reason: ${reason || 'Operator requested safe rollback.'}`,
+      metadata: {
+        rollbackActionId: rollbackAction.id,
+        previousActionId: lastAction.id,
+        fieldPath: rollbackAction.fieldPath,
+        before: currentFailingImage,
+        revertedTo: rollbackTargetImage,
+        reason: reason || 'Rollback triggered'
+      }
     });
 
     this.saveSnapshot();
@@ -3508,6 +3657,113 @@ export class DataStore {
     const cluster = this.getCluster(clusterId, orgId);
     if (!cluster) return null;
     return this.telemetryStore.calculateBaseline(clusterId, range);
+  }
+
+  public getMetricsServerStatus(clusterId: string, orgId?: string): MetricsServerStatus | null {
+    const cluster = this.getCluster(clusterId, orgId);
+    if (!cluster) return null;
+
+    const resources = this.getClusterResources(clusterId, orgId);
+    
+    // Check if any pod or deployment matches metrics-server
+    const hasMetricsServerDeployment = resources.some(
+      (r) => r.name.toLowerCase().includes('metrics-server')
+    );
+
+    const metrics = this.getClusterObservabilityMetrics(clusterId, orgId);
+    const isActive = !!(metrics && metrics.isUsageAvailable);
+    const isInstalled = hasMetricsServerDeployment || isActive;
+
+    let status: 'ACTIVE' | 'INSTALLED_NOT_REPORTING' | 'NOT_INSTALLED' = 'NOT_INSTALLED';
+    if (isActive) {
+      status = 'ACTIVE';
+    } else if (isInstalled) {
+      status = 'INSTALLED_NOT_REPORTING';
+    }
+
+    const now = Date.now();
+    const isConnected = cluster.agentStatus === 'CONNECTED' && (now - (cluster.lastHeartbeat || 0)) < 60000;
+    
+    // Version compatibility check (K8s >= 1.21)
+    let versionCompatible = true;
+    if (cluster.k8sVersion) {
+      const match = cluster.k8sVersion.match(/v?(\d+)\.(\d+)/);
+      if (match) {
+        const major = parseInt(match[1], 10);
+        const minor = parseInt(match[2], 10);
+        if (major < 1 || (major === 1 && minor < 21)) {
+          versionCompatible = false;
+        }
+      }
+    }
+
+    const diagnostics: string[] = [];
+    if (!isConnected) {
+      diagnostics.push('SkyOps agent is currently disconnected or stale. Reconnect the agent before verifying metrics.');
+    }
+    if (!versionCompatible) {
+      diagnostics.push(`Cluster version ${cluster.k8sVersion} is below the supported v1.21 threshold for modern Metrics Server.`);
+    }
+    if (status === 'INSTALLED_NOT_REPORTING') {
+      diagnostics.push('metrics-server deployment detected in cluster, but metrics.k8s.io API is not returning usage metrics.');
+      diagnostics.push('For local or self-signed clusters (Kind, Minikube, K3s, Docker Desktop), metrics-server requires --kubelet-insecure-tls flag to bypass certificate validation.');
+      diagnostics.push('Verify that metrics-server pod is in Running state and not crashlooping.');
+    } else if (status === 'NOT_INSTALLED') {
+      diagnostics.push('No metrics-server deployment or pods found in cluster namespaces (e.g. kube-system).');
+      diagnostics.push('Install Metrics Server to unlock live pod/node CPU & memory usage telemetry and Horizontal Pod Autoscaling (HPA).');
+    }
+
+    const kubectlCommand = 'kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml';
+    const kubectlInsecureTlsCommand = `kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml\nkubectl patch deployment metrics-server -n kube-system --type='json' -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'`;
+    const helmCommand = `helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/\nhelm repo update\nhelm upgrade --install metrics-server metrics-server/metrics-server -n kube-system`;
+
+    return {
+      clusterId: cluster.id,
+      clusterName: cluster.name,
+      isInstalled,
+      isActive,
+      status,
+      clusterVersion: cluster.k8sVersion || 'v1.31.0',
+      preflight: {
+        connected: isConnected,
+        versionCompatible,
+        rbacReady: true
+      },
+      commands: {
+        kubectl: kubectlCommand,
+        kubectlInsecureTls: kubectlInsecureTlsCommand,
+        helm: helmCommand
+      },
+      diagnostics
+    };
+  }
+
+  public verifyMetricsServer(
+    clusterId: string,
+    orgId?: string
+  ): { success: boolean; status: MetricsServerStatus; message: string } | null {
+    const cluster = this.getCluster(clusterId, orgId);
+    if (!cluster) return null;
+
+    // Invalidate cached metrics so fresh calculation runs
+    this.clusterMetrics.delete(clusterId);
+    const status = this.getMetricsServerStatus(clusterId, orgId);
+    if (!status) return null;
+
+    let message = '';
+    if (status.isActive) {
+      message = 'Metrics Server is verified and telemetry is actively flowing from metrics.k8s.io.';
+    } else if (status.isInstalled) {
+      message = 'Metrics Server pod was detected in the cluster, but metrics.k8s.io has not yet reported usage metrics. Allow 30-60 seconds for scraping or check pod logs.';
+    } else {
+      message = 'Metrics Server deployment was not detected in the cluster. Run the kubectl or helm command to install it.';
+    }
+
+    return {
+      success: status.isActive,
+      status,
+      message
+    };
   }
 
   public getClusterMetricHistory(clusterId: string, orgId?: string, range: string = '1h'): MetricHistoryPoint[] {

@@ -33,7 +33,7 @@ export function redactSensitiveLogData(text: string): string {
 
   // 5. Redact Key-value credential patterns (e.g. password=..., secret=..., token=..., apiKey=...)
   redacted = redacted.replace(
-    /(['"]?(?:password|passwd|pwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token|private[_-]?key|client[_-]?secret)['"]?\s*[:=]\s*['"]?)([^'"\s,;]+)(['"]?)/gi,
+    /(['"]?(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?token|auth[_-]?token|private[_-]?key|client[_-]?secret)['"]?\s*[:=]\s*['"]?)(?!\s*\[REDACTED)([^'"\s,;]+)(['"]?)/gi,
     '$1[REDACTED]$3'
   );
 

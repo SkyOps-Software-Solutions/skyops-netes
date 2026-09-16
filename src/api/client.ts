@@ -32,7 +32,8 @@ import {
   TelemetryQueryOptions,
   ResourceBaseline,
   TelemetryAnomaly,
-  InvestigationQuestionResult
+  InvestigationQuestionResult,
+  MetricsServerStatus
 } from '../types/index';
 
 /**
@@ -545,6 +546,19 @@ class ApiClient {
     return Array.isArray(data.anomalies) ? data.anomalies : [];
   }
 
+  // --- Metrics Server Enablement & Verification ---
+  async getMetricsServerStatus(clusterId: string): Promise<MetricsServerStatus> {
+    const data = await this.request<{ status: MetricsServerStatus }>(`/api/v1/clusters/${clusterId}/metrics-server`);
+    return data.status;
+  }
+
+  async verifyMetricsServer(clusterId: string): Promise<{ success: boolean; status: MetricsServerStatus; message: string }> {
+    return this.request<{ success: boolean; status: MetricsServerStatus; message: string }>(
+      `/api/v1/clusters/${clusterId}/metrics-server/verify`,
+      { method: 'POST' }
+    );
+  }
+
   // --- First-Class Kubernetes Events Observability ---
   async getClusterEvents(
     clusterId: string,
@@ -685,6 +699,19 @@ class ApiClient {
   ): Promise<{ success: boolean; message: string; remediation: StructuredRemediation }> {
     return this.request<{ success: boolean; message: string; remediation: StructuredRemediation }>(
       `/api/v1/incidents/${id}/remediation/reject`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      }
+    );
+  }
+
+  async rollbackRemediation(
+    id: string,
+    reason?: string
+  ): Promise<{ success: boolean; message: string; remediation: StructuredRemediation }> {
+    return this.request<{ success: boolean; message: string; remediation: StructuredRemediation }>(
+      `/api/v1/incidents/${id}/remediation/rollback`,
       {
         method: 'POST',
         body: JSON.stringify({ reason })

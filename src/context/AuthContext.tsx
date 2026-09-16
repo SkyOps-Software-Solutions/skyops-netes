@@ -36,6 +36,9 @@ interface AuthContextType {
   canManageClusters: boolean;
   canEditIncidents: boolean;
   canDeleteClusters: boolean;
+  canApproveRemediations: boolean;
+  canManageTeam: boolean;
+  canManageOrgSettings: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -399,9 +402,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const isAuthenticated = !!firebaseUser || !!user;
-  const canManageClusters = role === 'OWNER' || role === 'ADMIN';
+  const canManageClusters = role === 'OWNER' || role === 'ADMIN' || role === 'OPERATOR' || role === 'ENGINEER';
   const canDeleteClusters = role === 'OWNER' || role === 'ADMIN';
-  const canEditIncidents = role === 'OWNER' || role === 'ADMIN' || role === 'ENGINEER';
+  const canEditIncidents = role === 'OWNER' || role === 'ADMIN' || role === 'OPERATOR' || role === 'ENGINEER';
+  const canApproveRemediations = role === 'OWNER' || role === 'ADMIN' || role === 'OPERATOR' || role === 'ENGINEER';
+  const canManageTeam = role === 'OWNER' || role === 'ADMIN';
+  const canManageOrgSettings = role === 'OWNER' || role === 'ADMIN';
 
   return (
     <AuthContext.Provider
@@ -426,7 +432,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         refreshSession,
         canManageClusters,
         canEditIncidents,
-        canDeleteClusters
+        canDeleteClusters,
+        canApproveRemediations,
+        canManageTeam,
+        canManageOrgSettings
       }}
     >
       {children}

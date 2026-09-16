@@ -194,4 +194,163 @@ describe('Observability Foundation: Logs, Events, and Deduplication', () => {
       assert.equal(historyAfter[0].memoryUsageBytes, 1024 * 1024 * 512);
     });
   });
+
+  describe('Metrics Server Observability & Enablement Workflow', () => {
+    it('detects NOT_INSTALLED status and provides preflight and command diagnostics', () => {
+      const org = store.createOrganization('MS Test Org 1', 'user-ms-test');
+      const { cluster } = store.createCluster(org.id, 'uninstrumented-cluster');
+
+      // Cluster with basic pod without metrics-server
+      const pod: KubernetesResource = {
+        id: `${cluster.id}-pod-nginx`,
+        clusterId: cluster.id,
+        kind: 'Pod',
+        name: 'nginx-1',
+        namespace: 'default',
+        status: 'Running',
+        health: 'HEALTHY',
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+      store.syncClusterResources(cluster.id, [pod]);
+
+      const status = store.getMetricsServerStatus(cluster.id, org.id);
+      assert.ok(status);
+      assert.equal(status.status, 'NOT_INSTALLED');
+      assert.equal(status.isInstalled, false);
+      assert.equal(status.isActive, false);
+      assert.ok(status.commands.kubectl.includes('kubernetes-sigs/metrics-server'));
+      assert.ok(status.commands.kubectlInsecureTls.includes('--kubelet-insecure-tls'));
+      assert.ok(status.commands.helm.includes('helm upgrade --install'));
+      assert.ok(status.diagnostics.some(d => d.includes('No metrics-server deployment')));
+
+      const verification = store.verifyMetricsServer(cluster.id, org.id);
+      assert.ok(verification);
+      assert.equal(verification.success, false);
+      assert.equal(verification.status.status, 'NOT_INSTALLED');
+    });
+
+    it('detects INSTALLED_NOT_REPORTING when metrics-server deployment is present but API is not yet reporting', () => {
+      const org = store.createOrganization('MS Test Org 2', 'user-ms-test');
+      const { cluster } = store.createCluster(org.id, 'warmup-cluster');
+
+      const metricsServerDeployment: KubernetesResource = {
+        id: `${cluster.id}-dep-metrics-server`,
+        clusterId: cluster.id,
+        kind: 'Deployment',
+        name: 'metrics-server',
+        namespace: 'kube-system',
+        status: 'Active',
+        health: 'HEALTHY',
+        createdAt: Date.now() - 30000,
+        updatedAt: Date.now()
+      };
+      store.syncClusterResources(cluster.id, [metricsServerDeployment]);
+
+      const status = store.getMetricsServerStatus(cluster.id, org.id);
+      assert.ok(status);
+      assert.equal(status.isInstalled, true);
+      assert.equal(status.isActive, false);
+      assert.equal(status.status, 'INSTALLED_NOT_REPORTING');
+      assert.ok(status.diagnostics.some(d => d.includes('--kubelet-insecure-tls')));
+
+      const verification = store.verifyMetricsServer(cluster.id, org.id);
+      assert.ok(verification);
+      assert.equal(verification.success, false);
+      assert.ok(verification.message.includes('detected in the cluster'));
+    });
+
+    it('detects ACTIVE status when live usage metrics are reported', () => {
+      const org = store.createOrganization('MS Test Org 3', 'user-ms-test');
+      const { cluster } = store.createCluster(org.id, 'active-ms-cluster');
+
+      const nodeWithUsage: KubernetesResource = {
+        id: `${cluster.id}-node-1`,
+        clusterId: cluster.id,
+        kind: 'Node',
+        name: 'node-1',
+        namespace: '',
+        status: 'Ready',
+        health: 'HEALTHY',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        cpuUsage: 250,
+        memoryUsage: 1024 * 1024 * 1024
+      };
+
+      const podWithUsage: KubernetesResource = {
+        id: `${cluster.id}-pod-app-1`,
+        clusterId: cluster.id,
+        kind: 'Pod',
+        name: 'app-1',
+        namespace: 'production',
+        status: 'Running',
+        health: 'HEALTHY',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        containers: [
+          {
+            name: 'main',
+            image: 'nginx:alpine',
+            restartCount: 0,
+            ready: true,
+            state: 'running',
+            cpuUsage: '50m',
+            memoryUsage: '64Mi'
+          }
+        ]
+      };
+      store.syncClusterResources(cluster.id, [nodeWithUsage, podWithUsage]);
+
+      const status = store.getMetricsServerStatus(cluster.id, org.id);
+      assert.ok(status);
+      assert.equal(status.isActive, true);
+      assert.equal(status.status, 'ACTIVE');
+
+      const verification = store.verifyMetricsServer(cluster.id, org.id);
+      assert.ok(verification);
+      assert.equal(verification.success, true);
+      assert.ok(verification.message.includes('verified'));
+    });
+  });
+
+  describe('Pod Logs Storage & Retrieval', () => {
+    it('stores container logs and redacts sensitive tokens on retrieval', async () => {
+      const org = store.createOrganization('Logs Test Org', 'user-log-test');
+      const { cluster } = store.createCluster(org.id, 'log-cluster');
+
+      const pod: KubernetesResource = {
+        id: `${cluster.id}-pod-test-pod`,
+        clusterId: cluster.id,
+        kind: 'Pod',
+        name: 'test-pod',
+        namespace: 'default',
+        status: 'Running',
+        health: 'HEALTHY',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        containers: [
+          {
+            name: 'web',
+            image: 'nginx',
+            restartCount: 0,
+            ready: true,
+            state: 'running'
+          }
+        ]
+      };
+      store.syncClusterResources(cluster.id, [pod]);
+
+      const secretLog = '2026-09-14T10:00:00Z [INFO] Connected to db using password=SuperSecret456! with Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.xyz';
+      store.storePodLogs(cluster.id, 'default', 'test-pod', 'web', secretLog, false);
+
+      const logsRes = await store.getPodLogs(cluster.id, org.id, 'default', 'test-pod', { container: 'web', previous: false });
+      assert.ok(logsRes);
+      assert.ok(logsRes.rawText);
+      assert.ok(!logsRes.rawText.includes('SuperSecret456!'));
+      assert.ok(!logsRes.rawText.includes('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.xyz'));
+      assert.ok(logsRes.rawText.includes('password=[REDACTED]'));
+      assert.ok(logsRes.rawText.includes('Bearer [REDACTED_BEARER_TOKEN]'));
+    });
+  });
 });

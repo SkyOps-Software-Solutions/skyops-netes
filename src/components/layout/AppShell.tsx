@@ -133,6 +133,12 @@ export const AppShell: React.FC<AppShellProps> = ({
   };
 
   useEffect(() => {
+    setSelectedClusterId(null);
+    setSelectedIncidentId(null);
+    setTargetLogPod(null);
+    setClusters([]);
+    setIncidents([]);
+    setMetrics(null);
     fetchGlobalData();
     // 10-second background polling for live agent pulses and incidents
     const interval = setInterval(() => fetchGlobalData(false), 10000);

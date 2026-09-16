@@ -345,8 +345,8 @@ export class SafetyPolicyEngine {
         structuredRemediation = {
           id: `REM-${effectiveIncId}-1`,
           incidentId: effectiveIncId,
-          orgId: context?.orgId || 'org-default',
-          clusterId: context?.clusterId || 'cluster-default',
+          orgId: context?.orgId || '',
+          clusterId: context?.clusterId || '',
           clusterName: context?.clusterName || 'Kubernetes Cluster',
           status: 'PROPOSED',
           actionType,
@@ -383,8 +383,8 @@ export class SafetyPolicyEngine {
         structuredRemediation = {
           id: `REM-${effectiveIncId}-1`,
           incidentId: effectiveIncId,
-          orgId: context?.orgId || 'org-default',
-          clusterId: context?.clusterId || 'cluster-default',
+          orgId: context?.orgId || '',
+          clusterId: context?.clusterId || '',
           clusterName: context?.clusterName || 'Kubernetes Cluster',
           status: 'PROPOSED',
           actionType: 'MANUAL_INSPECTION',

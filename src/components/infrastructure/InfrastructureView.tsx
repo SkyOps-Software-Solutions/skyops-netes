@@ -438,10 +438,10 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
                           </span>
                         </td>
                         <td className="py-3 px-4 font-mono text-zinc-300">
-                          {(node.metrics as any)?.cpuUsage || (node as any).cpuAllocatable || '4 Cores'}
+                          {(node.metrics as any)?.cpuUsage || (node as any).cpuAllocatable || '—'}
                         </td>
                         <td className="py-3 px-4 font-mono text-zinc-300">
-                          {(node.metrics as any)?.memoryUsage || (node as any).memoryAllocatable || '16 GiB'}
+                          {(node.metrics as any)?.memoryUsage || (node as any).memoryAllocatable || '—'}
                         </td>
                         <td className="py-3 px-4">
                           {hasMemoryPressure || hasDiskPressure ? (
@@ -455,7 +455,7 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
                           )}
                         </td>
                         <td className="py-3 px-4 font-mono text-zinc-400 text-[11px]">
-                          linux / amd64
+                          {(node as any).osImage || (node as any).architecture || '—'}
                         </td>
                       </tr>
                     );
@@ -503,9 +503,13 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
                         <td className="py-3 px-4 font-mono text-zinc-300">{w.namespace || 'default'}</td>
                         <td className="py-3 px-4 font-mono text-zinc-400">{cluster?.name || w.clusterId}</td>
                         <td className="py-3 px-4 font-mono text-zinc-200">
-                          {(w as any).readyReplicas ?? (w as any).replicas ?? 1} / {(w as any).replicas ?? 1}
+                          {(w as any).readyReplicas !== undefined && (w as any).replicas !== undefined
+                            ? `${(w as any).readyReplicas} / ${(w as any).replicas}`
+                            : (w as any).replicas !== undefined
+                            ? `${(w as any).replicas}`
+                            : '—'}
                         </td>
-                        <td className="py-3 px-4 font-mono text-zinc-300">{w.status || 'Available'}</td>
+                        <td className="py-3 px-4 font-mono text-zinc-300">{w.status || '—'}</td>
                         <td className="py-3 px-4">
                           <span
                             className={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase font-medium ${
@@ -513,10 +517,12 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
                                 ? 'bg-red-500/10 text-red-400 border-red-500/30'
                                 : w.health === 'WARNING'
                                 ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                : w.health === 'HEALTHY'
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                : 'bg-zinc-800 text-zinc-400 border-zinc-700'
                             }`}
                           >
-                            {w.health || 'HEALTHY'}
+                            {w.health || 'UNKNOWN'}
                           </span>
                         </td>
                       </tr>
@@ -579,14 +585,14 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
                                 : 'bg-zinc-800 text-zinc-400 border-zinc-700'
                             }`}
                           >
-                            {pod.status || 'Running'}
+                            {pod.status || 'Unknown'}
                           </span>
                         </td>
                         <td className="py-3 px-4 font-mono text-zinc-300">
                           {(pod as any).restartCount || 0}
                         </td>
                         <td className="py-3 px-4 font-mono text-zinc-400 truncate max-w-[140px]">
-                          {(pod as any).nodeName || 'worker-01'}
+                          {(pod as any).nodeName || '—'}
                         </td>
                         <td className="py-3 px-4 text-right">
                           {onOpenLogs && (

@@ -203,7 +203,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
             { id: 'webhooks', label: 'Webhooks & Integrations', icon: <Webhook className="w-3.5 h-3.5" /> },
             { id: 'usage', label: 'Usage & Quotas', icon: <CreditCard className="w-3.5 h-3.5" /> },
             { id: 'system', label: 'System Health Probes', icon: <HeartPulse className="w-3.5 h-3.5" /> },
-            { id: 'testbed', label: 'Failure QA Testbed', icon: <Zap className="w-3.5 h-3.5" /> }
+            ...(import.meta.env.DEV
+              ? [{ id: 'testbed', label: 'Failure QA Testbed', icon: <Zap className="w-3.5 h-3.5" /> }]
+              : [])
           ].map((t) => (
             <button
               key={t.id}
@@ -376,8 +378,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
       {/* Tab 6: Platform Self-Observability Probes */}
       {activeTab === 'system' && <SystemHealthManager />}
 
-      {/* Tab 7: QA Scenario Testbed */}
-      {activeTab === 'testbed' && (
+      {/* Tab 7: QA Scenario Testbed (Dev Only) */}
+      {import.meta.env.DEV && activeTab === 'testbed' && (
         <div className="p-6 rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800/80 pb-3">
             <div>

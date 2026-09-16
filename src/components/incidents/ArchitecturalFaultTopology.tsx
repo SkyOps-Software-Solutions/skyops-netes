@@ -155,12 +155,16 @@ export const ArchitecturalFaultTopology: React.FC<ArchitecturalFaultTopologyProp
             ? 'Pod Unschedulable (0 Nodes Available)'
             : faultIdx < 1
             ? 'Scheduler Bypassed'
-            : `Bound to Node: ${tech.nodeName || 'worker-01'}`,
+            : tech.nodeName
+            ? `Bound to Node: ${tech.nodeName}`
+            : 'Bound to target worker node',
         roleDescription: 'Evaluates node resource headroom, taints, tolerations, and affinities to bind pods to target worker nodes.',
         observedBehavior:
           faultStageId === 'scheduling'
             ? `kube-scheduler evaluated cluster nodes but found no node satisfying memory/CPU requests or node selector constraints.`
-            : `kube-scheduler bound Pod successfully to worker node [${tech.nodeName || 'worker-01'}] with sufficient allocatable capacity.`,
+            : tech.nodeName
+            ? `kube-scheduler bound Pod successfully to worker node [${tech.nodeName}] with sufficient allocatable capacity.`
+            : 'kube-scheduler bound Pod successfully to worker node with sufficient allocatable capacity.',
         blastRadius:
           faultStageId === 'scheduling'
             ? 'Pod stuck in Pending phase. No worker node capacity allocated.'

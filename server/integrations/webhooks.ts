@@ -4,6 +4,34 @@ import path from 'path';
 import { WebhookConfig, WebhookDeliveryRecord, WebhookEventType } from '../repositories/types';
 import { jobQueue } from '../jobs/jobQueue';
 
+export function validateWebhookUrl(rawUrl: string): { valid: boolean; error?: string } {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return { valid: false, error: 'Webhook URL must use http or https protocol' };
+    }
+    const hostname = parsed.hostname.toLowerCase();
+    if (process.env.NODE_ENV === 'production') {
+      if (
+        hostname === 'localhost' ||
+        hostname === '127.0.0.1' ||
+        hostname === '::1' ||
+        hostname.startsWith('10.') ||
+        hostname.startsWith('192.168.') ||
+        hostname === '169.254.169.254' ||
+        (hostname.startsWith('172.') &&
+          parseInt(hostname.split('.')[1], 10) >= 16 &&
+          parseInt(hostname.split('.')[1], 10) <= 31)
+      ) {
+        return { valid: false, error: 'Outbound webhooks to private or internal loopback IPs are blocked for security.' };
+      }
+    }
+    return { valid: true };
+  } catch {
+    return { valid: false, error: 'Invalid webhook URL format' };
+  }
+}
+
 class WebhookService {
   private webhooks: Map<string, WebhookConfig> = new Map();
   private deliveryHistory: WebhookDeliveryRecord[] = [];
@@ -75,6 +103,11 @@ class WebhookService {
     orgId: string,
     params: { name: string; url: string; secret?: string; enabledEvents?: WebhookEventType[] }
   ): WebhookConfig {
+    const urlCheck = validateWebhookUrl(params.url);
+    if (!urlCheck.valid) {
+      throw new Error(urlCheck.error || 'Invalid webhook destination URL');
+    }
+
     const id = `wh-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
     const secret = params.secret || crypto.randomBytes(24).toString('hex');
     const enabledEvents: WebhookEventType[] = params.enabledEvents && params.enabledEvents.length > 0 ? params.enabledEvents : ['*'];
@@ -104,8 +137,15 @@ class WebhookService {
     const wh = this.getWebhook(id, orgId);
     if (!wh) return null;
 
+    if (updates.url !== undefined) {
+      const urlCheck = validateWebhookUrl(updates.url);
+      if (!urlCheck.valid) {
+        throw new Error(urlCheck.error || 'Invalid webhook destination URL');
+      }
+      wh.url = updates.url;
+    }
+
     if (updates.name !== undefined) wh.name = updates.name;
-    if (updates.url !== undefined) wh.url = updates.url;
     if (updates.secret !== undefined) wh.secret = updates.secret;
     if (updates.enabledEvents !== undefined) wh.enabledEvents = updates.enabledEvents;
     if (updates.isActive !== undefined) wh.isActive = updates.isActive;
@@ -223,6 +263,22 @@ class WebhookService {
     const bodyStr = JSON.stringify(payload);
     const signature = crypto.createHmac('sha256', wh.secret).update(bodyStr).digest('hex');
     const startTime = Date.now();
+
+    const urlCheck = validateWebhookUrl(wh.url);
+    if (!urlCheck.valid) {
+      return {
+        id: deliveryId,
+        webhookId: wh.id,
+        orgId: wh.orgId,
+        event,
+        payload,
+        durationMs: 0,
+        attempts: 1,
+        success: false,
+        error: urlCheck.error || 'Blocked by SSRF protection',
+        timestamp: Date.now()
+      };
+    }
 
     try {
       const controller = new AbortController();

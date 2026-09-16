@@ -351,13 +351,15 @@ export const AuthView: React.FC<AuthViewProps> = ({
                   <label className="block text-xs font-mono font-medium text-zinc-300">
                     Work Email <span className="text-rose-400">*</span>
                   </label>
-                  <button
-                    type="button"
-                    onClick={handleFillTestAccount}
-                    className="text-[10px] font-mono text-sky-400 hover:text-sky-300 transition-colors"
-                  >
-                    Auto-fill demo credentials
-                  </button>
+                  {import.meta.env.DEV && (
+                    <button
+                      type="button"
+                      onClick={handleFillTestAccount}
+                      className="text-[10px] font-mono text-sky-400 hover:text-sky-300 transition-colors"
+                    >
+                      Auto-fill demo credentials
+                    </button>
+                  )}
                 </div>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-zinc-500 absolute left-3 top-2.5" />
@@ -436,7 +438,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 )}
               </button>
 
-              {mode !== 'forgot' && (
+              {import.meta.env.DEV && mode !== 'forgot' && (
                 <button
                   type="button"
                   id="auth-instant-demo-btn"
@@ -445,7 +447,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                   className="w-full py-2 px-3 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 font-mono text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
                 >
                   <Server className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Instant Demo Workspace Access (1-Click)</span>
+                  <span>Instant Demo Workspace Access (1-Click Dev)</span>
                 </button>
               )}
             </form>

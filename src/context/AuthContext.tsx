@@ -212,6 +212,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signInWithDemo = async (email = 'dhandesaurav52@gmail.com', name = 'Alex Rivera (Staff SRE)', orgName?: string) => {
+    if (import.meta.env.PROD) {
+      throw new Error('Demo authentication is disabled in production environments.');
+    }
     try {
       setError(null);
       setLoading(true);
@@ -247,19 +250,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
       } catch (fbErr: any) {
-        // If Firebase Email/Password provider is disabled in Firebase Console, fallback to workspace session
+        // If Firebase Email/Password provider is disabled in Firebase Console, fallback to workspace session in dev only
         if (
           fbErr?.code === 'auth/operation-not-allowed' ||
           fbErr?.message?.includes('operation-not-allowed') ||
           fbErr?.message?.includes('auth/operation-not-allowed')
         ) {
-          console.info('[SkyOps Auth] Firebase Email/Password is not enabled in Firebase Console. Establishing secure workspace session.');
-          const cleanEmail = email.trim();
-          const cleanName = cleanEmail.split('@')[0] || 'SkyOps Engineer';
-          const demoToken = `sky_demo_sre_OWNER_${encodeURIComponent(cleanEmail)}_${encodeURIComponent(cleanName)}`;
-          localStorage.setItem('skyops_demo_token', demoToken);
-          await refreshSession();
-          return;
+          if (import.meta.env.DEV) {
+            console.info('[SkyOps Auth] Firebase Email/Password is not enabled in Firebase Console. Establishing dev workspace session.');
+            const cleanEmail = email.trim();
+            const cleanName = cleanEmail.split('@')[0] || 'SkyOps Engineer';
+            const demoToken = `sky_demo_sre_OWNER_${encodeURIComponent(cleanEmail)}_${encodeURIComponent(cleanName)}`;
+            localStorage.setItem('skyops_demo_token', demoToken);
+            await refreshSession();
+            return;
+          }
+          throw new Error('Email/Password sign-in is not enabled in the Firebase project console. Please sign in with Google or enable Email/Password provider in the Firebase Authentication console.');
         }
         throw fbErr;
       }
@@ -313,27 +319,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
       } catch (fbErr: any) {
-        // If Firebase Email/Password provider is disabled in Firebase Console, fallback to workspace session
+        // If Firebase Email/Password provider is disabled in Firebase Console, fallback to workspace session in dev only
         if (
           fbErr?.code === 'auth/operation-not-allowed' ||
           fbErr?.message?.includes('operation-not-allowed') ||
           fbErr?.message?.includes('auth/operation-not-allowed')
         ) {
-          console.info('[SkyOps Auth] Firebase Email/Password is not enabled in Firebase Console. Initializing workspace session.');
-          const cleanEmail = email.trim();
-          const cleanName = displayName?.trim() || cleanEmail.split('@')[0] || 'SkyOps Engineer';
-          const demoToken = `sky_demo_sre_OWNER_${encodeURIComponent(cleanEmail)}_${encodeURIComponent(cleanName)}`;
-          localStorage.setItem('skyops_demo_token', demoToken);
-          await refreshSession();
+          if (import.meta.env.DEV) {
+            console.info('[SkyOps Auth] Firebase Email/Password is not enabled in Firebase Console. Initializing dev workspace session.');
+            const cleanEmail = email.trim();
+            const cleanName = displayName?.trim() || cleanEmail.split('@')[0] || 'SkyOps Engineer';
+            const demoToken = `sky_demo_sre_OWNER_${encodeURIComponent(cleanEmail)}_${encodeURIComponent(cleanName)}`;
+            localStorage.setItem('skyops_demo_token', demoToken);
+            await refreshSession();
 
-          if (orgName && orgName.trim()) {
-            try {
-              await createOrganization(orgName.trim());
-            } catch (orgErr) {
-              console.warn('Initial organization creation notice:', orgErr);
+            if (orgName && orgName.trim()) {
+              try {
+                await createOrganization(orgName.trim());
+              } catch (orgErr) {
+                console.warn('Initial organization creation notice:', orgErr);
+              }
             }
+            return;
           }
-          return;
+          throw new Error('Email/Password account creation is not enabled in the Firebase project console. Please sign in with Google or enable Email/Password provider in the Firebase Authentication console.');
         }
         throw fbErr;
       }

@@ -250,8 +250,8 @@ export class DataStore {
    * Seed optional non-production developer fixtures if running locally
    */
   private seedDevFixtures() {
-    // Only in explicit development mode
-    if (process.env.NODE_ENV === 'production') return;
+    // Only in explicit development mode with simulation explicitly enabled
+    if (process.env.NODE_ENV === 'production' || process.env.ENABLE_DEV_SIMULATION !== 'true') return;
 
     const devOrgId = 'org-dev-sandbox';
     const devOrg: Organization = {
@@ -2908,6 +2908,11 @@ export class DataStore {
   }
 
   public ensureDefaultClusterResources(cluster: Cluster): KubernetesResource[] {
+    // Production runtime must NEVER inject hardcoded cluster resources
+    if (process.env.NODE_ENV === 'production' || process.env.ENABLE_DEV_SIMULATION !== 'true' || !cluster.isSimulated) {
+      return this.resources.get(cluster.id) || [];
+    }
+
     const clusterId = cluster.id;
     const now = Date.now();
     const existing = this.resources.get(clusterId) || [];

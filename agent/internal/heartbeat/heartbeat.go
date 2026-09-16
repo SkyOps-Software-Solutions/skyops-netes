@@ -49,7 +49,7 @@ func NewService(cfg *config.Config, client *transport.Client) *Service {
 		k8sVersion:        "",
 		startTime:         time.Now(),
 		metrics:           metrics.Default,
-		state:             StateConnected,
+		state:             StateReconnecting,
 		reconnectAttempts: 0,
 	}
 }
@@ -243,4 +243,3 @@ func (s *Service) send(ctx context.Context) {
 		}
 	}
 }
-

@@ -63,6 +63,39 @@ test('DataStore Multi-Tenant & Agent Lifecycle Suite', async (t) => {
     assert.equal(afterHeartbeat?.podCount, 45);
   });
 
+  await t.test('Authenticated telemetry recovers stale connection state', () => {
+    const { cluster } = store.createCluster(org.id, 'telemetry-recovery');
+    const staleCluster = store.getClusterByIdInternal(cluster.id)!;
+    staleCluster.lastHeartbeat = Date.now() - 240_000;
+    staleCluster.lastHeartbeatAt = staleCluster.lastHeartbeat;
+    staleCluster.agentStatus = 'OFFLINE';
+    staleCluster.connectionState = 'offline';
+    staleCluster.connectionStatus = 'disconnected';
+    staleCluster.status = 'AGENT_OFFLINE';
+
+    store.syncClusterResources(cluster.id, [{
+      id: `${cluster.id}-pod-recovery`,
+      clusterId: cluster.id,
+      kind: 'Pod',
+      name: 'recovery-pod',
+      namespace: 'default',
+      status: 'Running',
+      health: 'HEALTHY',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      specSummary: {},
+      statusSummary: {},
+      containers: [{ name: 'app', image: 'example/app:1', ready: true, state: 'running', restartCount: 0 }]
+    }]);
+
+    const recovered = store.getClusterByIdInternal(cluster.id)!;
+    assert.equal(recovered.agentStatus, 'CONNECTED');
+    assert.equal(recovered.connectionState, 'connected');
+    assert.equal(recovered.connectionStatus, 'connected');
+    assert.equal(recovered.status, 'HEALTHY');
+    assert.ok(recovered.lastHeartbeat! > Date.now() - 5_000);
+  });
+
   await t.test('Multi-cluster isolation prevents cross-cluster data leakage', () => {
     const { cluster: clusterA, rawToken: tokenA } = store.createCluster(org.id, 'cluster-alpha');
     const { cluster: clusterB, rawToken: tokenB } = store.createCluster(org.id, 'cluster-beta');

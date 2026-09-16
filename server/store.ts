@@ -1552,8 +1552,10 @@ export class DataStore {
 
     const now = Date.now();
     cluster.lastSeenAt = now;
-    cluster.lastHeartbeat = cluster.lastHeartbeat || now;
-    cluster.lastHeartbeatAt = cluster.lastHeartbeatAt || now;
+    // Authenticated telemetry is a live connection signal. Refresh heartbeat
+    // timestamps so telemetry recovery clears stale/offline state.
+    cluster.lastHeartbeat = now;
+    cluster.lastHeartbeatAt = now;
     cluster.connectedAt = cluster.connectedAt || now;
     cluster.agentStatus = 'CONNECTED';
     cluster.connectionState = 'connected';

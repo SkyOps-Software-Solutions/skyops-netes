@@ -466,7 +466,7 @@ test('DataStore Multi-Tenant & Agent Lifecycle Suite', async (t) => {
     assert.equal(otherOrgDetail, null, 'Must not return incident for non-member tenant');
   });
 
-  test('SkyOps agent launch does not create false positive DeploymentDegraded incidents', () => {
+  await t.test('SkyOps agent launch does not create false positive DeploymentDegraded incidents', () => {
     const store = new DataStore();
     const org = store.createOrganization('Agent Launch Corp', 'agent-launch');
     const { cluster } = store.createCluster(org.id, 'Prod EKS', 'eks');
@@ -496,5 +496,168 @@ test('DataStore Multi-Tenant & Agent Lifecycle Suite', async (t) => {
     // Verify zero incidents were created for the agent launch
     const incidents = store.getIncidents(org.id);
     assert.equal(incidents.length, 0, 'Agent launch must not create customer incident tickets');
+  });
+
+  await t.test('Phase 1.1: Agent Identity Stability: Pod restart and reconnect does not create duplicate clusters', () => {
+    const store = new DataStore();
+    const org = store.createOrganization('Stability Corp', 'stability-corp');
+    const { cluster, rawToken } = store.createCluster(org.id, 'Production US-East', 'Primary production cluster');
+
+    const initialClusters = store.getClusters(org.id);
+    assert.equal(initialClusters.length, 1);
+    assert.equal(initialClusters[0].id, cluster.id);
+
+    // Initial registration of agent (Pod 1: skyops-agent-1a2b)
+    const reg1 = store.registerAgent(cluster.id, 'v1.5.0', 'v1.29.2');
+    assert.equal(reg1.clusterId, cluster.id);
+
+    // Pod 1 sends heartbeats and telemetry
+    store.recordAgentHeartbeat(cluster.id, 'v1.5.0', 'v1.29.2', 10, 45);
+    const postHeartbeat = store.getCluster(cluster.id, org.id)!;
+    assert.equal(postHeartbeat.connectionState, 'connected');
+    assert.equal(postHeartbeat.agentStatus, 'CONNECTED');
+
+    // Simulate Pod 1 terminating and new Pod 2 starting (skyops-agent-9z8y) using mounted Secret
+    // Pod 2 registers with the same cluster ID and token
+    const reg2 = store.registerAgent(cluster.id, 'v1.5.0', 'v1.29.2');
+    assert.equal(reg2.clusterId, cluster.id);
+
+    // Pod 2 sends heartbeats
+    store.recordAgentHeartbeat(cluster.id, 'v1.5.0', 'v1.29.2', 10, 48);
+
+    // Verify cluster list still contains strictly 1 cluster with preserved identity
+    const afterRestartClusters = store.getClusters(org.id);
+    assert.equal(afterRestartClusters.length, 1, 'Pod restart must never create a duplicate cluster');
+    assert.equal(afterRestartClusters[0].id, cluster.id);
+    assert.equal(afterRestartClusters[0].connectionState, 'connected');
+    assert.equal(afterRestartClusters[0].podCount, 48);
+  });
+
+  await t.test('Phase 1.1: Dynamic Connection State Transitions: Connected -> Reconnecting -> Stale -> Offline -> Recovered', () => {
+    const store = new DataStore();
+    const org = store.createOrganization('Lifecycle Corp', 'lifecycle-corp');
+    const { cluster } = store.createCluster(org.id, 'Staging Cluster', 'Staging');
+
+    // Agent registers and sends heartbeat at t0
+    const t0 = 1700000000000;
+    store.registerAgent(cluster.id, 'v1.5.0', 'v1.29.0');
+    store.recordAgentHeartbeat(cluster.id, 'v1.5.0', 'v1.29.0', 3, 12);
+
+    const activeCluster = store.getClusterByIdInternal(cluster.id)!;
+    activeCluster.lastHeartbeat = t0;
+    activeCluster.lastHeartbeatAt = t0;
+
+    // 1. Within 30s -> Connected
+    store.reconcileClusterConnectionState(activeCluster, t0 + 30 * 1000);
+    assert.equal(activeCluster.connectionState, 'connected');
+    assert.equal(activeCluster.agentStatus, 'CONNECTED');
+    assert.equal(activeCluster.connectionStatus, 'connected');
+
+    // 2. At 60s (>45s) -> Reconnecting
+    store.reconcileClusterConnectionState(activeCluster, t0 + 60 * 1000);
+    assert.equal(activeCluster.connectionState, 'reconnecting');
+    assert.equal(activeCluster.agentStatus, 'RECONNECTING');
+    assert.equal(activeCluster.connectionStatus, 'reconnecting');
+
+    // 3. At 120s (>90s) -> Stale
+    store.reconcileClusterConnectionState(activeCluster, t0 + 120 * 1000);
+    assert.equal(activeCluster.connectionState, 'stale');
+    assert.equal(activeCluster.agentStatus, 'STALE');
+    assert.equal(activeCluster.connectionStatus, 'stale');
+
+    // 4. At 200s (>180s) -> Offline
+    store.reconcileClusterConnectionState(activeCluster, t0 + 200 * 1000);
+    assert.equal(activeCluster.connectionState, 'offline');
+    assert.equal(activeCluster.agentStatus, 'OFFLINE');
+    assert.equal(activeCluster.connectionStatus, 'disconnected');
+    assert.equal(activeCluster.status, 'AGENT_OFFLINE');
+
+    // 5. Querying cluster via getCluster dynamically reflects the real-time state
+    const retrieved = store.getCluster(cluster.id, org.id)!;
+    assert.equal(retrieved.connectionState, 'offline');
+    assert.equal(retrieved.agentStatus, 'OFFLINE');
+
+    // 6. Network recovers: agent sends heartbeat -> immediately returns to Connected
+    store.recordAgentHeartbeat(cluster.id, 'v1.5.0', 'v1.29.0', 3, 12);
+    const recovered = store.getCluster(cluster.id, org.id)!;
+    assert.equal(recovered.connectionState, 'connected');
+    assert.equal(recovered.agentStatus, 'CONNECTED');
+    assert.equal(recovered.connectionStatus, 'connected');
+    assert.equal(recovered.status, 'HEALTHY');
+  });
+
+  await t.test('Phase 1.1: Pod Lifecycle vs Agent Connectivity Truthfulness', () => {
+    const store = new DataStore();
+    const org = store.createOrganization('Truth Corp', 'truth-corp');
+    const { cluster } = store.createCluster(org.id, 'Workload Heavy Cluster');
+
+    store.registerAgent(cluster.id, 'v1.5.0', 'v1.29.0');
+
+    // Customer workloads are synced (5 pods running in cluster)
+    const customerPods: KubernetesResource[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `${cluster.id}-pod-default-service-${i}`,
+      clusterId: cluster.id,
+      kind: 'Pod',
+      name: `service-pod-${i}`,
+      namespace: 'default',
+      status: 'Running',
+      health: 'HEALTHY',
+      createdAt: Date.now() - 10000,
+      updatedAt: Date.now(),
+      specSummary: {},
+      statusSummary: {},
+      containers: [{ name: 'app', image: 'app:1.0', ready: true, state: 'running', restartCount: 0 }]
+    }));
+    store.syncClusterResources(cluster.id, customerPods);
+
+    // Verify workload resources exist in cluster
+    const resources = store.getClusterResources(cluster.id, org.id);
+    assert.equal(resources.length, 5);
+
+    // Simulate agent pod network partition (heartbeats stop for 4 minutes)
+    const clusterInternal = store.getClusterByIdInternal(cluster.id)!;
+    clusterInternal.lastHeartbeat = Date.now() - 240 * 1000;
+
+    // Backend must truthfully reflect that agent connectivity is OFFLINE, even though customer pods exist
+    const checked = store.getCluster(cluster.id, org.id)!;
+    assert.equal(checked.connectionState, 'offline');
+    assert.equal(checked.agentStatus, 'OFFLINE');
+    assert.equal(checked.status, 'AGENT_OFFLINE');
+
+    // Workloads remain stored for historical inspection
+    const remainingResources = store.getClusterResources(cluster.id, org.id);
+    assert.equal(remainingResources.length, 5);
+  });
+
+  await t.test('Phase 1.1: Security Boundary: Revocation and Disconnect invalidates tokens permanently', () => {
+    const store = new DataStore();
+    const org = store.createOrganization('Security Boundary Org', 'sec-boundary');
+    const { cluster, rawToken } = store.createCluster(org.id, 'Secured Cluster');
+
+    // Token authenticates initially
+    const auth1 = store.authenticateAgentToken(rawToken);
+    assert.ok(auth1);
+    assert.equal(auth1.clusterId, cluster.id);
+
+    // Disconnecting cluster invalidates the token hash
+    const disconnected = store.disconnectCluster(cluster.id, org.id);
+    assert.equal(disconnected, true);
+
+    const authAfterDisconnect = store.authenticateAgentToken(rawToken);
+    assert.equal(authAfterDisconnect, null, 'Revoked token must be rejected');
+
+    const discCluster = store.getCluster(cluster.id, org.id)!;
+    assert.equal(discCluster.connectionState, 'offline');
+    assert.equal(discCluster.connectionStatus, 'disconnected');
+    assert.equal(discCluster.agentStatus, 'OFFLINE');
+
+    // Rotating credentials generates a fresh token and invalidates old ones
+    const { rawToken: newToken } = store.rotateAgentToken(cluster.id, org.id);
+    assert.notEqual(newToken, rawToken);
+
+    assert.equal(store.authenticateAgentToken(rawToken), null, 'Old token must remain invalid');
+    const authNew = store.authenticateAgentToken(newToken);
+    assert.ok(authNew);
+    assert.equal(authNew.clusterId, cluster.id);
   });
 });

@@ -239,6 +239,10 @@ export const ClusterStatusBadge: React.FC<{ status: ClusterStatus; agentStatus?:
     label = 'WAITING CONFIRMATION';
     bg = 'bg-purple-950/40 text-purple-300 border-purple-800/60';
     dot = 'bg-purple-400 animate-pulse';
+  } else if (normalized === 'offline' || normalized === 'agent_offline' || normalizedAgent === 'offline' || status === 'AGENT_OFFLINE' || agentStatus === 'OFFLINE') {
+    label = 'AGENT OFFLINE';
+    bg = 'bg-zinc-950 text-zinc-400 border-zinc-700';
+    dot = 'bg-zinc-600';
   } else if (normalizedAgent === 'reconnecting' || normalized === 'reconnecting') {
     label = 'RECONNECTING';
     bg = 'bg-amber-950/40 text-amber-300 border-amber-600/70';
@@ -247,22 +251,18 @@ export const ClusterStatusBadge: React.FC<{ status: ClusterStatus; agentStatus?:
     label = 'STALE';
     bg = 'bg-orange-950/40 text-orange-300 border-orange-700/60';
     dot = 'bg-orange-400';
-  } else if (normalized === 'connected' || normalized === 'healthy' || status === 'HEALTHY') {
-    label = 'CONNECTED';
-    bg = 'bg-emerald-950/40 text-emerald-300 border-emerald-700/60';
-    dot = 'bg-emerald-500';
-  } else if (normalized === 'warning' || status === 'WARNING' || agentStatus === 'DEGRADED') {
-    label = agentStatus === 'DEGRADED' ? 'DEGRADED' : 'WARNING';
-    bg = 'bg-amber-950/40 text-amber-300 border-amber-700/60';
-    dot = 'bg-amber-500';
   } else if (normalized === 'critical' || status === 'CRITICAL') {
     label = 'CRITICAL';
     bg = 'bg-rose-950/40 text-rose-300 border-rose-700/60';
     dot = 'bg-rose-500 animate-pulse';
-  } else if (normalized === 'offline' || normalized === 'agent_offline' || agentStatus === 'OFFLINE' || status === 'AGENT_OFFLINE') {
-    label = 'AGENT OFFLINE';
-    bg = 'bg-zinc-950 text-zinc-400 border-zinc-700';
-    dot = 'bg-zinc-600';
+  } else if (normalized === 'warning' || status === 'WARNING' || agentStatus === 'DEGRADED') {
+    label = agentStatus === 'DEGRADED' ? 'DEGRADED' : 'WARNING';
+    bg = 'bg-amber-950/40 text-amber-300 border-amber-700/60';
+    dot = 'bg-amber-500';
+  } else if (normalized === 'connected' || normalized === 'healthy' || status === 'HEALTHY') {
+    label = 'CONNECTED';
+    bg = 'bg-emerald-950/40 text-emerald-300 border-emerald-700/60';
+    dot = 'bg-emerald-500';
   } else if (normalized === 'error' || agentStatus === 'ERROR') {
     label = 'CONNECTION ERROR';
     bg = 'bg-rose-950/40 text-rose-300 border-rose-800/60';

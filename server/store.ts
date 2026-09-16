@@ -265,54 +265,58 @@ export class DataStore {
   }
 
   // --- Heartbeat & Connection Monitoring ---
+  public reconcileClusterConnectionState(cluster: Cluster, now = Date.now()): void {
+    // If the cluster is in initial pending or awaiting confirmation, do not mark it offline
+    if (cluster.connectionState === 'pending' || cluster.connectionState === 'agent_detected') {
+      return;
+    }
+
+    if (!cluster.lastHeartbeat) {
+      cluster.agentStatus = 'OFFLINE';
+      cluster.status = 'AGENT_OFFLINE';
+      cluster.connectionState = 'offline';
+      cluster.connectionStatus = 'disconnected';
+      return;
+    }
+
+    const elapsedSeconds = (now - cluster.lastHeartbeat) / 1000;
+    if (elapsedSeconds > 180) {
+      // Grace period: mark offline after 3 minutes without heartbeat
+      cluster.agentStatus = 'OFFLINE';
+      cluster.status = 'AGENT_OFFLINE';
+      cluster.connectionState = 'offline';
+      cluster.connectionStatus = 'disconnected';
+    } else if (elapsedSeconds > 90) {
+      cluster.agentStatus = 'STALE';
+      cluster.connectionState = 'stale';
+      cluster.connectionStatus = 'stale';
+      if (cluster.status === 'HEALTHY') cluster.status = 'WARNING';
+    } else if (elapsedSeconds > 45) {
+      cluster.agentStatus = 'RECONNECTING';
+      cluster.connectionState = 'reconnecting';
+      cluster.connectionStatus = 'reconnecting';
+    } else {
+      cluster.agentStatus = 'CONNECTED';
+      cluster.connectionState = 'connected';
+      cluster.connectionStatus = 'connected';
+      // Re-evaluate health based on incidents
+      const openIncidents = Array.from(this.incidents.values()).filter(
+        (i) => i.clusterId === cluster.id && (i.status === 'OPEN' || i.status === 'IN_PROGRESS' || i.status === 'ACKNOWLEDGED')
+      );
+      const hasCritical = openIncidents.some((i) => i.severity === 'CRITICAL');
+      const hasWarning = openIncidents.some((i) => i.severity === 'HIGH' || i.severity === 'MEDIUM');
+
+      if (hasCritical) cluster.status = 'CRITICAL';
+      else if (hasWarning) cluster.status = 'WARNING';
+      else cluster.status = 'HEALTHY';
+    }
+  }
+
   private startHeartbeatMonitor() {
     const timer = setInterval(() => {
       const now = Date.now();
       for (const cluster of this.clusters.values()) {
-        // If the cluster is in initial pending or awaiting confirmation, do not mark it offline
-        if (cluster.connectionState === 'pending' || cluster.connectionState === 'agent_detected') {
-          continue;
-        }
-
-        if (!cluster.lastHeartbeat) {
-          cluster.agentStatus = 'OFFLINE';
-          cluster.status = 'AGENT_OFFLINE';
-          cluster.connectionState = 'offline';
-          cluster.connectionStatus = 'disconnected';
-          continue;
-        }
-
-        const elapsedSeconds = (now - cluster.lastHeartbeat) / 1000;
-        if (elapsedSeconds > 180) {
-          // Grace period: mark offline after 3 minutes without heartbeat
-          cluster.agentStatus = 'OFFLINE';
-          cluster.status = 'AGENT_OFFLINE';
-          cluster.connectionState = 'offline';
-          cluster.connectionStatus = 'disconnected';
-        } else if (elapsedSeconds > 90) {
-          cluster.agentStatus = 'STALE';
-          cluster.connectionState = 'stale';
-          cluster.connectionStatus = 'stale';
-          if (cluster.status === 'HEALTHY') cluster.status = 'WARNING';
-        } else if (elapsedSeconds > 45) {
-          cluster.agentStatus = 'RECONNECTING';
-          cluster.connectionState = 'reconnecting';
-          cluster.connectionStatus = 'reconnecting';
-        } else {
-          cluster.agentStatus = 'CONNECTED';
-          cluster.connectionState = 'connected';
-          cluster.connectionStatus = 'connected';
-          // Re-evaluate health based on incidents
-          const openIncidents = Array.from(this.incidents.values()).filter(
-            (i) => i.clusterId === cluster.id && (i.status === 'OPEN' || i.status === 'IN_PROGRESS' || i.status === 'ACKNOWLEDGED')
-          );
-          const hasCritical = openIncidents.some((i) => i.severity === 'CRITICAL');
-          const hasWarning = openIncidents.some((i) => i.severity === 'HIGH' || i.severity === 'MEDIUM');
-
-          if (hasCritical) cluster.status = 'CRITICAL';
-          else if (hasWarning) cluster.status = 'WARNING';
-          else cluster.status = 'HEALTHY';
-        }
+        this.reconcileClusterConnectionState(cluster, now);
       }
     }, 15000);
     if (typeof timer.unref === 'function') {
@@ -1132,20 +1136,28 @@ export class DataStore {
 
   // --- Cluster Management ---
   public getClusters(orgId: string): Cluster[] {
+    const now = Date.now();
     return Array.from(this.clusters.values())
       .filter((c) => c.orgId === orgId)
-      .map((c) => ({ ...c }));
+      .map((c) => {
+        this.reconcileClusterConnectionState(c, now);
+        return { ...c };
+      });
   }
 
   public getCluster(clusterId: string, orgId?: string, includeToken = false): Cluster | null {
     const cluster = this.clusters.get(clusterId);
     if (!cluster) return null;
     if (orgId && cluster.orgId !== orgId) return null;
+    this.reconcileClusterConnectionState(cluster);
     return { ...cluster };
   }
 
   public getClusterByIdInternal(clusterId: string): Cluster | null {
-    return this.clusters.get(clusterId) || null;
+    const cluster = this.clusters.get(clusterId);
+    if (!cluster) return null;
+    this.reconcileClusterConnectionState(cluster);
+    return cluster;
   }
 
   /**
@@ -1247,6 +1259,7 @@ export class DataStore {
     cluster.status = 'HEALTHY';
     cluster.agentStatus = 'CONNECTED';
     cluster.connectionState = 'connected';
+    cluster.connectionStatus = 'connected';
     cluster.connectedAt = Date.now();
     cluster.lastHeartbeat = cluster.lastHeartbeat || Date.now();
     cluster.lastHeartbeatAt = cluster.lastHeartbeatAt || Date.now();
@@ -1358,6 +1371,7 @@ export class DataStore {
     cluster.status = 'AGENT_OFFLINE';
     cluster.agentStatus = 'OFFLINE';
     cluster.connectionState = 'offline';
+    cluster.connectionStatus = 'disconnected';
     this.saveSnapshot();
     return true;
   }
@@ -1436,8 +1450,15 @@ export class DataStore {
     cluster.agentStatus = 'CONNECTED';
     cluster.connectionState = 'connected';
     cluster.connectionStatus = 'connected';
-    if (cluster.status === 'pending' || cluster.status === 'installing' || cluster.status === 'agent_detected') {
-      cluster.status = 'HEALTHY';
+    if (cluster.status === 'pending' || cluster.status === 'installing' || cluster.status === 'agent_detected' || cluster.status === 'AGENT_OFFLINE') {
+      const openIncidents = Array.from(this.incidents.values()).filter(
+        (i) => i.clusterId === clusterId && (i.status === 'OPEN' || i.status === 'IN_PROGRESS' || i.status === 'ACKNOWLEDGED')
+      );
+      const hasCritical = openIncidents.some((i) => i.severity === 'CRITICAL');
+      const hasWarning = openIncidents.some((i) => i.severity === 'HIGH' || i.severity === 'MEDIUM');
+      if (hasCritical) cluster.status = 'CRITICAL';
+      else if (hasWarning) cluster.status = 'WARNING';
+      else cluster.status = 'HEALTHY';
     }
 
     return {

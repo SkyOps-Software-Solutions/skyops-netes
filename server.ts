@@ -1360,12 +1360,31 @@ app.post('/api/v1/agent/actions/:actionId/result', requireAgentAuth, (req: Authe
   res.json({ status: 'ACK', success: true, action });
 });
 
+// Agent On-Demand Pod Logs Request Polling
+app.get('/api/v1/agent/logs/requests', requireAgentAuth, (req: AuthenticatedAgentRequest, res) => {
+  const requests = store.claimPendingLogRequests(req.clusterId!);
+  res.json({ requests });
+});
+
 const AgentLogIngestSchema = z.object({
+  requestId: z.string().optional(),
   namespace: z.string().min(1),
   podName: z.string().min(1),
   container: z.string().min(1),
-  logs: z.string(),
-  previous: z.boolean().optional()
+  logs: z.string().optional().default(''),
+  previous: z.boolean().optional(),
+  status: z.enum([
+    'SUCCESS',
+    'NO_LOGS',
+    'PERMISSION_DENIED',
+    'POD_NOT_FOUND',
+    'CONTAINER_NOT_FOUND',
+    'PREVIOUS_LOGS_UNAVAILABLE',
+    'KUBERNETES_API_UNAVAILABLE',
+    'TIMEOUT',
+    'UNKNOWN_ERROR'
+  ]).optional(),
+  errorMessage: z.string().optional()
 });
 
 app.post('/api/v1/agent/logs', requireAgentAuth, (req: AuthenticatedAgentRequest, res) => {
@@ -1374,8 +1393,8 @@ app.post('/api/v1/agent/logs', requireAgentAuth, (req: AuthenticatedAgentRequest
     return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid log ingestion payload' });
   }
 
-  const { namespace, podName, container, logs, previous } = parsed.data;
-  store.storePodLogs(req.clusterId!, namespace, podName, container, logs, !!previous);
+  const { namespace, podName, container, logs, previous, status, errorMessage } = parsed.data;
+  store.storePodLogs(req.clusterId!, namespace, podName, container, logs || '', !!previous, status, errorMessage);
 
   res.json({ success: true, message: 'Pod logs ingested successfully' });
 });

@@ -383,23 +383,61 @@ export const PodLogsViewer: React.FC<PodLogsViewerProps> = ({
             <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
             <div className="space-y-1">
               <div className="font-bold">Log Retrieval Error</div>
-              <div className="text-rose-400 text-xs">Unable to retrieve logs from cluster agent: {error}</div>
+              <div className="text-rose-400 text-xs">{error}</div>
               <Button size="sm" variant="secondary" onClick={() => fetchLogs(false)} className="mt-2 text-xs">
-                Retry Connection
+                Retry
               </Button>
             </div>
           </div>
         )}
 
-        {!loading && !error && logData?.unavailableReason && filteredLines.length === 0 && (
+        {!loading && !error && filteredLines.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center p-8 text-center text-zinc-400 space-y-3">
             <div className="p-3 bg-zinc-900 border border-zinc-800 rounded-full text-zinc-400">
               <Terminal className="w-6 h-6" />
             </div>
-            <div className="text-sm font-semibold text-zinc-200">Unable to retrieve logs from cluster agent</div>
-            <div className="max-w-md text-xs text-rose-400/90 font-mono bg-zinc-900/90 p-3 rounded-lg border border-zinc-800">
-              Unable to retrieve logs from cluster agent: {logData.unavailableReason}
-            </div>
+
+            {logData?.statusCategory === 'PERMISSION_DENIED' || logData?.unavailableReason?.includes('permission') ? (
+              <>
+                <div className="text-sm font-semibold text-amber-400">Permission Denied</div>
+                <div className="max-w-md text-xs text-zinc-300 font-mono bg-zinc-900/90 p-3 rounded-lg border border-amber-900/50">
+                  SkyOps cannot read logs for this container because the cluster agent lacks the required Kubernetes permission.
+                </div>
+              </>
+            ) : logData?.statusCategory === 'PREVIOUS_LOGS_UNAVAILABLE' || (isPrevious && (!logData?.rawText || logData?.totalLines === 0)) ? (
+              <>
+                <div className="text-sm font-semibold text-zinc-300">Previous Logs Unavailable</div>
+                <div className="max-w-md text-xs text-zinc-400 font-mono bg-zinc-900/90 p-3 rounded-lg border border-zinc-800">
+                  Previous container logs are not available from Kubernetes.
+                </div>
+              </>
+            ) : logData?.statusCategory === 'UNKNOWN_ERROR' && logData?.unavailableReason?.includes('Agent disconnected') ? (
+              <>
+                <div className="text-sm font-semibold text-rose-400">Agent Disconnected</div>
+                <div className="max-w-md text-xs text-rose-300 font-mono bg-rose-950/30 p-3 rounded-lg border border-rose-900/50">
+                  Agent disconnected. Live container logs cannot be retrieved.
+                </div>
+              </>
+            ) : logData?.unavailableReason ? (
+              <>
+                <div className="text-sm font-semibold text-zinc-300">
+                  {logData.unavailableReason.includes('No log output') ? 'No Logs Available' : 'Log Notice'}
+                </div>
+                <div className="max-w-md text-xs text-zinc-400 font-mono bg-zinc-900/90 p-3 rounded-lg border border-zinc-800">
+                  {logData.unavailableReason}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-sm font-semibold text-zinc-300">
+                  {searchTerm ? 'No Matching Logs' : 'No Logs Available'}
+                </div>
+                <div className="max-w-md text-xs text-zinc-400 font-mono bg-zinc-900/90 p-3 rounded-lg border border-zinc-800">
+                  {searchTerm ? `No log lines matched "${searchTerm}"` : 'No log output is currently available for this container.'}
+                </div>
+              </>
+            )}
+
             {selectedContainerObj?.waitingReason && (
               <div className="p-3 bg-zinc-900/60 border border-zinc-800 rounded-lg text-left text-xs max-w-md space-y-1">
                 <div className="text-amber-400 font-bold">
@@ -410,15 +448,6 @@ export const PodLogsViewer: React.FC<PodLogsViewerProps> = ({
                 )}
               </div>
             )}
-          </div>
-        )}
-
-        {!loading && !error && !logData?.unavailableReason && filteredLines.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center p-8 text-center text-zinc-500 space-y-2">
-            <Terminal className="w-6 h-6 text-zinc-600" />
-            <div className="text-xs">
-              {searchTerm ? `No log lines matched "${searchTerm}"` : 'Log stream is currently empty.'}
-            </div>
           </div>
         )}
 

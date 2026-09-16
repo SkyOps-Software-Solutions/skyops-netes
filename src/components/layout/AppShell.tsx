@@ -357,6 +357,7 @@ export const AppShell: React.FC<AppShellProps> = ({
               </div>
               <ServicesView
                 clusters={clusters}
+                incidents={incidents}
                 loading={loading || isRefreshing}
                 onRefresh={handleManualRefresh}
                 onSelectCluster={handleSelectCluster}

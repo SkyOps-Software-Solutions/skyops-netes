@@ -6,11 +6,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -883,5 +886,208 @@ func (k *InClusterK8sClient) UpdateWorkloadImage(ctx context.Context, kind, name
 
 	default:
 		return fmt.Errorf("unsupported resource kind for image update: %s", kind)
+	}
+}
+
+// PodLogOptions defines parameters for retrieving Kubernetes container logs
+type PodLogOptions struct {
+	Container    string
+	TailLines    int
+	Previous     bool
+	Timestamps   bool
+	SinceSeconds int
+	LimitBytes   int64
+	Timeout      time.Duration
+}
+
+// PodLogResult contains the retrieved log data and truthful status category
+type PodLogResult struct {
+	Logs          string
+	Status        string // SUCCESS, NO_LOGS, PERMISSION_DENIED, POD_NOT_FOUND, CONTAINER_NOT_FOUND, PREVIOUS_LOGS_UNAVAILABLE, KUBERNETES_API_UNAVAILABLE, TIMEOUT, UNKNOWN_ERROR
+	ErrorMessage  string
+	BytesRead     int64
+	LinesReturned int
+}
+
+// GetPodLogs retrieves container logs directly from the Kubernetes API without shell/kubectl execution
+func (k *InClusterK8sClient) GetPodLogs(ctx context.Context, namespace, podName string, opts PodLogOptions) (*PodLogResult, error) {
+	if namespace == "" {
+		namespace = "default"
+	}
+	if podName == "" {
+		return &PodLogResult{
+			Status:       "POD_NOT_FOUND",
+			ErrorMessage: "Pod name cannot be empty.",
+		}, nil
+	}
+
+	// 1. Strict Bounds Enforcement
+	tailLines := opts.TailLines
+	if tailLines <= 0 {
+		tailLines = 250
+	} else if tailLines > 1000 {
+		tailLines = 1000
+	}
+
+	limitBytes := opts.LimitBytes
+	if limitBytes <= 0 || limitBytes > 1024*1024 {
+		limitBytes = 512 * 1024 // 512 KB default, max 1 MB
+	}
+
+	timeout := opts.Timeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	} else if timeout > 30*time.Second {
+		timeout = 30 * time.Second
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// 2. Build URL query params
+	queryParams := url.Values{}
+	if opts.Container != "" {
+		queryParams.Set("container", opts.Container)
+	}
+	queryParams.Set("tailLines", strconv.Itoa(tailLines))
+	if opts.Previous {
+		queryParams.Set("previous", "true")
+	}
+	if opts.Timestamps {
+		queryParams.Set("timestamps", "true")
+	}
+	if opts.SinceSeconds > 0 {
+		queryParams.Set("sinceSeconds", strconv.Itoa(opts.SinceSeconds))
+	}
+	queryParams.Set("limitBytes", strconv.FormatInt(limitBytes, 10))
+
+	apiURL := fmt.Sprintf("%s/api/v1/namespaces/%s/pods/%s/log?%s",
+		k.apiBaseURL,
+		url.PathEscape(namespace),
+		url.PathEscape(podName),
+		queryParams.Encode(),
+	)
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return &PodLogResult{
+			Status:       "UNKNOWN_ERROR",
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	req.Header.Set("Authorization", "Bearer "+k.token)
+	req.Header.Set("Accept", "text/plain")
+
+	resp, err := k.httpClient.Do(req)
+	if err != nil {
+		if reqCtx.Err() == context.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
+			return &PodLogResult{
+				Status:       "TIMEOUT",
+				ErrorMessage: "Request to Kubernetes API timed out.",
+			}, nil
+		}
+		return &PodLogResult{
+			Status:       "KUBERNETES_API_UNAVAILABLE",
+			ErrorMessage: fmt.Sprintf("Kubernetes API unavailable: %v", err),
+		}, nil
+	}
+	defer resp.Body.Close()
+
+	// 3. Read bounded response body
+	limitedReader := io.LimitReader(resp.Body, limitBytes)
+	bodyBytes, readErr := io.ReadAll(limitedReader)
+	bodyStr := string(bodyBytes)
+
+	// 4. Map HTTP Status Code and Body to truthful failure categories
+	switch resp.StatusCode {
+	case http.StatusOK:
+		trimmed := strings.TrimSpace(bodyStr)
+		if trimmed == "" {
+			if opts.Previous {
+				return &PodLogResult{
+					Status:       "PREVIOUS_LOGS_UNAVAILABLE",
+					ErrorMessage: "Previous container logs are not available from Kubernetes.",
+				}, nil
+			}
+			return &PodLogResult{
+				Status:       "NO_LOGS",
+				ErrorMessage: "No log output is currently available for this container.",
+			}, nil
+		}
+
+		linesCount := strings.Count(bodyStr, "\n")
+		if !strings.HasSuffix(bodyStr, "\n") && len(bodyStr) > 0 {
+			linesCount++
+		}
+
+		return &PodLogResult{
+			Logs:          bodyStr,
+			Status:        "SUCCESS",
+			BytesRead:     int64(len(bodyBytes)),
+			LinesReturned: linesCount,
+		}, nil
+
+	case http.StatusForbidden:
+		return &PodLogResult{
+			Status:       "PERMISSION_DENIED",
+			ErrorMessage: "SkyOps cannot read logs for this container because the cluster agent lacks the required Kubernetes permission.",
+		}, nil
+
+	case http.StatusNotFound:
+		return &PodLogResult{
+			Status:       "POD_NOT_FOUND",
+			ErrorMessage: "Pod not found in Kubernetes cluster.",
+		}, nil
+
+	case http.StatusBadRequest:
+		lowerBody := strings.ToLower(bodyStr)
+		if strings.Contains(lowerBody, "previous terminated container") ||
+			strings.Contains(lowerBody, "not found") && opts.Previous ||
+			strings.Contains(lowerBody, "no previous") ||
+			strings.Contains(lowerBody, "is not restart") {
+			return &PodLogResult{
+				Status:       "PREVIOUS_LOGS_UNAVAILABLE",
+				ErrorMessage: "Previous container logs are not available from Kubernetes.",
+			}, nil
+		}
+		if strings.Contains(lowerBody, "is not valid for pod") ||
+			strings.Contains(lowerBody, "container not found") ||
+			strings.Contains(lowerBody, "unknown container") {
+			return &PodLogResult{
+				Status:       "CONTAINER_NOT_FOUND",
+				ErrorMessage: fmt.Sprintf("Container %q not found in pod.", opts.Container),
+			}, nil
+		}
+		if strings.Contains(lowerBody, "waiting to start") ||
+			strings.Contains(lowerBody, "containercreating") ||
+			strings.Contains(lowerBody, "podinitializing") {
+			return &PodLogResult{
+				Status:       "NO_LOGS",
+				ErrorMessage: "No log output is currently available for this container.",
+			}, nil
+		}
+		return &PodLogResult{
+			Status:       "UNKNOWN_ERROR",
+			ErrorMessage: strings.TrimSpace(bodyStr),
+		}, nil
+
+	case http.StatusServiceUnavailable, http.StatusBadGateway, http.StatusGatewayTimeout:
+		return &PodLogResult{
+			Status:       "KUBERNETES_API_UNAVAILABLE",
+			ErrorMessage: fmt.Sprintf("Kubernetes API unavailable (HTTP %d).", resp.StatusCode),
+		}, nil
+
+	default:
+		if readErr != nil {
+			return &PodLogResult{
+				Status:       "UNKNOWN_ERROR",
+				ErrorMessage: readErr.Error(),
+			}, nil
+		}
+		return &PodLogResult{
+			Status:       "UNKNOWN_ERROR",
+			ErrorMessage: fmt.Sprintf("Kubernetes API returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(bodyStr)),
+		}, nil
 	}
 }

@@ -41,6 +41,11 @@ type Config struct {
 	WatchResources           []string
 	DryRunRemediation        bool
 	LogLevel                 string
+	MaxLogTailLines          int
+	MaxLogBytes              int64
+	LogRequestTimeout        time.Duration
+	LogPollInterval          time.Duration
+	MaxContainersPerCycle    int
 }
 
 // LoadFromEnv loads configuration from environment variables with defaults
@@ -135,6 +140,11 @@ func LoadFromEnv() (*Config, error) {
 		WatchResources:          parseCommaList("SKYOPS_WATCH_RESOURCES"),
 		DryRunRemediation:       boolEnv("SKYOPS_DRY_RUN_REMEDIATION", false),
 		LogLevel:                strings.ToUpper(os.Getenv("SKYOPS_LOG_LEVEL")),
+		MaxLogTailLines:         positiveIntEnv("SKYOPS_MAX_LOG_TAIL_LINES", 250),
+		MaxLogBytes:             int64Env("SKYOPS_MAX_LOG_BYTES", 512*1024),
+		LogRequestTimeout:       durationEnv("SKYOPS_LOG_REQUEST_TIMEOUT", 10*time.Second),
+		LogPollInterval:         durationEnv("SKYOPS_LOG_POLL_INTERVAL", 2*time.Second),
+		MaxContainersPerCycle:   positiveIntEnv("SKYOPS_MAX_CONTAINERS_PER_CYCLE", 5),
 	}, nil
 }
 

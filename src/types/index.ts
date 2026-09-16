@@ -570,6 +570,7 @@ export interface PodLogsResponse {
   retrievedAt: number;
   isTruncated?: boolean;
   unavailableReason?: string;
+  statusCategory?: 'SUCCESS' | 'NO_LOGS' | 'PERMISSION_DENIED' | 'POD_NOT_FOUND' | 'CONTAINER_NOT_FOUND' | 'PREVIOUS_LOGS_UNAVAILABLE' | 'KUBERNETES_API_UNAVAILABLE' | 'TIMEOUT' | 'UNKNOWN_ERROR';
 }
 
 export interface KubernetesResource {

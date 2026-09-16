@@ -38,6 +38,9 @@ test('Manifest & Installer Generator Suite', async (t) => {
     assert.ok(yaml.includes('runAsNonRoot: true'));
     assert.ok(yaml.includes('readOnlyRootFilesystem: true'));
     assert.ok(yaml.includes('allowPrivilegeEscalation: false'));
+
+    // Verify minimal pods/log RBAC permission
+    assert.ok(yaml.includes('pods/log'));
   });
 
   await t.test('generateInstallScript contains robust preflight checks and clean output', () => {

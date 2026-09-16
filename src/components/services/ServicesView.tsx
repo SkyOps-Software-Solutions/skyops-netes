@@ -16,13 +16,14 @@ import {
   Tag,
   ExternalLink
 } from 'lucide-react';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Cluster, Incident, KubernetesResource } from '../../types/index';
 import { ResourceHealthBadge, ServiceTypeBadge } from '../common/Badges';
 import { Button, EmptyState } from '../common/UI';
 import { ServiceDetailModal } from '../resources/ServiceDetailModal';
 import { PodDetailModal } from '../resources/PodDetailModal';
 import { formatTimeAgo } from '../../utils/date';
+import { api } from '../../api/client';
 
 export interface ServicesViewProps {
   services?: KubernetesResource[];
@@ -62,12 +63,50 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
   const [activeService, setActiveService] = useState<KubernetesResource | null>(null);
   const [activePod, setActivePod] = useState<KubernetesResource | null>(null);
 
+  // Determine if parent is explicitly controlling resources/services data
+  const isControlled = Boolean(
+    (services !== undefined && services !== null) ||
+    (resources !== undefined && resources !== null) ||
+    (clusterResources !== undefined && clusterResources !== null)
+  );
+
+  const [internalResources, setInternalResources] = useState<KubernetesResource[]>([]);
+  const [internalLoading, setInternalLoading] = useState<boolean>(false);
+
+  // Self-fetch when rendered standalone (e.g. global left-nav Services page)
+  const fetchServicesData = async () => {
+    if (isControlled) return;
+    try {
+      setInternalLoading(true);
+      const data = await api.getAllResources();
+      setInternalResources(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.warn('ServicesView autonomous resource fetch notice:', err);
+    } finally {
+      setInternalLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isControlled) {
+      fetchServicesData();
+    }
+  }, [isControlled, clusters?.length]);
+
+  const handleRefresh = async () => {
+    if (onRefresh) onRefresh();
+    if (!isControlled) {
+      await fetchServicesData();
+    }
+  };
+
   // Normalized pool of resources
   const allResources = useMemo(() => {
     if (Array.isArray(clusterResources) && clusterResources.length > 0) return clusterResources;
     if (Array.isArray(resources) && resources.length > 0) return resources;
+    if (!isControlled && Array.isArray(internalResources)) return internalResources;
     return [];
-  }, [clusterResources, resources]);
+  }, [clusterResources, resources, internalResources, isControlled]);
 
   // Extract all services
   const allServices = useMemo(() => {
@@ -297,20 +336,32 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
 
           {/* Filters & Refresh */}
           <div className="flex flex-wrap items-center gap-2">
-            {/* Cluster Selector (if multiple clusters) */}
-            {safeClusters.length > 1 && !cluster && (
+            {/* Cluster Selector / Scope indicator */}
+            {!cluster && safeClusters.length > 0 && (
               <select
                 value={selectedClusterId}
                 onChange={(e) => setSelectedClusterId(e.target.value)}
-                className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-300 focus:outline-none focus:border-sky-500"
+                className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-300 focus:outline-none focus:border-sky-500 font-mono"
               >
-                <option value="all">All Clusters</option>
-                {safeClusters.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name || c.id}
-                  </option>
-                ))}
+                <option value="all">
+                  {safeClusters.length === 1
+                    ? `Cluster: ${safeClusters[0].name || safeClusters[0].id}`
+                    : `All Clusters (${safeClusters.length})`}
+                </option>
+                {safeClusters.length > 1 &&
+                  safeClusters.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name || c.id}
+                    </option>
+                  ))}
               </select>
+            )}
+
+            {cluster && (
+              <div className="flex items-center gap-1.5 px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs font-mono text-zinc-300">
+                <Server className="w-3.5 h-3.5 text-sky-400" />
+                <span>Cluster: <strong className="text-zinc-100">{cluster.name || cluster.id}</strong></span>
+              </div>
             )}
 
             {/* Namespace Filter */}
@@ -352,12 +403,12 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
               <option value="CRITICAL">Critical</option>
             </select>
 
-            {onRefresh && (
+            {(onRefresh || !isControlled) && (
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={onRefresh}
-                loading={loading}
+                onClick={handleRefresh}
+                loading={loading || internalLoading}
                 className="flex items-center gap-1.5"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
@@ -375,6 +426,9 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
             <thead>
               <tr className="border-b border-zinc-800 bg-zinc-950/80 text-[11px] font-mono text-zinc-400">
                 <th className="py-3 px-4">Service Name</th>
+                {(!isEmbedded || safeClusters.length > 1) && (
+                  <th className="py-3 px-4">Cluster</th>
+                )}
                 <th className="py-3 px-4">Namespace</th>
                 <th className="py-3 px-4">Type</th>
                 <th className="py-3 px-4">Cluster IP</th>
@@ -388,7 +442,7 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
             <tbody className="divide-y divide-zinc-800/60 font-sans">
               {filteredServices.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-zinc-500">
+                  <td colSpan={(!isEmbedded || safeClusters.length > 1) ? 10 : 9} className="py-12 text-center text-zinc-500">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Network className="w-8 h-8 text-zinc-600" />
                       <p className="text-sm font-medium text-zinc-300">No services match the active filters</p>
@@ -416,6 +470,18 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
                           {svc.name}
                         </span>
                       </td>
+
+                      {/* Cluster */}
+                      {(!isEmbedded || safeClusters.length > 1) && (
+                        <td className="py-3.5 px-4 font-mono text-zinc-300">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-800/80 text-zinc-300 text-[11px] border border-zinc-700/60 font-mono">
+                            <Server className="w-3 h-3 text-sky-400 shrink-0" />
+                            <span className="truncate max-w-[120px]">
+                              {svc.clusterName || svc.clusterId || '-'}
+                            </span>
+                          </span>
+                        </td>
+                      )}
 
                       {/* Namespace */}
                       <td className="py-3.5 px-4 font-mono text-zinc-300">{svc.namespace || 'default'}</td>

@@ -80,7 +80,26 @@ export class DataStore {
   private clusterMetrics: Map<string, ClusterObservabilityMetrics> = new Map(); // clusterId -> ClusterObservabilityMetrics
   private clusterMetricHistory: Map<string, MetricHistoryPoint[]> = new Map(); // clusterId -> MetricHistoryPoint[]
   private telemetryStore: TelemetryStore = new TelemetryStore();
-  private podLogsCache: Map<string, string> = new Map(); // cluster:ns:pod:container:mode -> rawLogs
+  private podLogsCache: Map<string, {
+    logs: string;
+    status: 'SUCCESS' | 'NO_LOGS' | 'PERMISSION_DENIED' | 'POD_NOT_FOUND' | 'CONTAINER_NOT_FOUND' | 'PREVIOUS_LOGS_UNAVAILABLE' | 'KUBERNETES_API_UNAVAILABLE' | 'TIMEOUT' | 'UNKNOWN_ERROR';
+    errorMessage?: string;
+    source: string;
+    updatedAt: number;
+  }> = new Map(); // cluster:ns:pod:container:mode -> CachedPodLogsEntry
+  private pendingLogRequests: Map<string, Array<{
+    id: string;
+    namespace: string;
+    podName: string;
+    container: string;
+    tailLines?: number;
+    previous?: boolean;
+    sinceSeconds?: number;
+    timestamps?: boolean;
+    limitBytes?: number;
+    createdAt: number;
+  }>> = new Map(); // clusterId -> pending log collection requests
+  private pendingLogResolvers: Map<string, Array<() => void>> = new Map(); // cluster:ns:pod:container:mode -> callbacks
   private incidents: Map<string, Incident> = new Map(); // incidentId -> incident
   private incidentTimeline: Map<string, TimelineEvent[]> = new Map(); // incidentId -> events
   private incidentNotes: Map<string, IncidentNote[]> = new Map(); // incidentId -> notes
@@ -1629,7 +1648,12 @@ export class DataStore {
         for (const c of pod.containers) {
           if (c.logs) {
             const cacheKey = `${clusterId}:${pod.namespace || 'default'}:${pod.name}:${c.name}:curr`;
-            this.podLogsCache.set(cacheKey, c.logs);
+            this.podLogsCache.set(cacheKey, {
+              logs: c.logs,
+              status: 'SUCCESS',
+              source: 'container-diagnostic-buffer',
+              updatedAt: Date.now()
+            });
           }
         }
       }
@@ -3925,9 +3949,11 @@ export class DataStore {
     // 1. Try in-cluster log fetch if running inside Kubernetes
     let rawLogs: string | null = null;
     let source = 'unknown';
+    let statusCategory: 'SUCCESS' | 'NO_LOGS' | 'PERMISSION_DENIED' | 'POD_NOT_FOUND' | 'CONTAINER_NOT_FOUND' | 'PREVIOUS_LOGS_UNAVAILABLE' | 'KUBERNETES_API_UNAVAILABLE' | 'TIMEOUT' | 'UNKNOWN_ERROR' = 'SUCCESS';
+    let errorMessage: string | undefined;
 
     rawLogs = await fetchInClusterPodLogs(namespace, podName, selectedContainerName, {
-      tailLines: options.tailLines || 100,
+      tailLines: options.tailLines || 250,
       previous: options.previous,
       sinceSeconds: options.sinceSeconds,
       timestamps: options.timestamps !== false
@@ -3935,34 +3961,92 @@ export class DataStore {
 
     if (rawLogs !== null) {
       source = 'in-cluster-k8s-api';
+      statusCategory = rawLogs.trim().length > 0 ? 'SUCCESS' : (options.previous ? 'PREVIOUS_LOGS_UNAVAILABLE' : 'NO_LOGS');
     }
 
-    // 2. Check if container has cached diagnostic logs attached to container object
-    if (!rawLogs && containerObj?.logs) {
-      rawLogs = containerObj.logs;
-      source = 'container-diagnostic-buffer';
-    }
+    const cacheKey = `${clusterId}:${namespace}:${podName}:${selectedContainerName}:${options.previous ? 'prev' : 'curr'}`;
 
-    // 3. If still empty, check store's log cache
-    if (!rawLogs) {
-      const cacheKey = `${clusterId}:${namespace}:${podName}:${selectedContainerName}:${options.previous ? 'prev' : 'curr'}`;
+    // 2. Check store's log cache first (if fresh within 5s, reuse)
+    if (rawLogs === null) {
       const cached = this.podLogsCache.get(cacheKey);
-      if (cached) {
-        rawLogs = cached;
-        source = 'telemetry-log-buffer';
+      if (cached && (Date.now() - cached.updatedAt < 5000)) {
+        rawLogs = cached.logs;
+        source = cached.source || 'agent';
+        statusCategory = cached.status || (rawLogs && rawLogs.trim().length > 0 ? 'SUCCESS' : 'NO_LOGS');
+        errorMessage = cached.errorMessage;
       }
     }
 
-    // 4. If no logs could be retrieved, provide clear truthful diagnostic explanation
-    if (!rawLogs) {
-      const lines: PodLogLine[] = [];
-      let unavailableReason = 'No logs produced yet by this container';
-      if (containerObj?.waitingReason) {
-        unavailableReason = `Container is in ${containerObj.waitingReason} state: ${containerObj.waitingMessage || 'Container could not start or terminated prior to writing to stdout'}`;
-      } else if (containerObj?.state === 'terminated' && options.previous) {
-        unavailableReason = `Previous container terminated (${containerObj.terminationReason || 'exit code ' + containerObj.exitCode}) and no prior log buffer was retained by the kubelet`;
-      } else if (cluster.agentStatus !== 'CONNECTED') {
-        unavailableReason = `SkyOps agent is currently ${cluster.agentStatus || 'OFFLINE'}. Reconnect agent to stream live container logs.`;
+    // 3. If not running in-cluster and cache is not fresh, check if cluster agent is connected and fetch on-demand
+    if (rawLogs === null && cluster.agentStatus === 'CONNECTED') {
+      const reqId = `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      this.queuePodLogRequest(clusterId, {
+        id: reqId,
+        namespace,
+        podName,
+        container: selectedContainerName,
+        tailLines: options.tailLines ? Math.min(1000, options.tailLines) : 250,
+        previous: !!options.previous,
+        sinceSeconds: options.sinceSeconds,
+        timestamps: options.timestamps !== false,
+        createdAt: Date.now()
+      });
+
+      // Wait up to 3500ms for agent to process and return logs
+      await this.waitForPodLogs(clusterId, namespace, podName, selectedContainerName, !!options.previous, 3500);
+
+      const updatedCache = this.podLogsCache.get(cacheKey);
+      if (updatedCache) {
+        rawLogs = updatedCache.logs;
+        source = updatedCache.source || 'agent';
+        statusCategory = updatedCache.status || (rawLogs && rawLogs.trim().length > 0 ? 'SUCCESS' : 'NO_LOGS');
+        errorMessage = updatedCache.errorMessage;
+      }
+    }
+
+    // 4. Fallback check for any older cached logs
+    if (rawLogs === null) {
+      const cached = this.podLogsCache.get(cacheKey);
+      if (cached) {
+        rawLogs = cached.logs;
+        source = cached.source || 'agent';
+        statusCategory = cached.status || (rawLogs && rawLogs.trim().length > 0 ? 'SUCCESS' : 'NO_LOGS');
+        errorMessage = cached.errorMessage;
+      }
+    }
+
+    // 5. Check if container has cached diagnostic logs attached to container object
+    if (rawLogs === null && containerObj?.logs) {
+      rawLogs = containerObj.logs;
+      source = 'container-diagnostic-buffer';
+      statusCategory = 'SUCCESS';
+    }
+
+    // 5. Handle empty or error states truthfully
+    if (rawLogs === null || statusCategory !== 'SUCCESS' || rawLogs.trim().length === 0) {
+      let unavailableReason = 'No log output is currently available for this container.';
+
+      if (cluster.agentStatus !== 'CONNECTED' && source !== 'in-cluster-k8s-api') {
+        statusCategory = 'UNKNOWN_ERROR';
+        unavailableReason = 'Agent disconnected. Live container logs cannot be retrieved.';
+      } else if (statusCategory === 'PERMISSION_DENIED') {
+        unavailableReason = 'SkyOps cannot read logs for this container because the cluster agent lacks the required Kubernetes permission.';
+      } else if (statusCategory === 'PREVIOUS_LOGS_UNAVAILABLE' || (options.previous && (!rawLogs || rawLogs.trim().length === 0))) {
+        statusCategory = 'PREVIOUS_LOGS_UNAVAILABLE';
+        unavailableReason = 'Previous container logs are not available from Kubernetes.';
+      } else if (statusCategory === 'POD_NOT_FOUND') {
+        unavailableReason = 'Pod not found in Kubernetes cluster.';
+      } else if (statusCategory === 'CONTAINER_NOT_FOUND') {
+        unavailableReason = errorMessage || `Container "${selectedContainerName}" not found in pod.`;
+      } else if (statusCategory === 'TIMEOUT') {
+        unavailableReason = 'Request to Kubernetes API timed out.';
+      } else if (statusCategory === 'KUBERNETES_API_UNAVAILABLE') {
+        unavailableReason = 'Kubernetes API unavailable.';
+      } else if (statusCategory === 'NO_LOGS' || (!rawLogs && statusCategory === 'SUCCESS')) {
+        statusCategory = 'NO_LOGS';
+        unavailableReason = 'No log output is currently available for this container.';
+      } else if (errorMessage) {
+        unavailableReason = errorMessage;
       }
 
       return {
@@ -3972,18 +4056,19 @@ export class DataStore {
         container: selectedContainerName,
         previous: !!options.previous,
         timestamps: options.timestamps !== false,
-        lines,
+        lines: [],
         rawText: '',
         totalLines: 0,
-        source: 'kubelet-diagnostic',
+        source: source === 'unknown' ? (cluster.agentStatus === 'CONNECTED' ? 'agent' : 'unknown') : source,
         retrievedAt: Date.now(),
-        unavailableReason
+        unavailableReason,
+        statusCategory
       };
     }
 
-    // Redact and parse log lines
+    // 6. Redact and parse log lines
     const parsedLines = parseLogLines(rawLogs, options.filter);
-    const tailCount = options.tailLines ? Math.min(1000, options.tailLines) : 200;
+    const tailCount = options.tailLines ? Math.min(1000, options.tailLines) : 250;
     const finalLines = parsedLines.slice(-tailCount);
 
     return {
@@ -3996,9 +4081,97 @@ export class DataStore {
       lines: finalLines,
       rawText: finalLines.map((l) => l.raw).join('\n'),
       totalLines: finalLines.length,
-      source,
-      retrievedAt: Date.now()
+      source: source === 'unknown' ? 'agent' : source,
+      retrievedAt: Date.now(),
+      statusCategory: 'SUCCESS'
     };
+  }
+
+  public queuePodLogRequest(
+    clusterId: string,
+    req: {
+      id: string;
+      namespace: string;
+      podName: string;
+      container: string;
+      tailLines?: number;
+      previous?: boolean;
+      sinceSeconds?: number;
+      timestamps?: boolean;
+      limitBytes?: number;
+      createdAt: number;
+    }
+  ): void {
+    const list = this.pendingLogRequests.get(clusterId) || [];
+    const exists = list.some(
+      (r) =>
+        r.namespace === req.namespace &&
+        r.podName === req.podName &&
+        r.container === req.container &&
+        r.previous === req.previous &&
+        Date.now() - r.createdAt < 1500
+    );
+    if (!exists) {
+      list.push(req);
+      if (list.length > 20) {
+        list.splice(0, list.length - 20);
+      }
+      this.pendingLogRequests.set(clusterId, list);
+    }
+  }
+
+  public claimPendingLogRequests(clusterId: string): Array<{
+    id: string;
+    namespace: string;
+    podName: string;
+    container: string;
+    tailLines?: number;
+    previous?: boolean;
+    sinceSeconds?: number;
+    timestamps?: boolean;
+    limitBytes?: number;
+  }> {
+    const list = this.pendingLogRequests.get(clusterId);
+    if (!list || list.length === 0) {
+      return [];
+    }
+    this.pendingLogRequests.delete(clusterId);
+    return list.map(({ createdAt, ...rest }) => rest);
+  }
+
+  public waitForPodLogs(
+    clusterId: string,
+    namespace: string,
+    podName: string,
+    container: string,
+    previous: boolean,
+    timeoutMs = 3500
+  ): Promise<boolean> {
+    const cacheKey = `${clusterId}:${namespace}:${podName}:${container}:${previous ? 'prev' : 'curr'}`;
+    return new Promise((resolve) => {
+      let resolved = false;
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          const resolvers = this.pendingLogResolvers.get(cacheKey) || [];
+          const idx = resolvers.indexOf(onResolved);
+          if (idx !== -1) resolvers.splice(idx, 1);
+          resolve(false);
+        }
+      }, timeoutMs);
+
+      const onResolved = () => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          resolve(true);
+        }
+      };
+
+      const resolvers = this.pendingLogResolvers.get(cacheKey) || [];
+      resolvers.push(onResolved);
+      this.pendingLogResolvers.set(cacheKey, resolvers);
+    });
   }
 
   public storePodLogs(
@@ -4007,10 +4180,31 @@ export class DataStore {
     podName: string,
     container: string,
     logs: string,
-    previous = false
+    previous = false,
+    status?: 'SUCCESS' | 'NO_LOGS' | 'PERMISSION_DENIED' | 'POD_NOT_FOUND' | 'CONTAINER_NOT_FOUND' | 'PREVIOUS_LOGS_UNAVAILABLE' | 'KUBERNETES_API_UNAVAILABLE' | 'TIMEOUT' | 'UNKNOWN_ERROR',
+    errorMessage?: string
   ): void {
     const cacheKey = `${clusterId}:${namespace}:${podName}:${container}:${previous ? 'prev' : 'curr'}`;
-    this.podLogsCache.set(cacheKey, logs);
+    const resolvedStatus = status || (logs && logs.trim().length > 0 ? 'SUCCESS' : (previous ? 'PREVIOUS_LOGS_UNAVAILABLE' : 'NO_LOGS'));
+    this.podLogsCache.set(cacheKey, {
+      logs: logs || '',
+      status: resolvedStatus,
+      errorMessage,
+      source: 'agent',
+      updatedAt: Date.now()
+    });
+
+    const resolvers = this.pendingLogResolvers.get(cacheKey);
+    if (resolvers && resolvers.length > 0) {
+      this.pendingLogResolvers.delete(cacheKey);
+      for (const cb of resolvers) {
+        try {
+          cb();
+        } catch {
+          // ignore
+        }
+      }
+    }
   }
 
   // --- Deterministic Incident Engine & Deduplication ---

@@ -326,3 +326,79 @@ func (c *Client) postWithRetry(ctx context.Context, url string, payload interfac
 
 	return fmt.Errorf("exhausted %d retries: %w", c.cfg.MaxRetries, lastErr)
 }
+
+// LogRequest defines an on-demand container log collection request from the backend
+type LogRequest struct {
+	ID           string `json:"id"`
+	Namespace    string `json:"namespace"`
+	PodName      string `json:"podName"`
+	Container    string `json:"container"`
+	TailLines    int    `json:"tailLines,omitempty"`
+	Previous     bool   `json:"previous,omitempty"`
+	SinceSeconds int    `json:"sinceSeconds,omitempty"`
+	Timestamps   bool   `json:"timestamps,omitempty"`
+	LimitBytes   int64  `json:"limitBytes,omitempty"`
+}
+
+// LogIngestPayload defines the payload sent to POST /api/v1/agent/logs
+type LogIngestPayload struct {
+	RequestID    string `json:"requestId,omitempty"`
+	Namespace    string `json:"namespace"`
+	PodName      string `json:"podName"`
+	Container    string `json:"container"`
+	Logs         string `json:"logs"`
+	Previous     bool   `json:"previous,omitempty"`
+	Status       string `json:"status,omitempty"`
+	ErrorMessage string `json:"errorMessage,omitempty"`
+}
+
+// PollLogRequests polls the backend for pending on-demand pod log requests
+func (c *Client) PollLogRequests(ctx context.Context) ([]LogRequest, error) {
+	if !c.circuitBreaker.Allow() {
+		return nil, ErrCircuitOpen
+	}
+
+	url := fmt.Sprintf("%s/api/v1/agent/logs/requests", c.cfg.ServerURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.cfg.AgentToken))
+	req.Header.Set("User-Agent", fmt.Sprintf("SkyOpsAgent/%s", c.cfg.AgentVersion))
+	req.Header.Set("X-Cluster-ID", c.cfg.ClusterID)
+	req.Header.Set("X-Agent-ID", c.cfg.AgentID)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		c.circuitBreaker.RecordFailure()
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		c.circuitBreaker.RecordFailure()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+		return nil, fmt.Errorf("log request poll returned HTTP %d: %s", resp.StatusCode, body)
+	}
+
+	c.circuitBreaker.RecordSuccess()
+
+	var body struct {
+		Requests []LogRequest `json:"requests"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+	return body.Requests, nil
+}
+
+// SendPodLogs sends collected pod logs to the existing POST /api/v1/agent/logs endpoint
+func (c *Client) SendPodLogs(ctx context.Context, payload LogIngestPayload) error {
+	url := fmt.Sprintf("%s/api/v1/agent/logs", c.cfg.ServerURL)
+	return c.postWithRetry(ctx, url, payload, "logs")
+}
+

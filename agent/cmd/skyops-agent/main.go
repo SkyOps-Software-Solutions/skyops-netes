@@ -168,6 +168,9 @@ func main() {
 	// Initialize Safe Remediation Lifecycle Manager
 	remediationManager := remediation.NewManager(cfg, transportClient, clientGoK8s, metrics.Default)
 
+	// Initialize Real Kubernetes Container Log Collector
+	logCollector := collector.NewLogCollector(cfg, transportClient, kClient, metrics.Default)
+
 	// Mark metrics server as ready
 	if metricsServer != nil {
 		metricsServer.SetReady(true)
@@ -177,6 +180,7 @@ func main() {
 	go heartbeatService.Start(ctx)
 	go resourceCollector.Start(ctx)
 	go remediationManager.Start(ctx)
+	go logCollector.Start(ctx)
 
 	slog.Info("SkyOps Agent running in active enterprise observation and remediation mode")
 

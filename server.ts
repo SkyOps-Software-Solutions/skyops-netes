@@ -27,6 +27,7 @@ import {
 import { normalizeTelemetry } from './server/normalization';
 import { store } from './server/store';
 import { incidentNotificationService } from './server/notifications/notificationService';
+import { verifyProductionPersistence } from './server/persistence';
 import { skyOpsAIService } from './server/ai/service';
 import { SkyOpsIntelligenceEngine } from './server/engine/intelligence';
 import { AGENT_DEFAULT_NAMESPACE, AGENT_VERSION } from './src/config/version';
@@ -2116,6 +2117,8 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 // VITE MIDDLEWARE / SPA STATIC HANDLER
 // ==========================================
 async function startServer() {
+  verifyProductionPersistence();
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

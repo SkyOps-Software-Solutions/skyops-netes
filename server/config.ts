@@ -9,6 +9,7 @@ const ConfigSchema = z.object({
   SKYOPS_SERVER_URL: z.string().optional(),
   SKYOPS_API_URL: z.string().optional(),
   APP_URL: z.string().optional(),
+  SKYOPS_DATA_DIR: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
   FIREBASE_PROJECT_ID: z.string().optional(),
   FIREBASE_TRUSTED_PROJECT_IDS: z.string().optional(),
@@ -47,6 +48,13 @@ const ConfigSchema = z.object({
     if (!values.CORS_ORIGINS) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['CORS_ORIGINS'], message: 'CORS_ORIGINS is required in production' });
     }
+    if (!values.SKYOPS_DATA_DIR || values.SKYOPS_DATA_DIR.trim() === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['SKYOPS_DATA_DIR'],
+        message: 'SKYOPS_DATA_DIR is required in production to specify an explicit persistent storage directory (e.g. /mnt/skyops-data)'
+      });
+    }
   }
 });
 
@@ -61,6 +69,7 @@ try {
     SKYOPS_SERVER_URL: process.env.SKYOPS_SERVER_URL,
     SKYOPS_API_URL: process.env.SKYOPS_API_URL,
     APP_URL: process.env.APP_URL,
+    SKYOPS_DATA_DIR: process.env.SKYOPS_DATA_DIR,
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
     FIREBASE_TRUSTED_PROJECT_IDS: process.env.FIREBASE_TRUSTED_PROJECT_IDS,
@@ -88,6 +97,7 @@ try {
   parsedConfig = {
     NODE_ENV: 'development',
     PORT: 3000,
+    SKYOPS_DATA_DIR: process.env.SKYOPS_DATA_DIR,
     ENABLE_DEV_SIMULATION: process.env.NODE_ENV !== 'production',
     SKYOPS_ALLOW_DEMO_AUTH: process.env.NODE_ENV !== 'production',
     AGENT_MIN_COMPATIBLE_VERSION: '1.0.0',

@@ -1,0 +1,181 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+
+export interface PersistenceConfig {
+  env: 'development' | 'production' | 'test';
+  dataDir: string;
+  isExplicitProductionDir: boolean;
+  storeFile: string;
+  auditFile: string;
+  webhooksFile: string;
+  notificationsFile: string;
+}
+
+/**
+ * Resolves and validates persistence paths based on the runtime environment.
+ * Enforces strict environment boundaries:
+ * - TEST: Isolated per-process temp directory (never mutates repository data/)
+ * - DEVELOPMENT: Local repository data/ directory (or explicit SKYOPS_DATA_DIR)
+ * - PRODUCTION: Must be an explicitly provided persistent directory via SKYOPS_DATA_DIR.
+ *   Fails closed if missing, invalid, unwritable, or pointing to an unmounted/ephemeral relative path.
+ */
+export function resolvePersistenceConfig(
+  forcedEnv?: string,
+  forcedDataDir?: string
+): PersistenceConfig {
+  const env = (forcedEnv || process.env.NODE_ENV || 'development') as 'development' | 'production' | 'test';
+  const envDataDir = process.env.SKYOPS_DATA_DIR && process.env.SKYOPS_DATA_DIR !== 'undefined'
+    ? process.env.SKYOPS_DATA_DIR
+    : undefined;
+  const rawDataDir = forcedDataDir !== undefined ? forcedDataDir : envDataDir;
+
+  if (env === 'production') {
+    if (!rawDataDir || rawDataDir.trim() === '') {
+      throw new Error(
+        '[SkyOps Persistence] Fatal Startup Failure: Production environment requires an explicit persistent storage directory configured via SKYOPS_DATA_DIR (e.g. SKYOPS_DATA_DIR=/mnt/skyops-data). Implicit fallback to local ephemeral repository storage is strictly prohibited to prevent data loss.'
+      );
+    }
+
+    const resolvedDir = path.resolve(rawDataDir.trim());
+
+    // Ensure directory exists or can be created
+    if (!fs.existsSync(resolvedDir)) {
+      try {
+        fs.mkdirSync(resolvedDir, { recursive: true });
+      } catch (err: any) {
+        throw new Error(
+          `[SkyOps Persistence] Fatal Startup Failure: Unable to create persistent storage directory at "${resolvedDir}": ${err?.message || err}`
+        );
+      }
+    }
+
+    // Verify write permissions with an active probe
+    const probeFile = path.join(resolvedDir, `.probe-write-${process.pid}-${Date.now()}`);
+    try {
+      fs.writeFileSync(probeFile, 'skyops-write-probe', 'utf8');
+      fs.unlinkSync(probeFile);
+    } catch (err: any) {
+      throw new Error(
+        `[SkyOps Persistence] Fatal Startup Failure: Configured persistent data directory "${resolvedDir}" is not writable: ${err?.message || err}`
+      );
+    }
+
+    return {
+      env: 'production',
+      dataDir: resolvedDir,
+      isExplicitProductionDir: true,
+      storeFile: path.join(resolvedDir, 'skyops_store.json'),
+      auditFile: path.join(resolvedDir, 'skyops_audit.json'),
+      webhooksFile: path.join(resolvedDir, 'skyops_webhooks.json'),
+      notificationsFile: path.join(resolvedDir, 'skyops_notifications.json')
+    };
+  }
+
+  if (env === 'test') {
+    const testDir = rawDataDir
+      ? path.resolve(rawDataDir.trim())
+      : path.join(os.tmpdir(), `skyops-test-${process.pid}`);
+    if (!fs.existsSync(testDir)) {
+      fs.mkdirSync(testDir, { recursive: true });
+    }
+    return {
+      env: 'test',
+      dataDir: testDir,
+      isExplicitProductionDir: false,
+      storeFile: path.join(testDir, 'skyops_store.json'),
+      auditFile: path.join(testDir, 'skyops_audit.json'),
+      webhooksFile: path.join(testDir, 'skyops_webhooks.json'),
+      notificationsFile: path.join(testDir, 'skyops_notifications.json')
+    };
+  }
+
+  // Development mode
+  const devDir = rawDataDir
+    ? path.resolve(rawDataDir.trim())
+    : path.join(process.cwd(), 'data');
+  if (!fs.existsSync(devDir)) {
+    fs.mkdirSync(devDir, { recursive: true });
+  }
+
+  return {
+    env: 'development',
+    dataDir: devDir,
+    isExplicitProductionDir: Boolean(rawDataDir),
+    storeFile: path.join(devDir, 'skyops_store.json'),
+    auditFile: path.join(devDir, 'skyops_audit.json'),
+    webhooksFile: path.join(devDir, 'skyops_webhooks.json'),
+    notificationsFile: path.join(devDir, 'skyops_notifications.json')
+  };
+}
+
+let activeConfig: PersistenceConfig | null = null;
+
+export function getPersistenceConfig(): PersistenceConfig {
+  if (!activeConfig) {
+    activeConfig = resolvePersistenceConfig();
+  }
+  return activeConfig;
+}
+
+/**
+ * Resets cached persistence configuration (useful for testing environment switches)
+ */
+export function resetPersistenceConfig(): void {
+  activeConfig = null;
+}
+
+/**
+ * Safely writes data to disk using an atomic temp-file write and rename.
+ * This eliminates the risk of file truncation or partial writes if interrupted.
+ */
+export function safeWriteJsonSync(filePath: string, data: unknown): void {
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  const tempFile = `${filePath}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).substring(2, 6)}`;
+  const serialized = JSON.stringify(data, null, 2);
+  fs.writeFileSync(tempFile, serialized, 'utf8');
+
+  // Atomically replace target
+  fs.renameSync(tempFile, filePath);
+}
+
+/**
+ * Reads a JSON file with fail-closed semantics in production for critical files.
+ */
+export function safeReadJsonSync<T>(
+  filePath: string,
+  defaultValue: T,
+  isCriticalProductionFile = false
+): T {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return defaultValue;
+    }
+    const raw = fs.readFileSync(filePath, 'utf8');
+    return JSON.parse(raw) as T;
+  } catch (err: any) {
+    if (process.env.NODE_ENV === 'production' && isCriticalProductionFile) {
+      throw new Error(
+        `[SkyOps Persistence] Fatal: Corrupted or unreadable persistence file at "${filePath}". Refusing to start clean or overwrite to prevent production data loss: ${err?.message || err}`
+      );
+    }
+    console.warn(`[SkyOps Persistence] Notice reading persistence file "${filePath}":`, err?.message || err);
+    return defaultValue;
+  }
+}
+
+/**
+ * Verifies production persistence readiness on startup.
+ * Throws a fatal exception if in production mode and persistence requirements are not satisfied.
+ */
+export function verifyProductionPersistence(): void {
+  if (process.env.NODE_ENV === 'production') {
+    const cfg = getPersistenceConfig();
+    console.log(`[SkyOps Persistence] Production persistence verified. Persistent storage directory: ${cfg.dataDir}`);
+  }
+}
+

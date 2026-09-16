@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { WebhookConfig, WebhookDeliveryRecord, WebhookEventType } from '../repositories/types';
 import { jobQueue } from '../jobs/jobQueue';
+import { getPersistenceConfig, safeWriteJsonSync } from '../persistence';
 
 export function validateWebhookUrl(rawUrl: string): { valid: boolean; error?: string } {
   try {
@@ -43,11 +44,15 @@ export function validateWebhookUrl(rawUrl: string): { valid: boolean; error?: st
 class WebhookService {
   private webhooks: Map<string, WebhookConfig> = new Map();
   private deliveryHistory: WebhookDeliveryRecord[] = [];
-  private readonly dataFilePath = path.join(process.cwd(), 'data', 'skyops_webhooks.json');
+  private readonly dataFilePath = getPersistenceConfig().webhooksFile;
 
   constructor() {
     this.loadWebhooks();
     this.registerJobHandler();
+  }
+
+  public getDataFilePath(): string {
+    return this.dataFilePath;
   }
 
   private loadWebhooks(): void {
@@ -64,22 +69,23 @@ class WebhookService {
           this.deliveryHistory = parsed.deliveryHistory.slice(-500); // keep last 500
         }
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          `[WebhookService] Fatal: Failed to read webhooks file in production at "${this.dataFilePath}": ${err?.message || err}`
+        );
+      }
       console.warn('[WebhookService] Notice loading webhooks:', err);
     }
   }
 
   private saveWebhooks(): void {
     try {
-      const dir = path.dirname(this.dataFilePath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
       const data = {
         webhooks: Array.from(this.webhooks.values()),
         deliveryHistory: this.deliveryHistory.slice(-200)
       };
-      fs.writeFileSync(this.dataFilePath, JSON.stringify(data, null, 2), 'utf-8');
+      safeWriteJsonSync(this.dataFilePath, data);
     } catch (err) {
       console.error('[WebhookService] Failed to persist webhooks:', err);
     }

@@ -1,16 +1,17 @@
 import { AuditEvent, AuditQueryFilters, PaginatedResult } from './repositories/types';
 import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import { getPersistenceConfig, safeWriteJsonSync } from './persistence';
 
 class AuditService {
   private events: AuditEvent[] = [];
-  private readonly dataFilePath = process.env.NODE_ENV === 'test'
-    ? path.join(os.tmpdir(), `skyops-audit-${process.pid}.json`)
-    : path.join(process.cwd(), 'data', 'skyops_audit.json');
+  private readonly dataFilePath = getPersistenceConfig().auditFile;
 
   constructor() {
     this.loadEvents();
+  }
+
+  public getDataFilePath(): string {
+    return this.dataFilePath;
   }
 
   private loadEvents(): void {
@@ -22,7 +23,12 @@ class AuditService {
           this.events = parsed;
         }
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          `[AuditService] Fatal: Corrupted or unreadable audit events file in production at "${this.dataFilePath}". Refusing to start clean: ${err?.message || err}`
+        );
+      }
       console.warn('[AuditService] Notice reading audit file:', err);
       this.events = [];
     }
@@ -30,11 +36,7 @@ class AuditService {
 
   private saveEvents(): void {
     try {
-      const dir = path.dirname(this.dataFilePath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      fs.writeFileSync(this.dataFilePath, JSON.stringify(this.events, null, 2), 'utf-8');
+      safeWriteJsonSync(this.dataFilePath, this.events);
     } catch (err) {
       console.error('[AuditService] Failed to persist audit events to disk:', err);
     }

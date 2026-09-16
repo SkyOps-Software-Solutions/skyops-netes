@@ -64,6 +64,7 @@ import { webhookService } from './integrations/webhooks';
 import { incidentNotificationService } from './notifications/notificationService';
 import { systemObservability } from './observability/metrics';
 import { OrgUsageSummary } from './repositories/types';
+import { getPersistenceConfig, safeWriteJsonSync } from './persistence';
 
 export class DataStore {
   private users: Map<string, User> = new Map();
@@ -92,9 +93,7 @@ export class DataStore {
   private telemetryBatchCounts: Map<string, number> = new Map(); // orgId -> count
   private telemetryResourceCounts: Map<string, number> = new Map(); // orgId -> count
   private incidentCounter = 1001;
-  private storagePath = process.env.NODE_ENV === 'test'
-    ? path.join(os.tmpdir(), `skyops-store-${process.pid}.json`)
-    : path.join(process.cwd(), 'data', 'skyops_store.json');
+  private storagePath = getPersistenceConfig().storeFile;
   private saveTimeout: NodeJS.Timeout | null = null;
 
   constructor() {
@@ -103,6 +102,10 @@ export class DataStore {
       this.seedDevFixtures();
     }
     this.startHeartbeatMonitor();
+  }
+
+  public getStoragePath(): string {
+    return this.storagePath;
   }
 
   private loadSnapshot() {
@@ -165,8 +168,18 @@ export class DataStore {
             this.aiAnalyses.delete(id);
           }
         }
+        if (process.env.NODE_ENV === 'production') {
+          console.log(`[DataStore] Loaded production persistence from ${this.storagePath} (${this.orgs.size} orgs, ${this.clusters.size} clusters, ${this.incidents.size} incidents)`);
+        }
+      } else if (process.env.NODE_ENV === 'production') {
+        console.log(`[DataStore] Initializing fresh production persistence store at verified path: ${this.storagePath}`);
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          `[DataStore] Fatal Startup Error: Failed to read or parse production store snapshot at "${this.storagePath}". Refusing to start clean or overwrite to prevent data loss: ${err?.message || err}`
+        );
+      }
       console.warn('[DataStore] Notice: Unable to load store snapshot, starting clean:', err);
     }
   }
@@ -175,10 +188,6 @@ export class DataStore {
     if (this.saveTimeout) clearTimeout(this.saveTimeout);
     this.saveTimeout = setTimeout(() => {
       try {
-        const dir = path.dirname(this.storagePath);
-        if (!fs.existsSync(dir)) {
-          fs.mkdirSync(dir, { recursive: true });
-        }
         const data = {
           users: Object.fromEntries(this.users),
           orgs: Object.fromEntries(this.orgs),
@@ -201,9 +210,9 @@ export class DataStore {
           clusterMetricHistory: Object.fromEntries(this.clusterMetricHistory),
           telemetryStore: this.telemetryStore.exportSnapshot()
         };
-        fs.writeFileSync(this.storagePath, JSON.stringify(data, null, 2), 'utf8');
-      } catch (err) {
-        console.warn('[DataStore] Snapshot save notice:', err);
+        safeWriteJsonSync(this.storagePath, data);
+      } catch (err: any) {
+        console.error('[DataStore] Snapshot save error:', err?.message || err);
       }
     }, 100);
     if (typeof this.saveTimeout.unref === 'function') {
@@ -214,10 +223,6 @@ export class DataStore {
   public saveSnapshotSync() {
     try {
       if (this.saveTimeout) clearTimeout(this.saveTimeout);
-      const dir = path.dirname(this.storagePath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
       const data = {
         users: Object.fromEntries(this.users),
         orgs: Object.fromEntries(this.orgs),
@@ -240,9 +245,9 @@ export class DataStore {
         clusterMetricHistory: Object.fromEntries(this.clusterMetricHistory),
         telemetryStore: this.telemetryStore.exportSnapshot()
       };
-      fs.writeFileSync(this.storagePath, JSON.stringify(data, null, 2), 'utf8');
-    } catch (err) {
-      console.warn('[DataStore] Snapshot sync save notice:', err);
+      safeWriteJsonSync(this.storagePath, data);
+    } catch (err: any) {
+      console.error('[DataStore] Snapshot sync save error:', err?.message || err);
     }
   }
 

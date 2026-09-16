@@ -5,6 +5,7 @@ import path from 'path';
 import { Incident, SkyOpsAIAnalysis } from '../../src/types/index';
 import { generateIncidentEmail } from './emailTemplate';
 import { NodemailerEmailProvider } from './providers/emailProvider';
+import { getPersistenceConfig, safeWriteJsonSync } from '../persistence';
 import {
   EmailDeliveryResult,
   EmailNotificationRecord,
@@ -37,9 +38,7 @@ export class IncidentNotificationService {
     this.senderEmail = options?.senderEmail || process.env.SKYOPS_NOTIFICATION_SENDER_EMAIL || 'skyopsnetes2000@gmail.com';
     this.senderName = options?.senderName || process.env.SKYOPS_NOTIFICATION_SENDER_NAME || 'SkyOps';
     this.appUrl = options?.appUrl || process.env.APP_URL || process.env.SKYOPS_SERVER_URL || 'http://localhost:3000';
-    this.storagePath = options?.storagePath || (process.env.NODE_ENV === 'test'
-      ? path.join(os.tmpdir(), `skyops-notifications-${process.pid}.json`)
-      : path.join(process.cwd(), 'data', 'skyops_notification_logs.json'));
+    this.storagePath = options?.storagePath || getPersistenceConfig().notificationsFile;
 
     if (options?.provider) {
       this.provider = options.provider;
@@ -353,6 +352,10 @@ export class IncidentNotificationService {
     this.persistLogs();
   }
 
+  public getStoragePath(): string {
+    return this.storagePath;
+  }
+
   private loadLogs(): void {
     try {
       if (fs.existsSync(this.storagePath)) {
@@ -367,17 +370,18 @@ export class IncidentNotificationService {
           }
         }
       }
-    } catch (err) {
-      // Non-fatal, will initialize clean in-memory log
+    } catch (err: any) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          `[IncidentNotificationService] Fatal: Corrupted or unreadable notification logs file in production at "${this.storagePath}". Refusing to start clean: ${err?.message || err}`
+        );
+      }
+      // Non-fatal in dev/test, will initialize clean in-memory log
     }
   }
 
   private persistLogs(): void {
     try {
-      const dir = path.dirname(this.storagePath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
       const data = {
         deliveries: this.deliveryHistory.slice(0, 200),
         sentKeys: Array.from(this.sentKeys.entries()).map(([key, val]) => ({
@@ -386,7 +390,7 @@ export class IncidentNotificationService {
           messageId: val.messageId
         }))
       };
-      fs.writeFileSync(this.storagePath, JSON.stringify(data, null, 2), 'utf8');
+      safeWriteJsonSync(this.storagePath, data);
     } catch (err) {
       // Non-fatal
     }

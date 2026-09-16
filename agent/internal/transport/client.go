@@ -402,3 +402,88 @@ func (c *Client) SendPodLogs(ctx context.Context, payload LogIngestPayload) erro
 	return c.postWithRetry(ctx, url, payload, "logs")
 }
 
+// MetricsServerVerificationRequest represents an on-demand verification requested by the backend
+type MetricsServerVerificationRequest struct {
+	ID        string `json:"id"`
+	ClusterID string `json:"clusterId"`
+	CreatedAt int64  `json:"createdAt"`
+}
+
+// MetricsServerVerificationResult represents the comprehensive result of live verification
+type MetricsServerVerificationResult struct {
+	RequestID            string   `json:"requestId"`
+	ClusterID            string   `json:"clusterId"`
+	Status               string   `json:"status"` // READY_WITH_METRICS, INSTALLED_NOT_READY, READY_NO_METRICS, NOT_INSTALLED, PERMISSION_DENIED, API_UNAVAILABLE, TIMEOUT, UNKNOWN
+	DeploymentFound      bool     `json:"deploymentFound"`
+	DeploymentName       string   `json:"deploymentName,omitempty"`
+	DeploymentNamespace  string   `json:"deploymentNamespace,omitempty"`
+	DeploymentReady      bool     `json:"deploymentReady"`
+	ReadyReplicas        int      `json:"readyReplicas"`
+	ExpectedReplicas     int      `json:"expectedReplicas"`
+	PodReady             bool     `json:"podReady"`
+	PodPhase             string   `json:"podPhase,omitempty"`
+	PodName              string   `json:"podName,omitempty"`
+	APIReachable         bool     `json:"apiReachable"`
+	NodeMetricsAvailable bool     `json:"nodeMetricsAvailable"`
+	NodeMetricsCount     int      `json:"nodeMetricsCount"`
+	PodMetricsAvailable  bool     `json:"podMetricsAvailable"`
+	PodMetricsCount      int      `json:"podMetricsCount"`
+	RawError             string   `json:"rawError,omitempty"`
+	Diagnostics          []string `json:"diagnostics,omitempty"`
+	WhatHappened         string   `json:"whatHappened,omitempty"`
+	Why                  string   `json:"why,omitempty"`
+	Impact               string   `json:"impact,omitempty"`
+	NextAction           string   `json:"nextAction,omitempty"`
+	VerifiedAt           int64    `json:"verifiedAt"`
+}
+
+// PollMetricsServerVerificationRequests polls the backend for pending Metrics Server verification requests
+func (c *Client) PollMetricsServerVerificationRequests(ctx context.Context) ([]MetricsServerVerificationRequest, error) {
+	if !c.circuitBreaker.Allow() {
+		return nil, ErrCircuitOpen
+	}
+
+	url := fmt.Sprintf("%s/api/v1/agent/metrics-server/verification-requests", c.cfg.ServerURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.cfg.AgentToken))
+	req.Header.Set("User-Agent", fmt.Sprintf("SkyOpsAgent/%s", c.cfg.AgentVersion))
+	req.Header.Set("X-Cluster-ID", c.cfg.ClusterID)
+	req.Header.Set("X-Agent-ID", c.cfg.AgentID)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		c.circuitBreaker.RecordFailure()
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		c.circuitBreaker.RecordFailure()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+		return nil, fmt.Errorf("metrics server verification poll returned HTTP %d: %s", resp.StatusCode, body)
+	}
+
+	c.circuitBreaker.RecordSuccess()
+
+	var body struct {
+		Requests []MetricsServerVerificationRequest `json:"requests"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+	return body.Requests, nil
+}
+
+// SendMetricsServerVerificationResult sends the verified Metrics Server status back to the backend
+func (c *Client) SendMetricsServerVerificationResult(ctx context.Context, payload MetricsServerVerificationResult) error {
+	url := fmt.Sprintf("%s/api/v1/agent/metrics-server/verification-results", c.cfg.ServerURL)
+	return c.postWithRetry(ctx, url, payload, "metrics_server_verification")
+}
+

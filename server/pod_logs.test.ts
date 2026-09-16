@@ -44,7 +44,7 @@ describe('Pod Logs Pipeline & Truthful Error Mapping', () => {
       namespace: 'kube-system',
       kind: 'Pod',
       status: 'Running',
-      health: 'healthy',
+      health: 'HEALTHY',
       createdAt: Date.now() - 3600000,
       containers: [
         {
@@ -104,7 +104,7 @@ describe('Pod Logs Pipeline & Truthful Error Mapping', () => {
       namespace: 'default',
       kind: 'Pod',
       status: 'Running',
-      health: 'healthy',
+      health: 'HEALTHY',
       createdAt: Date.now(),
       containers: [{ name: 'app', image: 'app:v1', ready: true, restartCount: 0, state: 'running' }]
     };
@@ -146,7 +146,7 @@ describe('Pod Logs Pipeline & Truthful Error Mapping', () => {
       namespace: 'default',
       kind: 'Pod',
       status: 'Running',
-      health: 'healthy',
+      health: 'HEALTHY',
       createdAt: Date.now(),
       containers: [{ name: 'web', image: 'nginx:alpine', ready: true, restartCount: 0, state: 'running' }]
     };
@@ -171,7 +171,7 @@ describe('Pod Logs Pipeline & Truthful Error Mapping', () => {
     assert.strictEqual(logResult.statusCategory, 'PREVIOUS_LOGS_UNAVAILABLE');
     assert.strictEqual(
       logResult.unavailableReason,
-      'Previous container logs are not available from Kubernetes.'
+      'Previous container logs are not available from Kubernetes. The container may not have restarted yet.'
     );
   });
 
@@ -188,7 +188,7 @@ describe('Pod Logs Pipeline & Truthful Error Mapping', () => {
       namespace: 'default',
       kind: 'Pod',
       status: 'Running',
-      health: 'healthy',
+      health: 'HEALTHY',
       createdAt: Date.now(),
       containers: [{ name: 'main', image: 'busybox', ready: true, restartCount: 0, state: 'running' }]
     };
@@ -203,8 +203,8 @@ describe('Pod Logs Pipeline & Truthful Error Mapping', () => {
     }
 
     const logResult = await store.getPodLogs(cluster.id, org.id, 'default', 'orphan-pod', { container: 'main' });
-    assert.strictEqual(logResult.statusCategory, 'UNKNOWN_ERROR');
-    assert.strictEqual(logResult.unavailableReason, 'Agent disconnected. Live container logs cannot be retrieved.');
+    assert.strictEqual(logResult.statusCategory, 'AGENT_DISCONNECTED');
+    assert.ok(logResult.unavailableReason?.includes('agent is disconnected'));
   });
 
   it('enforces multi-tenant isolation: cannot query logs across org boundary', async () => {

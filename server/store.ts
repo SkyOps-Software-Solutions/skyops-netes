@@ -46,7 +46,9 @@ import {
   TicketSeverity,
   TicketStatus,
   OrgUsageMetrics,
-  MetricsServerStatus
+  MetricsServerStatus,
+  MetricsServerStateType,
+  MetricsServerVerificationEvidence
 } from '../src/types/index';
 import { TelemetryStore } from './telemetry_store';
 import { AGENT_VERSION } from '../src/config/version';
@@ -82,11 +84,16 @@ export class DataStore {
   private telemetryStore: TelemetryStore = new TelemetryStore();
   private podLogsCache: Map<string, {
     logs: string;
-    status: 'SUCCESS' | 'NO_LOGS' | 'PERMISSION_DENIED' | 'POD_NOT_FOUND' | 'CONTAINER_NOT_FOUND' | 'PREVIOUS_LOGS_UNAVAILABLE' | 'KUBERNETES_API_UNAVAILABLE' | 'TIMEOUT' | 'UNKNOWN_ERROR';
+    status: PodLogsResponse['statusCategory'];
     errorMessage?: string;
     source: string;
     updatedAt: number;
+    waitingReason?: string;
+    waitingMessage?: string;
   }> = new Map(); // cluster:ns:pod:container:mode -> CachedPodLogsEntry
+  private pendingMetricsVerificationRequests: Map<string, Array<{ id: string; clusterId: string; createdAt: number }>> = new Map();
+  private metricsVerificationResults: Map<string, any> = new Map();
+  private metricsServerVerificationCache: Map<string, MetricsServerStatus> = new Map();
   private pendingLogRequests: Map<string, Array<{
     id: string;
     namespace: string;
@@ -3693,26 +3700,108 @@ export class DataStore {
     return this.telemetryStore.calculateBaseline(clusterId, range);
   }
 
-  public getMetricsServerStatus(clusterId: string, orgId?: string): MetricsServerStatus | null {
+  public queueMetricsServerVerificationRequest(clusterId: string): string {
+    const reqId = `msv-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const list = this.pendingMetricsVerificationRequests.get(clusterId) || [];
+    list.push({ id: reqId, clusterId, createdAt: Date.now() });
+    this.pendingMetricsVerificationRequests.set(clusterId, list);
+    return reqId;
+  }
+
+  public claimPendingMetricsServerVerificationRequests(clusterId: string): Array<{ id: string; clusterId: string; createdAt: number }> {
+    const list = this.pendingMetricsVerificationRequests.get(clusterId) || [];
+    this.pendingMetricsVerificationRequests.delete(clusterId);
+    return list;
+  }
+
+  public recordMetricsServerVerificationResult(result: any): boolean {
+    if (!result || !result.clusterId) return false;
+    this.metricsVerificationResults.set(result.requestId || result.clusterId, result);
+    this.metricsVerificationResults.set(result.clusterId, result);
+    return true;
+  }
+
+  public async waitForMetricsServerVerification(clusterId: string, requestId: string, timeoutMs: number = 4000): Promise<any | null> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const res = this.metricsVerificationResults.get(requestId) || this.metricsVerificationResults.get(clusterId);
+      if (res && (!requestId || res.requestId === requestId || (res.verifiedAt && res.verifiedAt >= start))) {
+        return res;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    return null;
+  }
+
+  public reconcileMetricsServerIncidents(clusterId: string, orgId: string, verifiedEvidence: MetricsServerVerificationEvidence): void {
+    const openIncidents = [...this.incidents.values()].filter(
+      (inc) =>
+        inc.clusterId === clusterId &&
+        inc.orgId === orgId &&
+        (inc.status === 'OPEN' || inc.status === 'IN_PROGRESS' || inc.status === 'ACKNOWLEDGED') &&
+        (inc.resourceName.toLowerCase().includes('metrics-server') || inc.title.toLowerCase().includes('metrics-server'))
+    );
+
+    for (const inc of openIncidents) {
+      if (verifiedEvidence.deploymentReady && verifiedEvidence.podReady && verifiedEvidence.apiReachable) {
+        inc.status = 'RESOLVED';
+        inc.resolvedAt = Date.now();
+        inc.updatedAt = Date.now();
+        inc.resolutionSource = 'AUTOMATIC_VERIFIED';
+        const reason = `Metrics Server recovered: 1/1 replicas ready and metrics.k8s.io active with ${verifiedEvidence.nodeMetricsCount || 0} node and ${verifiedEvidence.podMetricsCount || 0} pod metrics streaming.`;
+        inc.resolution = {
+          source: 'AUTOMATIC_VERIFIED',
+          resolvedAt: inc.resolvedAt,
+          reason,
+          verificationDetails: `Verified at ${new Date(verifiedEvidence.lastVerifiedAt || Date.now()).toISOString()} by SkyOps Agent in-cluster check.`
+        };
+        this.addTimelineEvent(inc.id, {
+          type: 'RECOVERY',
+          actor: { type: 'AGENT', name: 'SkyOps Verification Engine' },
+          description: reason,
+          metadata: {
+            resolutionSource: 'AUTOMATIC_VERIFIED',
+            verifiedAt: verifiedEvidence.lastVerifiedAt,
+            nodeMetricsCount: verifiedEvidence.nodeMetricsCount,
+            podMetricsCount: verifiedEvidence.podMetricsCount
+          }
+        });
+      }
+    }
+  }
+
+  public getMetricsServerStatus(clusterId: string, orgId?: string, overrideResult?: any): MetricsServerStatus | null {
     const cluster = this.getCluster(clusterId, orgId);
     if (!cluster) return null;
 
+    const cachedVerified = overrideResult || this.metricsVerificationResults.get(clusterId);
     const resources = this.getClusterResources(clusterId, orgId);
     
     // Check if any pod or deployment matches metrics-server
-    const hasMetricsServerDeployment = resources.some(
-      (r) => r.name.toLowerCase().includes('metrics-server')
+    const metricsServerDeployment = resources.find(
+      (r) => r.kind === 'Deployment' && r.name.toLowerCase().includes('metrics-server')
     );
+    const metricsServerPod = resources.find(
+      (r) => r.kind === 'Pod' && r.name.toLowerCase().includes('metrics-server')
+    );
+    const hasMetricsServerDeployment = !!metricsServerDeployment || !!metricsServerPod;
 
     const metrics = this.getClusterObservabilityMetrics(clusterId, orgId);
     const isActive = !!(metrics && metrics.isUsageAvailable);
     const isInstalled = hasMetricsServerDeployment || isActive;
 
-    let status: 'ACTIVE' | 'INSTALLED_NOT_REPORTING' | 'NOT_INSTALLED' = 'NOT_INSTALLED';
-    if (isActive) {
-      status = 'ACTIVE';
+    let status: MetricsServerStateType = 'NOT_INSTALLED';
+    if (cachedVerified?.status) {
+      status = cachedVerified.status as MetricsServerStateType;
+    } else if (isActive) {
+      status = 'READY_WITH_METRICS';
     } else if (isInstalled) {
-      status = 'INSTALLED_NOT_REPORTING';
+      const readyReplicas = Number(metricsServerDeployment?.statusSummary?.readyReplicas) || 0;
+      if (readyReplicas > 0 || metricsServerPod?.status === 'Running') {
+        status = 'READY_NO_METRICS';
+      } else {
+        status = 'INSTALLED_NOT_READY';
+      }
     }
 
     const now = Date.now();
@@ -3738,24 +3827,52 @@ export class DataStore {
     if (!versionCompatible) {
       diagnostics.push(`Cluster version ${cluster.k8sVersion} is below the supported v1.21 threshold for modern Metrics Server.`);
     }
-    if (status === 'INSTALLED_NOT_REPORTING') {
-      diagnostics.push('metrics-server deployment detected in cluster, but metrics.k8s.io API is not returning usage metrics.');
-      diagnostics.push('For local or self-signed clusters (Kind, Minikube, K3s, Docker Desktop), metrics-server requires --kubelet-insecure-tls flag to bypass certificate validation.');
-      diagnostics.push('Verify that metrics-server pod is in Running state and not crashlooping.');
+
+    if (cachedVerified?.diagnostics && cachedVerified.diagnostics.length > 0) {
+      for (const d of cachedVerified.diagnostics) {
+        if (!diagnostics.includes(d)) diagnostics.push(d);
+      }
+    } else if (status === 'INSTALLED_NOT_READY') {
+      diagnostics.push('metrics-server deployment detected in cluster, but pod is not ready or has 0 ready replicas.');
+      diagnostics.push('Inspect Metrics Server pod logs and events in kube-system namespace.');
+    } else if (status === 'READY_NO_METRICS') {
+      diagnostics.push('metrics-server pod is running, but metrics.k8s.io has not yet returned node/pod usage.');
+      diagnostics.push('If this is a local/dev cluster (Kind, Minikube, K3s), kubelet self-signed certificates require --kubelet-insecure-tls.');
+      diagnostics.push('If recently deployed, allow 30-60 seconds for the initial scrape cycle.');
     } else if (status === 'NOT_INSTALLED') {
       diagnostics.push('No metrics-server deployment or pods found in cluster namespaces (e.g. kube-system).');
-      diagnostics.push('Install Metrics Server to unlock live pod/node CPU & memory usage telemetry and Horizontal Pod Autoscaling (HPA).');
+      diagnostics.push('Metrics Server is optional. Cluster health, workload tracking, events, and pod logs remain fully operational without it.');
     }
 
     const kubectlCommand = 'kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml';
     const kubectlInsecureTlsCommand = `kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml\nkubectl patch deployment metrics-server -n kube-system --type='json' -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'`;
     const helmCommand = `helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/\nhelm repo update\nhelm upgrade --install metrics-server metrics-server/metrics-server -n kube-system`;
+    const helmInsecureTlsCommand = `helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/\nhelm repo update\nhelm upgrade --install metrics-server metrics-server/metrics-server -n kube-system --set "args={--kubelet-insecure-tls}"`;
+
+    const verificationEvidence: MetricsServerVerificationEvidence = {
+      deploymentFound: cachedVerified ? cachedVerified.deploymentFound : hasMetricsServerDeployment,
+      deploymentName: cachedVerified?.deploymentName || metricsServerDeployment?.name || 'metrics-server',
+      deploymentNamespace: cachedVerified?.deploymentNamespace || metricsServerDeployment?.namespace || 'kube-system',
+      deploymentReady: cachedVerified ? cachedVerified.deploymentReady : (Number(metricsServerDeployment?.statusSummary?.readyReplicas) || 0) > 0,
+      readyReplicas: cachedVerified?.readyReplicas ?? (Number(metricsServerDeployment?.statusSummary?.readyReplicas) || 0),
+      expectedReplicas: cachedVerified?.expectedReplicas ?? metricsServerDeployment?.statusSummary?.replicas ?? 1,
+      podReady: cachedVerified ? cachedVerified.podReady : (metricsServerPod?.status === 'Running'),
+      podPhase: cachedVerified?.podPhase || metricsServerPod?.status || 'Unknown',
+      podName: cachedVerified?.podName || metricsServerPod?.name || '',
+      apiReachable: cachedVerified ? cachedVerified.apiReachable : isActive,
+      nodeMetricsAvailable: cachedVerified ? cachedVerified.nodeMetricsAvailable : isActive,
+      nodeMetricsCount: cachedVerified?.nodeMetricsCount ?? (isActive ? 1 : 0),
+      podMetricsAvailable: cachedVerified ? cachedVerified.podMetricsAvailable : isActive,
+      podMetricsCount: cachedVerified?.podMetricsCount ?? (isActive ? 1 : 0),
+      lastVerifiedAt: cachedVerified?.verifiedAt || (isActive ? now : undefined),
+      rawError: cachedVerified?.rawError
+    };
 
     return {
       clusterId: cluster.id,
       clusterName: cluster.name,
       isInstalled,
-      isActive,
+      isActive: status === 'READY_WITH_METRICS' || status === 'ACTIVE',
       status,
       clusterVersion: cluster.k8sVersion || 'v1.31.0',
       preflight: {
@@ -3766,35 +3883,77 @@ export class DataStore {
       commands: {
         kubectl: kubectlCommand,
         kubectlInsecureTls: kubectlInsecureTlsCommand,
-        helm: helmCommand
+        helm: helmCommand,
+        helmInsecureTls: helmInsecureTlsCommand
       },
-      diagnostics
+      diagnostics,
+      verification: verificationEvidence,
+      whatHappened: cachedVerified?.whatHappened,
+      why: cachedVerified?.why,
+      impact: cachedVerified?.impact,
+      nextAction: cachedVerified?.nextAction,
+      rawError: cachedVerified?.rawError
     };
   }
 
-  public verifyMetricsServer(
+  public async verifyMetricsServer(
     clusterId: string,
     orgId?: string
-  ): { success: boolean; status: MetricsServerStatus; message: string } | null {
+  ): Promise<{ success: boolean; status: MetricsServerStatus; message: string } | null> {
     const cluster = this.getCluster(clusterId, orgId);
     if (!cluster) return null;
 
     // Invalidate cached metrics so fresh calculation runs
     this.clusterMetrics.delete(clusterId);
-    const status = this.getMetricsServerStatus(clusterId, orgId);
+
+    let verifiedResult: any = null;
+    const now = Date.now();
+    const isConnected = cluster.agentStatus === 'CONNECTED' && (now - (cluster.lastHeartbeat || 0)) < 60000;
+
+    if (isConnected) {
+      const reqId = this.queueMetricsServerVerificationRequest(clusterId);
+      verifiedResult = await this.waitForMetricsServerVerification(clusterId, reqId, 4000);
+    }
+
+    let status = this.getMetricsServerStatus(clusterId, orgId, verifiedResult);
     if (!status) return null;
 
-    let message = '';
-    if (status.isActive) {
-      message = 'Metrics Server is verified and telemetry is actively flowing from metrics.k8s.io.';
-    } else if (status.isInstalled) {
-      message = 'Metrics Server pod was detected in the cluster, but metrics.k8s.io has not yet reported usage metrics. Allow 30-60 seconds for scraping or check pod logs.';
+    if (verifiedResult) {
+      if (verifiedResult.status === 'READY_WITH_METRICS' && status.verification) {
+        this.reconcileMetricsServerIncidents(clusterId, cluster.orgId, status.verification);
+      }
+    } else if (!isConnected) {
+      status.status = 'UNKNOWN';
+      status.whatHappened = 'SkyOps agent is not connected to this cluster.';
+      status.why = 'No active heartbeat or connection from cluster agent in the last 60 seconds.';
+      status.impact = 'Cannot perform live remote verification of Metrics Server.';
+      status.nextAction = 'Ensure the SkyOps agent pod is running and has network connectivity to the SkyOps control plane.';
+      status.diagnostics.unshift('Agent connection state: OFFLINE / DISCONNECTED');
     } else {
+      // Timeout
+      status.status = 'TIMEOUT';
+      status.whatHappened = 'Verification request timed out.';
+      status.why = 'The cluster agent did not respond within the 4-second verification window.';
+      status.impact = 'Could not confirm live Metrics Server API state.';
+      status.nextAction = 'Check agent logs or try clicking "Verify Installation" again.';
+      status.diagnostics.unshift('Agent timed out after 4000ms waiting for metrics.k8s.io verification');
+    }
+
+    this.metricsServerVerificationCache.set(clusterId, status);
+
+    let message = status.whatHappened || '';
+    if (status.status === 'READY_WITH_METRICS' || status.status === 'ACTIVE') {
+      message = 'Metrics Server is verified and telemetry is actively flowing from metrics.k8s.io.';
+    } else if (status.status === 'INSTALLED_NOT_READY') {
+      message = 'Metrics Server deployment detected, but the workload or pod is not ready.';
+    } else if (status.status === 'READY_NO_METRICS') {
+      message = 'Metrics Server pod is ready, but metrics.k8s.io has not returned usage metrics yet. Check scrape interval or kubelet TLS.';
+    } else if (status.status === 'NOT_INSTALLED') {
       message = 'Metrics Server deployment was not detected in the cluster. Run the kubectl or helm command to install it.';
     }
 
     return {
-      success: status.isActive,
+      success: status.status === 'READY_WITH_METRICS' || status.status === 'ACTIVE',
       status,
       message
     };
@@ -3933,24 +4092,57 @@ export class DataStore {
       (r) => r.kind === 'Pod' && r.namespace.toLowerCase() === namespace.toLowerCase() && r.name.toLowerCase() === podName.toLowerCase()
     );
 
-    if (!pod) {
-      throw new Error(`Pod ${namespace}/${podName} not found in cluster telemetry`);
-    }
-
-    const containers = pod.containers || [];
+    const containers = pod?.containers || [];
     let selectedContainerName = options.container;
     if (!selectedContainerName && containers.length > 0) {
       selectedContainerName = containers[0].name;
     }
     selectedContainerName = selectedContainerName || 'main';
 
+    if (!pod) {
+      return {
+        clusterId,
+        namespace,
+        podName,
+        container: selectedContainerName,
+        previous: !!options.previous,
+        timestamps: options.timestamps !== false,
+        lines: [],
+        rawText: '',
+        totalLines: 0,
+        source: 'none',
+        retrievedAt: Date.now(),
+        unavailableReason: `Pod "${namespace}/${podName}" was not found in cluster resources. It may have been evicted or deleted.`,
+        statusCategory: 'POD_NOT_FOUND'
+      };
+    }
+
     const containerObj = containers.find((c) => c.name === selectedContainerName);
+    if (options.container && containers.length > 0 && !containerObj) {
+      return {
+        clusterId,
+        namespace,
+        podName,
+        container: selectedContainerName,
+        previous: !!options.previous,
+        timestamps: options.timestamps !== false,
+        lines: [],
+        rawText: '',
+        totalLines: 0,
+        source: 'none',
+        retrievedAt: Date.now(),
+        unavailableReason: `Container "${selectedContainerName}" does not exist in pod "${podName}". Available containers: ${containers.map((c) => c.name).join(', ')}`,
+        statusCategory: 'CONTAINER_NOT_FOUND'
+      };
+    }
 
     // 1. Try in-cluster log fetch if running inside Kubernetes
     let rawLogs: string | null = null;
     let source = 'unknown';
-    let statusCategory: 'SUCCESS' | 'NO_LOGS' | 'PERMISSION_DENIED' | 'POD_NOT_FOUND' | 'CONTAINER_NOT_FOUND' | 'PREVIOUS_LOGS_UNAVAILABLE' | 'KUBERNETES_API_UNAVAILABLE' | 'TIMEOUT' | 'UNKNOWN_ERROR' = 'SUCCESS';
+    let statusCategory: PodLogsResponse['statusCategory'] = 'SUCCESS';
     let errorMessage: string | undefined;
+    let waitingReason: string | undefined;
+    let waitingMessage: string | undefined;
 
     rawLogs = await fetchInClusterPodLogs(namespace, podName, selectedContainerName, {
       tailLines: options.tailLines || 250,
@@ -3961,7 +4153,7 @@ export class DataStore {
 
     if (rawLogs !== null) {
       source = 'in-cluster-k8s-api';
-      statusCategory = rawLogs.trim().length > 0 ? 'SUCCESS' : (options.previous ? 'PREVIOUS_LOGS_UNAVAILABLE' : 'NO_LOGS');
+      statusCategory = rawLogs.trim().length > 0 ? 'SUCCESS' : (options.previous ? 'PREVIOUS_LOGS_UNAVAILABLE' : 'EMPTY_LOGS');
     }
 
     const cacheKey = `${clusterId}:${namespace}:${podName}:${selectedContainerName}:${options.previous ? 'prev' : 'curr'}`;
@@ -3972,8 +4164,10 @@ export class DataStore {
       if (cached && (Date.now() - cached.updatedAt < 5000)) {
         rawLogs = cached.logs;
         source = cached.source || 'agent';
-        statusCategory = cached.status || (rawLogs && rawLogs.trim().length > 0 ? 'SUCCESS' : 'NO_LOGS');
+        statusCategory = cached.status || (rawLogs && rawLogs.trim().length > 0 ? 'SUCCESS' : 'EMPTY_LOGS');
         errorMessage = cached.errorMessage;
+        waitingReason = cached.waitingReason;
+        waitingMessage = cached.waitingMessage;
       }
     }
 
@@ -3999,8 +4193,10 @@ export class DataStore {
       if (updatedCache) {
         rawLogs = updatedCache.logs;
         source = updatedCache.source || 'agent';
-        statusCategory = updatedCache.status || (rawLogs && rawLogs.trim().length > 0 ? 'SUCCESS' : 'NO_LOGS');
+        statusCategory = updatedCache.status || (rawLogs && rawLogs.trim().length > 0 ? 'SUCCESS' : 'EMPTY_LOGS');
         errorMessage = updatedCache.errorMessage;
+        waitingReason = updatedCache.waitingReason;
+        waitingMessage = updatedCache.waitingMessage;
       }
     }
 
@@ -4010,8 +4206,10 @@ export class DataStore {
       if (cached) {
         rawLogs = cached.logs;
         source = cached.source || 'agent';
-        statusCategory = cached.status || (rawLogs && rawLogs.trim().length > 0 ? 'SUCCESS' : 'NO_LOGS');
+        statusCategory = cached.status || (rawLogs && rawLogs.trim().length > 0 ? 'SUCCESS' : 'EMPTY_LOGS');
         errorMessage = cached.errorMessage;
+        waitingReason = cached.waitingReason;
+        waitingMessage = cached.waitingMessage;
       }
     }
 
@@ -4022,29 +4220,45 @@ export class DataStore {
       statusCategory = 'SUCCESS';
     }
 
-    // 5. Handle empty or error states truthfully
+    // Check if container is in waiting/initializing state
+    if (containerObj?.waitingReason) {
+      if (containerObj.waitingReason === 'PodInitializing') {
+        statusCategory = 'POD_INITIALIZING';
+        waitingReason = 'PodInitializing';
+      } else if (!rawLogs || rawLogs.trim().length === 0) {
+        statusCategory = 'CONTAINER_WAITING';
+        waitingReason = containerObj.waitingReason;
+        waitingMessage = containerObj.waitingMessage;
+      }
+    }
+
+    // 6. Handle empty or error states truthfully
     if (rawLogs === null || statusCategory !== 'SUCCESS' || rawLogs.trim().length === 0) {
       let unavailableReason = 'No log output is currently available for this container.';
 
       if (cluster.agentStatus !== 'CONNECTED' && source !== 'in-cluster-k8s-api') {
-        statusCategory = 'UNKNOWN_ERROR';
-        unavailableReason = 'Agent disconnected. Live container logs cannot be retrieved.';
+        statusCategory = 'AGENT_DISCONNECTED';
+        unavailableReason = 'SkyOps cluster agent is disconnected. Live container logs cannot be retrieved until the agent reconnects.';
+      } else if (statusCategory === 'CONTAINER_WAITING') {
+        unavailableReason = `Container is waiting (${waitingReason || 'pending'}): ${waitingMessage || 'Waiting to start or pulling image'}.`;
+      } else if (statusCategory === 'POD_INITIALIZING') {
+        unavailableReason = 'Pod is currently executing init containers. Application container logs will be available once init containers complete.';
       } else if (statusCategory === 'PERMISSION_DENIED') {
-        unavailableReason = 'SkyOps cannot read logs for this container because the cluster agent lacks the required Kubernetes permission.';
+        unavailableReason = 'SkyOps agent lacks RBAC permission to read logs (pods/log) in this namespace.';
       } else if (statusCategory === 'PREVIOUS_LOGS_UNAVAILABLE' || (options.previous && (!rawLogs || rawLogs.trim().length === 0))) {
         statusCategory = 'PREVIOUS_LOGS_UNAVAILABLE';
-        unavailableReason = 'Previous container logs are not available from Kubernetes.';
+        unavailableReason = 'Previous container logs are not available from Kubernetes. The container may not have restarted yet.';
       } else if (statusCategory === 'POD_NOT_FOUND') {
         unavailableReason = 'Pod not found in Kubernetes cluster.';
       } else if (statusCategory === 'CONTAINER_NOT_FOUND') {
         unavailableReason = errorMessage || `Container "${selectedContainerName}" not found in pod.`;
       } else if (statusCategory === 'TIMEOUT') {
         unavailableReason = 'Request to Kubernetes API timed out.';
-      } else if (statusCategory === 'KUBERNETES_API_UNAVAILABLE') {
-        unavailableReason = 'Kubernetes API unavailable.';
-      } else if (statusCategory === 'NO_LOGS' || (!rawLogs && statusCategory === 'SUCCESS')) {
-        statusCategory = 'NO_LOGS';
-        unavailableReason = 'No log output is currently available for this container.';
+      } else if (statusCategory === 'KUBERNETES_API_UNAVAILABLE' || statusCategory === 'K8S_API_ERROR') {
+        unavailableReason = errorMessage || 'Kubernetes API server unavailable.';
+      } else if (statusCategory === 'EMPTY_LOGS' || statusCategory === 'NO_LOGS' || (!rawLogs && statusCategory === 'SUCCESS')) {
+        statusCategory = 'EMPTY_LOGS';
+        unavailableReason = 'The container is running, but standard output and error streams are currently empty.';
       } else if (errorMessage) {
         unavailableReason = errorMessage;
       }
@@ -4062,11 +4276,13 @@ export class DataStore {
         source: source === 'unknown' ? (cluster.agentStatus === 'CONNECTED' ? 'agent' : 'unknown') : source,
         retrievedAt: Date.now(),
         unavailableReason,
-        statusCategory
+        statusCategory,
+        waitingReason,
+        waitingMessage
       };
     }
 
-    // 6. Redact and parse log lines
+    // 7. Redact and parse log lines
     const parsedLines = parseLogLines(rawLogs, options.filter);
     const tailCount = options.tailLines ? Math.min(1000, options.tailLines) : 250;
     const finalLines = parsedLines.slice(-tailCount);
@@ -4181,17 +4397,21 @@ export class DataStore {
     container: string,
     logs: string,
     previous = false,
-    status?: 'SUCCESS' | 'NO_LOGS' | 'PERMISSION_DENIED' | 'POD_NOT_FOUND' | 'CONTAINER_NOT_FOUND' | 'PREVIOUS_LOGS_UNAVAILABLE' | 'KUBERNETES_API_UNAVAILABLE' | 'TIMEOUT' | 'UNKNOWN_ERROR',
-    errorMessage?: string
+    status?: PodLogsResponse['statusCategory'],
+    errorMessage?: string,
+    waitingReason?: string,
+    waitingMessage?: string
   ): void {
     const cacheKey = `${clusterId}:${namespace}:${podName}:${container}:${previous ? 'prev' : 'curr'}`;
-    const resolvedStatus = status || (logs && logs.trim().length > 0 ? 'SUCCESS' : (previous ? 'PREVIOUS_LOGS_UNAVAILABLE' : 'NO_LOGS'));
+    const resolvedStatus = status || (logs && logs.trim().length > 0 ? 'SUCCESS' : (previous ? 'PREVIOUS_LOGS_UNAVAILABLE' : 'EMPTY_LOGS'));
     this.podLogsCache.set(cacheKey, {
       logs: logs || '',
       status: resolvedStatus,
       errorMessage,
       source: 'agent',
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      waitingReason,
+      waitingMessage
     });
 
     const resolvers = this.pendingLogResolvers.get(cacheKey);

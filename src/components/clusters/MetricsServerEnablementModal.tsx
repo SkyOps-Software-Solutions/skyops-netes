@@ -100,7 +100,67 @@ export const MetricsServerEnablementModal: React.FC<MetricsServerEnablementModal
       ? useInsecureTls
         ? status?.commands.kubectlInsecureTls || 'kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml'
         : status?.commands.kubectl || 'kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml'
+      : useInsecureTls
+      ? status?.commands.helmInsecureTls || 'helm upgrade --install metrics-server metrics-server/metrics-server -n kube-system --set "args={--kubelet-insecure-tls}"'
       : status?.commands.helm || 'helm upgrade --install metrics-server metrics-server/metrics-server -n kube-system';
+
+  const getStatusBadge = (st?: string) => {
+    switch (st) {
+      case 'READY_WITH_METRICS':
+      case 'ACTIVE':
+        return {
+          bg: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300',
+          label: 'Ready & Scraping Metrics',
+          dot: 'bg-emerald-400'
+        };
+      case 'READY_NO_METRICS':
+      case 'INSTALLED_NOT_REPORTING':
+        return {
+          bg: 'bg-blue-500/10 border-blue-500/20 text-blue-300',
+          label: 'Pod Ready — Scraping In Progress',
+          dot: 'bg-blue-400'
+        };
+      case 'INSTALLED_NOT_READY':
+        return {
+          bg: 'bg-amber-500/10 border-amber-500/20 text-amber-300',
+          label: 'Deployment Installed — Pod Not Ready',
+          dot: 'bg-amber-400'
+        };
+      case 'PERMISSION_DENIED':
+        return {
+          bg: 'bg-rose-500/10 border-rose-500/20 text-rose-300',
+          label: 'RBAC Permission Denied (metrics.k8s.io)',
+          dot: 'bg-rose-400'
+        };
+      case 'API_UNAVAILABLE':
+        return {
+          bg: 'bg-rose-500/10 border-rose-500/20 text-rose-300',
+          label: 'metrics.k8s.io API Unavailable',
+          dot: 'bg-rose-400'
+        };
+      case 'TIMEOUT':
+        return {
+          bg: 'bg-amber-500/10 border-amber-500/20 text-amber-300',
+          label: 'Verification Timed Out',
+          dot: 'bg-amber-400'
+        };
+      case 'UNKNOWN':
+        return {
+          bg: 'bg-zinc-800 border-zinc-700 text-zinc-300',
+          label: 'Unknown / Agent Offline',
+          dot: 'bg-zinc-500'
+        };
+      case 'NOT_INSTALLED':
+      default:
+        return {
+          bg: 'bg-zinc-900 border-zinc-800 text-zinc-400',
+          label: 'Not Installed (Optional)',
+          dot: 'bg-zinc-500'
+        };
+    }
+  };
+
+  const statusBadge = getStatusBadge(status?.status);
 
   return (
     <div
@@ -217,24 +277,15 @@ export const MetricsServerEnablementModal: React.FC<MetricsServerEnablementModal
 
                 {/* Current Metrics Server State Banner */}
                 <div
-                  className={`p-3 rounded-lg border flex items-center justify-between text-xs ${
-                    status?.status === 'ACTIVE'
-                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
-                      : status?.status === 'INSTALLED_NOT_REPORTING'
-                      ? 'bg-amber-500/10 border-amber-500/20 text-amber-300'
-                      : 'bg-zinc-900 border-zinc-800 text-zinc-400'
-                  }`}
+                  className={`p-3.5 rounded-lg border flex items-center justify-between text-xs ${statusBadge.bg}`}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${statusBadge.dot}`} />
                     <Server className="w-4 h-4 shrink-0" />
                     <span>
                       Current Status:{' '}
-                      <strong className="text-zinc-100">
-                        {status?.status === 'ACTIVE'
-                          ? 'Active & Reporting'
-                          : status?.status === 'INSTALLED_NOT_REPORTING'
-                          ? 'Installed (Waiting for Scrape)'
-                          : 'Not Installed'}
+                      <strong className="text-zinc-100 font-semibold">
+                        {statusBadge.label}
                       </strong>
                     </span>
                   </div>
@@ -246,6 +297,89 @@ export const MetricsServerEnablementModal: React.FC<MetricsServerEnablementModal
                     Refresh
                   </button>
                 </div>
+
+                {/* Verification Evidence (Live Agent/K8s Observation) */}
+                {status?.verification && (
+                  <div className="p-3.5 rounded-lg border border-zinc-800 bg-zinc-900/90 text-xs space-y-2.5">
+                    <div className="flex items-center justify-between text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
+                      <span className="flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
+                        Verification Evidence
+                      </span>
+                      {status.verification.verifiedAt && (
+                        <span className="font-mono text-[10px] text-zinc-500 font-normal">
+                          {new Date(status.verification.verifiedAt).toLocaleTimeString()}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                      <div className="p-2 bg-zinc-950/60 rounded border border-zinc-800">
+                        <div className="text-zinc-500 text-[10px]">Deployment</div>
+                        <div className="font-medium text-zinc-200 truncate">
+                          {status.verification.deploymentFound
+                            ? `${status.verification.readyReplicas || 0}/${status.verification.expectedReplicas || 1} Ready`
+                            : 'Not Found'}
+                        </div>
+                      </div>
+
+                      <div className="p-2 bg-zinc-950/60 rounded border border-zinc-800">
+                        <div className="text-zinc-500 text-[10px]">Pod Status</div>
+                        <div className="font-medium text-zinc-200 truncate">
+                          {status.verification.podReady
+                            ? 'Ready'
+                            : status.verification.podPhase || (status.verification.deploymentFound ? 'Not Ready' : 'None')}
+                        </div>
+                      </div>
+
+                      <div className="p-2 bg-zinc-950/60 rounded border border-zinc-800">
+                        <div className="text-zinc-500 text-[10px]">API Endpoint</div>
+                        <div className="font-medium text-zinc-200 truncate">
+                          {status.verification.apiReachable ? 'Reachable' : 'Unreachable'}
+                        </div>
+                      </div>
+
+                      <div className="p-2 bg-zinc-950/60 rounded border border-zinc-800">
+                        <div className="text-zinc-500 text-[10px]">Metrics Scraped</div>
+                        <div className="font-medium text-zinc-200 truncate">
+                          {status.verification.nodeMetricsAvailable || status.verification.podMetricsAvailable
+                            ? `${status.verification.nodeMetricsCount || 0} nodes / ${status.verification.podMetricsCount || 0} pods`
+                            : 'None'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Structured Diagnosis */}
+                    {(status.verification.whatHappened || status.verification.why) && (
+                      <div className="mt-2 p-2.5 bg-zinc-950/80 rounded border border-zinc-800/80 space-y-1.5 text-[11px]">
+                        {status.verification.whatHappened && (
+                          <div>
+                            <span className="text-zinc-400 font-medium">What happened: </span>
+                            <span className="text-zinc-200">{status.verification.whatHappened}</span>
+                          </div>
+                        )}
+                        {status.verification.why && (
+                          <div>
+                            <span className="text-zinc-400 font-medium">Why: </span>
+                            <span className="text-zinc-300">{status.verification.why}</span>
+                          </div>
+                        )}
+                        {status.verification.impact && (
+                          <div>
+                            <span className="text-zinc-400 font-medium">Impact: </span>
+                            <span className="text-amber-300/90">{status.verification.impact}</span>
+                          </div>
+                        )}
+                        {status.verification.nextAction && (
+                          <div>
+                            <span className="text-zinc-400 font-medium">Next action: </span>
+                            <span className="text-sky-300">{status.verification.nextAction}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Guided Installation Steps */}

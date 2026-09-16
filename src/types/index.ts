@@ -570,7 +570,23 @@ export interface PodLogsResponse {
   retrievedAt: number;
   isTruncated?: boolean;
   unavailableReason?: string;
-  statusCategory?: 'SUCCESS' | 'NO_LOGS' | 'PERMISSION_DENIED' | 'POD_NOT_FOUND' | 'CONTAINER_NOT_FOUND' | 'PREVIOUS_LOGS_UNAVAILABLE' | 'KUBERNETES_API_UNAVAILABLE' | 'TIMEOUT' | 'UNKNOWN_ERROR';
+  statusCategory?:
+    | 'SUCCESS'
+    | 'EMPTY_LOGS'
+    | 'NO_LOGS'
+    | 'AGENT_DISCONNECTED'
+    | 'PERMISSION_DENIED'
+    | 'POD_NOT_FOUND'
+    | 'CONTAINER_NOT_FOUND'
+    | 'CONTAINER_WAITING'
+    | 'POD_INITIALIZING'
+    | 'PREVIOUS_LOGS_UNAVAILABLE'
+    | 'K8S_API_ERROR'
+    | 'KUBERNETES_API_UNAVAILABLE'
+    | 'TIMEOUT'
+    | 'UNKNOWN_ERROR';
+  waitingReason?: string;
+  waitingMessage?: string;
 }
 
 export interface KubernetesResource {
@@ -902,12 +918,44 @@ export interface TelemetryAnomaly {
   };
 }
 
+export type MetricsServerStateType =
+  | 'ACTIVE'
+  | 'INSTALLED_NOT_REPORTING'
+  | 'NOT_INSTALLED'
+  | 'INSTALLED_NOT_READY'
+  | 'READY_NO_METRICS'
+  | 'READY_WITH_METRICS'
+  | 'PERMISSION_DENIED'
+  | 'API_UNAVAILABLE'
+  | 'TIMEOUT'
+  | 'UNKNOWN';
+
+export interface MetricsServerVerificationEvidence {
+  deploymentFound: boolean;
+  deploymentName?: string;
+  deploymentNamespace?: string;
+  deploymentReady: boolean;
+  readyReplicas?: number;
+  expectedReplicas?: number;
+  podReady: boolean;
+  podPhase?: string;
+  podName?: string;
+  apiReachable: boolean;
+  nodeMetricsAvailable: boolean;
+  nodeMetricsCount?: number;
+  podMetricsAvailable: boolean;
+  podMetricsCount?: number;
+  lastVerifiedAt?: number;
+  rawError?: string;
+  category?: string;
+}
+
 export interface MetricsServerStatus {
   clusterId: string;
   clusterName: string;
   isInstalled: boolean;
   isActive: boolean;
-  status: 'ACTIVE' | 'INSTALLED_NOT_REPORTING' | 'NOT_INSTALLED';
+  status: MetricsServerStateType;
   clusterVersion: string;
   preflight: {
     connected: boolean;
@@ -918,8 +966,15 @@ export interface MetricsServerStatus {
     kubectl: string;
     kubectlInsecureTls: string;
     helm: string;
+    helmInsecureTls?: string;
   };
   diagnostics: string[];
+  verification?: MetricsServerVerificationEvidence;
+  whatHappened?: string;
+  why?: string;
+  impact?: string;
+  nextAction?: string;
+  rawError?: string;
 }
 
 export interface OverviewMetrics {

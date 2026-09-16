@@ -932,8 +932,8 @@ app.get('/api/v1/clusters/:id/metrics-server', requireUserAuth, requireOrgMember
   res.json({ status });
 });
 
-app.post('/api/v1/clusters/:id/metrics-server/verify', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
-  const verification = store.verifyMetricsServer(req.params.id, req.orgId!);
+app.post('/api/v1/clusters/:id/metrics-server/verify', requireUserAuth, requireOrgMembership, async (req: AuthenticatedUserRequest, res) => {
+  const verification = await store.verifyMetricsServer(req.params.id, req.orgId!);
   if (!verification) {
     return res.status(404).json({ error: 'Cluster not found' });
   }
@@ -1375,16 +1375,23 @@ const AgentLogIngestSchema = z.object({
   previous: z.boolean().optional(),
   status: z.enum([
     'SUCCESS',
+    'EMPTY_LOGS',
     'NO_LOGS',
     'PERMISSION_DENIED',
     'POD_NOT_FOUND',
     'CONTAINER_NOT_FOUND',
+    'CONTAINER_WAITING',
+    'POD_INITIALIZING',
     'PREVIOUS_LOGS_UNAVAILABLE',
     'KUBERNETES_API_UNAVAILABLE',
+    'K8S_API_ERROR',
+    'AGENT_DISCONNECTED',
     'TIMEOUT',
     'UNKNOWN_ERROR'
   ]).optional(),
-  errorMessage: z.string().optional()
+  errorMessage: z.string().optional(),
+  waitingReason: z.string().optional(),
+  waitingMessage: z.string().optional()
 });
 
 app.post('/api/v1/agent/logs', requireAgentAuth, (req: AuthenticatedAgentRequest, res) => {
@@ -1393,10 +1400,53 @@ app.post('/api/v1/agent/logs', requireAgentAuth, (req: AuthenticatedAgentRequest
     return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid log ingestion payload' });
   }
 
-  const { namespace, podName, container, logs, previous, status, errorMessage } = parsed.data;
-  store.storePodLogs(req.clusterId!, namespace, podName, container, logs || '', !!previous, status, errorMessage);
+  const { namespace, podName, container, logs, previous, status, errorMessage, waitingReason, waitingMessage } = parsed.data;
+  store.storePodLogs(req.clusterId!, namespace, podName, container, logs || '', !!previous, status as any, errorMessage, waitingReason, waitingMessage);
 
   res.json({ success: true, message: 'Pod logs ingested successfully' });
+});
+
+// Agent Metrics Server Verification Request Polling & Ingestion
+app.get('/api/v1/agent/metrics-server/verification-requests', requireAgentAuth, (req: AuthenticatedAgentRequest, res) => {
+  const requests = store.claimPendingMetricsServerVerificationRequests(req.clusterId!);
+  res.json({ requests });
+});
+
+const AgentMetricsServerVerificationResultSchema = z.object({
+  requestId: z.string(),
+  clusterId: z.string(),
+  status: z.string(),
+  deploymentFound: z.boolean(),
+  deploymentName: z.string().optional(),
+  deploymentNamespace: z.string().optional(),
+  deploymentReady: z.boolean(),
+  readyReplicas: z.number().optional(),
+  expectedReplicas: z.number().optional(),
+  podReady: z.boolean(),
+  podPhase: z.string().optional(),
+  podName: z.string().optional(),
+  apiReachable: z.boolean(),
+  nodeMetricsAvailable: z.boolean(),
+  nodeMetricsCount: z.number().optional(),
+  podMetricsAvailable: z.boolean(),
+  podMetricsCount: z.number().optional(),
+  rawError: z.string().optional(),
+  diagnostics: z.array(z.string()).optional(),
+  whatHappened: z.string().optional(),
+  why: z.string().optional(),
+  impact: z.string().optional(),
+  nextAction: z.string().optional(),
+  verifiedAt: z.number().optional()
+});
+
+app.post('/api/v1/agent/metrics-server/verification-results', requireAgentAuth, (req: AuthenticatedAgentRequest, res) => {
+  const parsed = AgentMetricsServerVerificationResultSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid verification result payload' });
+  }
+
+  store.recordMetricsServerVerificationResult(parsed.data);
+  res.json({ success: true, message: 'Metrics Server verification result recorded successfully' });
 });
 
 // --- Incidents Management ---

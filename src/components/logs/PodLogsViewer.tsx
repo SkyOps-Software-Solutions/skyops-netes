@@ -403,26 +403,79 @@ export const PodLogsViewer: React.FC<PodLogsViewerProps> = ({
                 <div className="max-w-md text-xs text-zinc-300 font-mono bg-zinc-900/90 p-3 rounded-lg border border-amber-900/50">
                   SkyOps cannot read logs for this container because the cluster agent lacks the required Kubernetes permission.
                 </div>
+                <div className="text-[11px] text-zinc-500 max-w-md">
+                  Verify ClusterRole for the agent includes <code className="text-amber-400">apiGroups: [""]</code>, <code className="text-amber-400">resources: ["pods/log"]</code>, <code className="text-amber-400">verbs: ["get", "list"]</code>.
+                </div>
+              </>
+            ) : logData?.statusCategory === 'AGENT_DISCONNECTED' || (logData?.statusCategory === 'UNKNOWN_ERROR' && logData?.unavailableReason?.includes('Agent disconnected')) ? (
+              <>
+                <div className="text-sm font-semibold text-rose-400">Agent Disconnected</div>
+                <div className="max-w-md text-xs text-rose-300 font-mono bg-rose-950/30 p-3 rounded-lg border border-rose-900/50">
+                  Agent disconnected. Live container logs cannot be retrieved until the agent reconnects.
+                </div>
+              </>
+            ) : logData?.statusCategory === 'CONTAINER_WAITING' ? (
+              <>
+                <div className="text-sm font-semibold text-amber-400">Container Waiting to Start</div>
+                <div className="max-w-md text-xs text-zinc-300 font-mono bg-zinc-900/90 p-3 rounded-lg border border-amber-900/50">
+                  {logData.unavailableReason || `Container is waiting: ${logData.waitingReason || 'Pending'}`}
+                </div>
+                {logData.waitingMessage && (
+                  <div className="text-[11px] text-zinc-400 max-w-md">{logData.waitingMessage}</div>
+                )}
+              </>
+            ) : logData?.statusCategory === 'POD_INITIALIZING' ? (
+              <>
+                <div className="text-sm font-semibold text-sky-400">Pod Initializing</div>
+                <div className="max-w-md text-xs text-zinc-300 font-mono bg-zinc-900/90 p-3 rounded-lg border border-sky-900/50">
+                  Pod is currently executing init containers. Application container logs will be available once init containers complete.
+                </div>
+              </>
+            ) : logData?.statusCategory === 'POD_NOT_FOUND' ? (
+              <>
+                <div className="text-sm font-semibold text-amber-400">Pod Not Found</div>
+                <div className="max-w-md text-xs text-zinc-400 font-mono bg-zinc-900/90 p-3 rounded-lg border border-zinc-800">
+                  {logData.unavailableReason || `Pod ${namespace}/${podName} was not found in cluster resources.`}
+                </div>
+              </>
+            ) : logData?.statusCategory === 'CONTAINER_NOT_FOUND' ? (
+              <>
+                <div className="text-sm font-semibold text-amber-400">Container Not Found</div>
+                <div className="max-w-md text-xs text-zinc-400 font-mono bg-zinc-900/90 p-3 rounded-lg border border-zinc-800">
+                  {logData.unavailableReason || `Container ${selectedContainer} does not exist in pod ${podName}.`}
+                </div>
               </>
             ) : logData?.statusCategory === 'PREVIOUS_LOGS_UNAVAILABLE' || (isPrevious && (!logData?.rawText || logData?.totalLines === 0)) ? (
               <>
                 <div className="text-sm font-semibold text-zinc-300">Previous Logs Unavailable</div>
                 <div className="max-w-md text-xs text-zinc-400 font-mono bg-zinc-900/90 p-3 rounded-lg border border-zinc-800">
-                  Previous container logs are not available from Kubernetes.
+                  Previous container logs are not available from Kubernetes. The container may not have restarted yet.
                 </div>
               </>
-            ) : logData?.statusCategory === 'UNKNOWN_ERROR' && logData?.unavailableReason?.includes('Agent disconnected') ? (
+            ) : logData?.statusCategory === 'KUBERNETES_API_UNAVAILABLE' || logData?.statusCategory === 'K8S_API_ERROR' ? (
               <>
-                <div className="text-sm font-semibold text-rose-400">Agent Disconnected</div>
+                <div className="text-sm font-semibold text-rose-400">Kubernetes API Unavailable</div>
                 <div className="max-w-md text-xs text-rose-300 font-mono bg-rose-950/30 p-3 rounded-lg border border-rose-900/50">
-                  Agent disconnected. Live container logs cannot be retrieved.
+                  {logData.unavailableReason || 'Kubernetes API server could not be reached.'}
+                </div>
+              </>
+            ) : logData?.statusCategory === 'TIMEOUT' ? (
+              <>
+                <div className="text-sm font-semibold text-amber-400">Log Retrieval Timed Out</div>
+                <div className="max-w-md text-xs text-zinc-400 font-mono bg-zinc-900/90 p-3 rounded-lg border border-zinc-800">
+                  Request to fetch pod logs timed out. Please retry.
+                </div>
+              </>
+            ) : logData?.statusCategory === 'EMPTY_LOGS' || logData?.statusCategory === 'NO_LOGS' ? (
+              <>
+                <div className="text-sm font-semibold text-zinc-300">No Logs Emitted</div>
+                <div className="max-w-md text-xs text-zinc-400 font-mono bg-zinc-900/90 p-3 rounded-lg border border-zinc-800">
+                  {searchTerm ? `No log lines matched "${searchTerm}"` : 'The container is running, but standard output and error streams are currently empty.'}
                 </div>
               </>
             ) : logData?.unavailableReason ? (
               <>
-                <div className="text-sm font-semibold text-zinc-300">
-                  {logData.unavailableReason.includes('No log output') ? 'No Logs Available' : 'Log Notice'}
-                </div>
+                <div className="text-sm font-semibold text-zinc-300">Log Notice</div>
                 <div className="max-w-md text-xs text-zinc-400 font-mono bg-zinc-900/90 p-3 rounded-lg border border-zinc-800">
                   {logData.unavailableReason}
                 </div>
@@ -438,7 +491,7 @@ export const PodLogsViewer: React.FC<PodLogsViewerProps> = ({
               </>
             )}
 
-            {selectedContainerObj?.waitingReason && (
+            {!logData?.statusCategory && selectedContainerObj?.waitingReason && (
               <div className="p-3 bg-zinc-900/60 border border-zinc-800 rounded-lg text-left text-xs max-w-md space-y-1">
                 <div className="text-amber-400 font-bold">
                   Diagnostic: {selectedContainerObj.waitingReason}

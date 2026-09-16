@@ -58,16 +58,22 @@ export interface SafetyValidationResult {
 /**
  * Deterministic Safety Policy Engine (outside the LLM)
  *
- * Rules:
- * 1. AI recommendations must NEVER automatically execute against a cluster.
- * 2. High-risk operations (deletions, node drains, scale-to-zero, RBAC modifications)
- *    are strictly tagged with HIGH or CRITICAL risk and require human authorization.
- * 3. The engine normalizes and clamps confidence intervals between 0.0 and 1.0.
- * 4. Ensures evidence is categorized (OBSERVED FACT / AI INFERENCE / PROPOSED CHANGE).
- * 5. Validates exact change preview (resource -> namespace -> object -> container -> field -> current -> proposed).
- * 6. Validates authoritative Kubernetes verification criteria.
- * 7. Generates strictly typed, deterministic structured remediation proposals with human review boundary.
- * 8. Disallows arbitrary shell/kubectl execution strings.
+ * Authoritative Remediation Autonomy Policy:
+ * 1. MANUAL_ONLY: All remediations require explicit manual operator initiation.
+ * 2. APPROVAL_REQUIRED: Remediations proposed by AI/intelligence engine mandate human operator sign-off before dispatch.
+ * 3. CONTROLLED_AUTONOMOUS: Only allowlisted, low-risk, deterministic actions (e.g. ReplacePodImage on standalone
+ *    pods with verified target image, high confidence, fresh telemetry, and valid target lease) may execute
+ *    autonomously within strict rate limits. All other actions require human approval.
+ *
+ * Universal Safety Invariants (enforced across ALL modes):
+ * - Under NO circumstances does the platform allow arbitrary shell commands, arbitrary kubectl execution,
+ *   scripts, or unrestricted Kubernetes exec.
+ * - High-risk operations (deletions, node drains, scale-to-zero, RBAC modifications) are permanently forbidden
+ *   from autonomous execution and strictly require human authorization.
+ * - Confidence intervals are normalized and clamped between 0.0 and 1.0.
+ * - Evidence is categorized into OBSERVED_FACT, AI_INFERENCE, and PROPOSED_CHANGE.
+ * - Change preview is exact (resource -> namespace -> object -> container -> field -> current -> proposed).
+ * - Authoritative Kubernetes verification criteria (pod recreation, container readiness, error absence) are mandatory.
  */
 export class SafetyPolicyEngine {
   /**

@@ -7,15 +7,23 @@ import { jobQueue } from '../jobs/jobQueue';
 export function validateWebhookUrl(rawUrl: string): { valid: boolean; error?: string } {
   try {
     const parsed = new URL(rawUrl);
+    if (process.env.NODE_ENV === 'production' && parsed.protocol !== 'https:') {
+      return { valid: false, error: 'Webhook URL must use HTTPS in production' };
+    }
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       return { valid: false, error: 'Webhook URL must use http or https protocol' };
     }
-    const hostname = parsed.hostname.toLowerCase();
+    const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
     if (process.env.NODE_ENV === 'production') {
       if (
         hostname === 'localhost' ||
         hostname === '127.0.0.1' ||
+        hostname === '0.0.0.0' ||
         hostname === '::1' ||
+        hostname === 'metadata.google.internal' ||
+        hostname === 'metadata.internal' ||
+        hostname.endsWith('.internal') ||
+        hostname.endsWith('.local') ||
         hostname.startsWith('10.') ||
         hostname.startsWith('192.168.') ||
         hostname === '169.254.169.254' ||
@@ -23,7 +31,7 @@ export function validateWebhookUrl(rawUrl: string): { valid: boolean; error?: st
           parseInt(hostname.split('.')[1], 10) >= 16 &&
           parseInt(hostname.split('.')[1], 10) <= 31)
       ) {
-        return { valid: false, error: 'Outbound webhooks to private or internal loopback IPs are blocked for security.' };
+        return { valid: false, error: 'Outbound webhooks to private, loopback, or cloud metadata endpoints are blocked for security.' };
       }
     }
     return { valid: true };

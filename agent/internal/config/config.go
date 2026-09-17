@@ -72,7 +72,7 @@ func LoadFromEnv() (*Config, error) {
 
 	agentVersion := os.Getenv("SKYOPS_AGENT_VERSION")
 	if agentVersion == "" {
-		agentVersion = "v1.5.0"
+		agentVersion = "v1.5.1"
 	}
 
 	agentID := os.Getenv("SKYOPS_AGENT_ID")

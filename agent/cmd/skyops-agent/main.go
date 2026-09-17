@@ -22,7 +22,7 @@ import (
 )
 
 // Version holds the authoritative release version of the agent, injected at build-time via ldflags (-X main.Version=...)
-var Version = "v1.5.0"
+var Version = "v1.5.1"
 
 func printPairingBanner(connectionCode string) {
 	fmt.Println()

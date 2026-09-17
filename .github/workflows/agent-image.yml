@@ -57,7 +57,7 @@ jobs:
 
       - name: Verify Go build
         run: |
-          VERSION=$(cat VERSION 2>/dev/null || echo "v1.5.0")
+          VERSION=$(cat VERSION 2>/dev/null || echo "v1.5.1")
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -v -trimpath -ldflags="-s -w -X main.Version=${VERSION}" -o /tmp/skyops-agent ./cmd/skyops-agent
 
   build-and-push:
@@ -82,7 +82,7 @@ jobs:
           elif [ -f agent/VERSION ]; then
             VERSION=$(cat agent/VERSION | tr -d '[:space:]')
           else
-            VERSION="v1.5.0"
+            VERSION="v1.5.1"
           fi
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "version=${VERSION}" >> $GITHUB_OUTPUT

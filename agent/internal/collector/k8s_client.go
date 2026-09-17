@@ -977,16 +977,6 @@ func (k *InClusterK8sClient) GetPodLogs(ctx context.Context, namespace, podName 
 	}
 
 	req.Header.Set("Authorization", "Bearer "+k.token)
-	// Kubernetes API content negotiation:
-	// The core API server endpoint serializer registry requires registered media types
-	// (application/json, application/yaml, application/vnd.kubernetes.protobuf) or wildcard (*/*).
-	// The /log subresource handler then serves the log stream as text/plain.
-	// Sending "text/plain, application/json, */*" ensures that:
-	// 1. The API server router content negotiator does not reject the request with HTTP 406 NotAcceptable.
-	// 2. The subresource handler delivers the stream as text/plain.
-	// 3. Error status responses (such as metav1.Status) can be rendered as application/json.
-	// 4. Any intermediate proxies or API gateways accept the stream via wildcard.
-	req.Header.Set("Accept", "text/plain, application/json, */*")
 
 	resp, err := k.httpClient.Do(req)
 	if err != nil {
@@ -1000,20 +990,6 @@ func (k *InClusterK8sClient) GetPodLogs(ctx context.Context, namespace, podName 
 			Status:       "KUBERNETES_API_UNAVAILABLE",
 			ErrorMessage: fmt.Sprintf("Kubernetes API unavailable: %v", err),
 		}, nil
-	}
-
-	// In the rare event of HTTP 406 NotAcceptable from a strict gateway or custom ingress,
-	// retry immediately with universal wildcard Accept: */*
-	if resp.StatusCode == http.StatusNotAcceptable {
-		_ = resp.Body.Close()
-		retryReq, retryErr := http.NewRequestWithContext(reqCtx, http.MethodGet, apiURL, nil)
-		if retryErr == nil {
-			retryReq.Header.Set("Authorization", "Bearer "+k.token)
-			retryReq.Header.Set("Accept", "*/*")
-			if retryResp, doErr := k.httpClient.Do(retryReq); doErr == nil {
-				resp = retryResp
-			}
-		}
 	}
 	defer resp.Body.Close()
 
@@ -1051,13 +1027,19 @@ func (k *InClusterK8sClient) GetPodLogs(ctx context.Context, namespace, podName 
 			LinesReturned: linesCount,
 		}, nil
 
-	case http.StatusForbidden:
+	case http.StatusUnauthorized, http.StatusForbidden:
 		return &PodLogResult{
 			Status:       "PERMISSION_DENIED",
 			ErrorMessage: "SkyOps cannot read logs for this container because the cluster agent lacks the required Kubernetes permission.",
 		}, nil
 
 	case http.StatusNotFound:
+		if strings.Contains(strings.ToLower(bodyStr), "container") {
+			return &PodLogResult{
+				Status:       "CONTAINER_NOT_FOUND",
+				ErrorMessage: fmt.Sprintf("Container %q not found in pod.", opts.Container),
+			}, nil
+		}
 		return &PodLogResult{
 			Status:       "POD_NOT_FOUND",
 			ErrorMessage: "Pod not found in Kubernetes cluster.",

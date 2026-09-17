@@ -23,7 +23,7 @@ const ConfigSchema = z.object({
     .optional()
     .transform((val) => val === 'true' || val === '1'),
   AGENT_MIN_COMPATIBLE_VERSION: z.string().default('1.0.0'),
-  AGENT_RECOMMENDED_VERSION: z.string().default('1.5.0'),
+  AGENT_RECOMMENDED_VERSION: z.string().default('1.5.1'),
   DEFAULT_PAGE_SIZE: z.coerce.number().default(20),
   MAX_PAGE_SIZE: z.coerce.number().default(100),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
@@ -101,7 +101,7 @@ try {
     ENABLE_DEV_SIMULATION: process.env.NODE_ENV !== 'production',
     SKYOPS_ALLOW_DEMO_AUTH: process.env.NODE_ENV !== 'production',
     AGENT_MIN_COMPATIBLE_VERSION: '1.0.0',
-    AGENT_RECOMMENDED_VERSION: '1.5.0',
+    AGENT_RECOMMENDED_VERSION: '1.5.1',
     DEFAULT_PAGE_SIZE: 20,
     MAX_PAGE_SIZE: 100,
     LOG_LEVEL: 'info',

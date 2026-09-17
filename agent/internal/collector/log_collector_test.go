@@ -63,11 +63,13 @@ func TestGetPodLogs_Success(t *testing.T) {
 	}
 }
 
-func TestGetPodLogs_ContentNegotiation(t *testing.T) {
+func TestGetPodLogs_StandardHeaders(t *testing.T) {
 	var capturedAcceptHeader string
+	var capturedAuthHeader string
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedAcceptHeader = r.Header.Get("Accept")
+		capturedAuthHeader = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("2026-09-16T10:00:00Z server listening on :8080\n"))
@@ -85,58 +87,13 @@ func TestGetPodLogs_ContentNegotiation(t *testing.T) {
 	if res.Status != "SUCCESS" {
 		t.Fatalf("expected SUCCESS, got %s", res.Status)
 	}
-	// Verify that Accept header satisfies Kubernetes content negotiation
-	if !strings.Contains(capturedAcceptHeader, "text/plain") {
-		t.Errorf("expected Accept header to contain text/plain, got: %s", capturedAcceptHeader)
+	// Verify Authorization header is preserved
+	if capturedAuthHeader != "Bearer test-token" {
+		t.Errorf("expected Authorization Bearer test-token, got %s", capturedAuthHeader)
 	}
-	if !strings.Contains(capturedAcceptHeader, "application/json") {
-		t.Errorf("expected Accept header to contain application/json for status errors, got: %s", capturedAcceptHeader)
-	}
-	if !strings.Contains(capturedAcceptHeader, "*/*") {
-		t.Errorf("expected Accept header to contain wildcard */*, got: %s", capturedAcceptHeader)
-	}
-}
-
-func TestGetPodLogs_HTTP406_RetrySuccess(t *testing.T) {
-	attempts := 0
-	expectedLogs := "recovered logs after retry\n"
-
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts++
-		if attempts == 1 {
-			// First attempt returns 406 NotAcceptable
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusNotAcceptable)
-			_, _ = w.Write([]byte(`{"kind":"Status","apiVersion":"v1","status":"Failure","message":"only the following media types are accepted: application/json, application/yaml, application/vnd.kubernetes.protobuf","reason":"NotAcceptable","code":406}`))
-			return
-		}
-
-		// Second attempt with */* succeeds
-		if r.Header.Get("Accept") != "*/*" {
-			t.Errorf("expected retry with */*, got: %s", r.Header.Get("Accept"))
-		}
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(expectedLogs))
-	}))
-	defer ts.Close()
-
-	client := NewCustomK8sClient(ts.Client(), ts.URL, "test-token")
-	res, err := client.GetPodLogs(context.Background(), "default", "flaky-proxy-pod", PodLogOptions{
-		Container: "app",
-	})
-
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if res.Status != "SUCCESS" {
-		t.Fatalf("expected SUCCESS after retry, got %s (err: %s)", res.Status, res.ErrorMessage)
-	}
-	if res.Logs != expectedLogs {
-		t.Fatalf("expected logs %q, got %q", expectedLogs, res.Logs)
-	}
-	if attempts != 2 {
-		t.Fatalf("expected exactly 2 attempts, got %d", attempts)
+	// Verify that invalid text/plain is NOT set on Accept header (which causes k8s 406 NotAcceptable)
+	if strings.Contains(capturedAcceptHeader, "text/plain") {
+		t.Errorf("expected Accept header to NOT contain text/plain, got: %s", capturedAcceptHeader)
 	}
 }
 
@@ -346,6 +303,109 @@ func TestGetPodLogs_Timeout(t *testing.T) {
 	}
 	if res.Status != "TIMEOUT" {
 		t.Fatalf("expected TIMEOUT, got %s", res.Status)
+	}
+}
+
+func TestGetPodLogs_AllQueryParams(t *testing.T) {
+	var capturedQuery map[string][]string
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("log line 1\nlog line 2\n"))
+	}))
+	defer ts.Close()
+
+	client := NewCustomK8sClient(ts.Client(), ts.URL, "test-token")
+	res, err := client.GetPodLogs(context.Background(), "prod", "worker-1", PodLogOptions{
+		Container:    "app-worker",
+		TailLines:    150,
+		Previous:     true,
+		Timestamps:   true,
+		SinceSeconds: 300,
+		LimitBytes:   65536,
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Status != "SUCCESS" {
+		t.Fatalf("expected SUCCESS, got %s", res.Status)
+	}
+	if capturedQuery["container"][0] != "app-worker" {
+		t.Errorf("expected container=app-worker, got %v", capturedQuery["container"])
+	}
+	if capturedQuery["tailLines"][0] != "150" {
+		t.Errorf("expected tailLines=150, got %v", capturedQuery["tailLines"])
+	}
+	if capturedQuery["previous"][0] != "true" {
+		t.Errorf("expected previous=true, got %v", capturedQuery["previous"])
+	}
+	if capturedQuery["timestamps"][0] != "true" {
+		t.Errorf("expected timestamps=true, got %v", capturedQuery["timestamps"])
+	}
+	if capturedQuery["sinceSeconds"][0] != "300" {
+		t.Errorf("expected sinceSeconds=300, got %v", capturedQuery["sinceSeconds"])
+	}
+	if capturedQuery["limitBytes"][0] != "65536" {
+		t.Errorf("expected limitBytes=65536, got %v", capturedQuery["limitBytes"])
+	}
+}
+
+func TestGetPodLogs_Unauthorized(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	}))
+	defer ts.Close()
+
+	client := NewCustomK8sClient(ts.Client(), ts.URL, "bad-token")
+	res, err := client.GetPodLogs(context.Background(), "default", "secure-pod", PodLogOptions{
+		Container: "app",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Status != "PERMISSION_DENIED" {
+		t.Fatalf("expected PERMISSION_DENIED for 401 Unauthorized, got %s", res.Status)
+	}
+}
+
+func TestGetPodLogs_NotFound_Container(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"kind":"Status","message":"container \"sidecar\" not found","code":404}`))
+	}))
+	defer ts.Close()
+
+	client := NewCustomK8sClient(ts.Client(), ts.URL, "test-token")
+	res, err := client.GetPodLogs(context.Background(), "default", "app-pod", PodLogOptions{
+		Container: "sidecar",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Status != "CONTAINER_NOT_FOUND" {
+		t.Fatalf("expected CONTAINER_NOT_FOUND for 404 mentioning container, got %s", res.Status)
+	}
+}
+
+func TestGetPodLogs_ContainerCreating_NoLogs(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"kind":"Status","message":"container \"init\" is waiting to start: ContainerCreating","code":400}`))
+	}))
+	defer ts.Close()
+
+	client := NewCustomK8sClient(ts.Client(), ts.URL, "test-token")
+	res, err := client.GetPodLogs(context.Background(), "default", "starting-pod", PodLogOptions{
+		Container: "init",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Status != "NO_LOGS" {
+		t.Fatalf("expected NO_LOGS for waiting to start container, got %s", res.Status)
 	}
 }
 

@@ -2,6 +2,7 @@ import {
   Activity,
   AlertTriangle,
   ArrowRight,
+  BookOpen,
   Boxes,
   CheckCircle2,
   ChevronRight,
@@ -17,7 +18,9 @@ import {
   Terminal,
   Zap
 } from 'lucide-react';
-import React from 'react';
+import React, { useState } from 'react';
+import { Footer } from '../layout/Footer';
+import { DocTopic, KnowledgeBaseModal } from '../docs/KnowledgeBaseModal';
 
 interface LandingPageProps {
   onSignIn: () => void;
@@ -25,6 +28,13 @@ interface LandingPageProps {
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) => {
+  const [isDocModalOpen, setIsDocModalOpen] = useState(false);
+  const [activeDocTopic, setActiveDocTopic] = useState<DocTopic>('quickstart');
+
+  const handleOpenDoc = (topic: DocTopic) => {
+    setActiveDocTopic(topic);
+    setIsDocModalOpen(true);
+  };
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-sky-500/30 selection:text-sky-200">
       {/* 1. Simple SaaS Header */}
@@ -48,8 +58,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
             </div>
           </div>
 
-          {/* Right: Auth CTAs */}
-          <div className="flex items-center gap-3">
+          {/* Right: Docs & Auth CTAs */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              id="landing-header-docs-btn"
+              onClick={() => handleOpenDoc('quickstart')}
+              className="text-xs font-mono text-zinc-300 hover:text-zinc-100 px-3 py-2 rounded-lg hover:bg-zinc-800/60 transition-colors flex items-center gap-1.5 cursor-pointer"
+              title="SkyOps Documentation & Knowledge Base"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-sky-400" />
+              <span>Docs</span>
+            </button>
+            <div className="h-4 w-px bg-zinc-800 hidden sm:block" />
             <button
               id="landing-signin-btn"
               onClick={onSignIn}
@@ -367,29 +387,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
         </div>
       </section>
 
-      {/* 6. Simple SaaS Footer */}
-      <footer className="py-12 px-6 lg:px-12 max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6 text-xs font-mono text-zinc-500">
-        <div className="flex items-center gap-2">
-          <Server className="w-4 h-4 text-sky-400" />
-          <span className="text-zinc-300 font-bold">SkyOps</span>
-          <span>• Kubernetes Incident Management Platform</span>
-        </div>
+      {/* Production Customer-Oriented Footer */}
+      <Footer
+        onOpenDoc={handleOpenDoc}
+        onGetStarted={onSignUp}
+        onOpenAddCluster={onSignUp}
+        isAuthenticated={false}
+      />
 
-        <div className="flex items-center gap-6">
-          <a href="#docs" onClick={(e) => { e.preventDefault(); }} className="hover:text-zinc-300 transition-colors">
-            Documentation
-          </a>
-          <a href="#github" onClick={(e) => { e.preventDefault(); }} className="hover:text-zinc-300 transition-colors">
-            GitHub
-          </a>
-          <a href="#security" onClick={(e) => { e.preventDefault(); }} className="hover:text-zinc-300 transition-colors">
-            Security
-          </a>
-          <a href="#status" onClick={(e) => { e.preventDefault(); }} className="hover:text-zinc-300 transition-colors">
-            Status
-          </a>
-        </div>
-      </footer>
+      {/* Technical Reference & Knowledge Base Modal */}
+      <KnowledgeBaseModal
+        isOpen={isDocModalOpen}
+        onClose={() => setIsDocModalOpen(false)}
+        initialTopic={activeDocTopic}
+        onGetStarted={onSignUp}
+      />
     </div>
   );
 };

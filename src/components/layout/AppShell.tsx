@@ -1,4 +1,4 @@
-import { Bell, HelpCircle, PanelLeftClose, PanelLeftOpen, Shield, Terminal } from 'lucide-react';
+import { Bell, BookOpen, HelpCircle, Shield, Terminal } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { AGENT_VERSION } from '../../config/version';
@@ -16,6 +16,8 @@ import { ObservabilityHubView } from '../observability/ObservabilityHubView';
 import { SettingsView } from '../settings/SettingsView';
 import { AuditView } from '../audit/AuditView';
 import { NavigationTab, Sidebar } from './Sidebar';
+import { Footer } from './Footer';
+import { DocTopic, KnowledgeBaseModal } from '../docs/KnowledgeBaseModal';
 
 interface AppShellProps {
   initialOpenAddCluster?: boolean;
@@ -32,6 +34,13 @@ export const AppShell: React.FC<AppShellProps> = ({
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
   const [targetLogPod, setTargetLogPod] = useState<{ clusterId: string; namespace: string; name: string } | null>(null);
   const [isAddClusterOpen, setIsAddClusterOpen] = useState(initialOpenAddCluster);
+  const [isDocModalOpen, setIsDocModalOpen] = useState(false);
+  const [selectedDocTopic, setSelectedDocTopic] = useState<DocTopic>('quickstart');
+
+  const handleOpenDoc = (topic: DocTopic) => {
+    setSelectedDocTopic(topic);
+    setIsDocModalOpen(true);
+  };
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     try {
       if (typeof window !== 'undefined') {
@@ -241,36 +250,6 @@ export const AppShell: React.FC<AppShellProps> = ({
         {/* Top Operational Bar */}
         <header className="h-12 border-b border-zinc-800/80 px-4 sm:px-6 flex items-center justify-between shrink-0 bg-zinc-950/80 backdrop-blur-xs">
           <div className="flex items-center gap-3 text-xs font-mono text-zinc-400">
-            {/* Pull / Push Navigation Bar Toggle Button */}
-            <button
-              onClick={handleToggleSidebar}
-              id="navbar-sidebar-toggle-btn"
-              title={
-                isSidebarCollapsed
-                  ? 'Pull navigation (Expand sidebar) [Ctrl+B]'
-                  : 'Push navigation (Collapse sidebar to get more space) [Ctrl+B]'
-              }
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono transition-all cursor-pointer shadow-xs border ${
-                isSidebarCollapsed
-                  ? 'bg-sky-950/70 border-sky-700/80 text-sky-300 hover:bg-sky-900/80 hover:text-white shadow-sky-950/40'
-                  : 'bg-zinc-900/90 border-zinc-700/80 text-zinc-300 hover:bg-zinc-800 hover:text-white hover:border-zinc-600'
-              }`}
-            >
-              {isSidebarCollapsed ? (
-                <>
-                  <PanelLeftOpen className="w-3.5 h-3.5 text-sky-400 animate-pulse" />
-                  <span className="font-semibold text-sky-300 text-[11px]">Pull Nav</span>
-                </>
-              ) : (
-                <>
-                  <PanelLeftClose className="w-3.5 h-3.5 text-zinc-400" />
-                  <span className="text-zinc-300 text-[11px]">Push Nav</span>
-                </>
-              )}
-            </button>
-
-            <span className="text-zinc-700">|</span>
-
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               Central Ingestion API: <strong className="text-zinc-200">Online</strong>
@@ -282,6 +261,16 @@ export const AppShell: React.FC<AppShellProps> = ({
           </div>
 
           <div className="flex items-center gap-3 text-xs font-mono text-zinc-400">
+            <button
+              id="topbar-docs-btn"
+              onClick={() => handleOpenDoc('quickstart')}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-sky-300 border border-zinc-800 transition-colors cursor-pointer"
+              title="SkyOps Technical Reference & Documentation"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-sky-400" />
+              <span>Docs</span>
+            </button>
+            <span className="text-zinc-700 hidden sm:inline">|</span>
             <span className="text-emerald-400 hidden sm:flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
               Autonomous Engine Active
@@ -409,6 +398,14 @@ export const AppShell: React.FC<AppShellProps> = ({
             />
           )}
         </div>
+
+        {/* Global Operational Footer */}
+        <Footer
+          onNavigateTab={handleTabChange}
+          onOpenAddCluster={() => setIsAddClusterOpen(true)}
+          onOpenDoc={handleOpenDoc}
+          isAuthenticated={true}
+        />
       </main>
 
       {/* Add Cluster Modal */}
@@ -422,6 +419,14 @@ export const AppShell: React.FC<AppShellProps> = ({
           setSelectedClusterId(clusterId);
           setActiveTab('clusters');
         }}
+      />
+
+      {/* Technical Reference & Knowledge Base Modal */}
+      <KnowledgeBaseModal
+        isOpen={isDocModalOpen}
+        onClose={() => setIsDocModalOpen(false)}
+        initialTopic={selectedDocTopic}
+        onGetStarted={() => setIsAddClusterOpen(true)}
       />
     </div>
   );

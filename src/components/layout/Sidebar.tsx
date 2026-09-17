@@ -25,6 +25,7 @@ import {
   Zap
 } from 'lucide-react';
 import React, { useState } from 'react';
+import { AGENT_VERSION } from '../../config/version';
 import { useAuth } from '../../context/AuthContext';
 
 export type NavigationTab =
@@ -159,7 +160,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="font-bold text-sm text-zinc-100 tracking-tight flex items-center gap-1.5">
                 SkyOps
                 <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
-                  v1.4
+                  {AGENT_VERSION}
                 </span>
               </div>
               <div className="text-[10px] font-mono text-zinc-500">K8s Incident Platform</div>

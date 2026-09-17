@@ -169,120 +169,122 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
   return (
     <div className="flex flex-col h-full bg-zinc-950 text-zinc-100">
       {/* Top Observability Hub Header */}
-      <div className="border-b border-zinc-800 bg-zinc-900/40 px-6 py-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-sky-950 border border-sky-800/80 flex items-center justify-center text-sky-400 shrink-0">
-              <Radio className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold text-zinc-100">Observability Hub</h1>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/30">
-                  Telemetry & Diagnostics
-                </span>
+      <div className="border-b border-zinc-800 bg-zinc-900/40 px-6 lg:px-8 py-4">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-sky-950 border border-sky-800/80 flex items-center justify-center text-sky-400 shrink-0">
+                <Radio className="w-5 h-5" />
               </div>
-              <p className="text-xs text-zinc-400 mt-0.5">
-                Full-stack infrastructure telemetry, real-time pod log streaming, and cluster audit events.
-              </p>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-lg font-bold text-zinc-100">Observability Hub</h1>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/30">
+                    Telemetry & Diagnostics
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Full-stack infrastructure telemetry, real-time pod log streaming, and cluster audit events.
+                </p>
+              </div>
+            </div>
+
+            {/* Controls: Cluster Selector & Refresh */}
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5">
+                <Server className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                <select
+                  aria-label="Select Cluster"
+                  value={selectedCluster?.id || ''}
+                  onChange={(e) => {
+                    setSelectedClusterId(e.target.value);
+                    setSelectedPodName('');
+                  }}
+                  className="bg-transparent text-xs font-mono text-zinc-200 outline-none cursor-pointer pr-2"
+                >
+                  {clusters.map((c) => (
+                    <option key={c.id} value={c.id} className="bg-zinc-900 text-zinc-200">
+                      {c.name} ({c.environment || 'production'})
+                    </option>
+                  ))}
+                </select>
+                {selectedCluster && <ClusterStatusBadge status={selectedCluster.status} />}
+              </div>
+
+              <button
+                onClick={() => {
+                  if (selectedCluster?.id) {
+                    loadClusterResources(selectedCluster.id);
+                    loadClusterEvents(selectedCluster.id);
+                  }
+                  if (onRefresh) onRefresh();
+                }}
+                title="Refresh telemetry"
+                className="p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-800 transition-colors cursor-pointer"
+              >
+                <RefreshCw
+                  className={`w-4 h-4 ${loadingResources || loadingEvents ? 'animate-spin text-sky-400' : ''}`}
+                />
+              </button>
             </div>
           </div>
 
-          {/* Controls: Cluster Selector & Refresh */}
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5">
-              <Server className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-              <select
-                aria-label="Select Cluster"
-                value={selectedCluster?.id || ''}
-                onChange={(e) => {
-                  setSelectedClusterId(e.target.value);
-                  setSelectedPodName('');
-                }}
-                className="bg-transparent text-xs font-mono text-zinc-200 outline-none cursor-pointer pr-2"
-              >
-                {clusters.map((c) => (
-                  <option key={c.id} value={c.id} className="bg-zinc-900 text-zinc-200">
-                    {c.name} ({c.environment || 'production'})
-                  </option>
-                ))}
-              </select>
-              {selectedCluster && <ClusterStatusBadge status={selectedCluster.status} />}
-            </div>
+          {/* View Mode Tabs */}
+          <div className="flex items-center gap-2 mt-4 border-t border-zinc-800/60 pt-3">
+            <button
+              onClick={() => setActiveTab('metrics')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                activeTab === 'metrics'
+                  ? 'bg-sky-600 text-white shadow-xs'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5" />
+              <span>Metrics & Telemetry</span>
+            </button>
 
             <button
-              onClick={() => {
-                if (selectedCluster?.id) {
-                  loadClusterResources(selectedCluster.id);
-                  loadClusterEvents(selectedCluster.id);
-                }
-                if (onRefresh) onRefresh();
-              }}
-              title="Refresh telemetry"
-              className="p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-800 transition-colors cursor-pointer"
+              onClick={() => setActiveTab('logs')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                activeTab === 'logs'
+                  ? 'bg-sky-600 text-white shadow-xs'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+              }`}
             >
-              <RefreshCw
-                className={`w-4 h-4 ${loadingResources || loadingEvents ? 'animate-spin text-sky-400' : ''}`}
-              />
+              <Terminal className="w-3.5 h-3.5" />
+              <span>Live Pod Logs</span>
+              {podResources.length > 0 && (
+                <span
+                  className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                    activeTab === 'logs' ? 'bg-sky-700 text-sky-100' : 'bg-zinc-800 text-zinc-400'
+                  }`}
+                >
+                  {podResources.length}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('events')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                activeTab === 'events'
+                  ? 'bg-sky-600 text-white shadow-xs'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Cluster Events</span>
+              {clusterEvents.length > 0 && (
+                <span
+                  className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                    activeTab === 'events' ? 'bg-sky-700 text-sky-100' : 'bg-zinc-800 text-zinc-400'
+                  }`}
+                >
+                  {clusterEvents.length}
+                </span>
+              )}
             </button>
           </div>
-        </div>
-
-        {/* View Mode Tabs */}
-        <div className="flex items-center gap-2 mt-4 border-t border-zinc-800/60 pt-3">
-          <button
-            onClick={() => setActiveTab('metrics')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-              activeTab === 'metrics'
-                ? 'bg-sky-600 text-white shadow-xs'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
-            }`}
-          >
-            <Activity className="w-3.5 h-3.5" />
-            <span>Metrics & Telemetry</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('logs')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-              activeTab === 'logs'
-                ? 'bg-sky-600 text-white shadow-xs'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
-            }`}
-          >
-            <Terminal className="w-3.5 h-3.5" />
-            <span>Live Pod Logs</span>
-            {podResources.length > 0 && (
-              <span
-                className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                  activeTab === 'logs' ? 'bg-sky-700 text-sky-100' : 'bg-zinc-800 text-zinc-400'
-                }`}
-              >
-                {podResources.length}
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('events')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-              activeTab === 'events'
-                ? 'bg-sky-600 text-white shadow-xs'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>Cluster Events</span>
-            {clusterEvents.length > 0 && (
-              <span
-                className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                  activeTab === 'events' ? 'bg-sky-700 text-sky-100' : 'bg-zinc-800 text-zinc-400'
-                }`}
-              >
-                {clusterEvents.length}
-              </span>
-            )}
-          </button>
         </div>
       </div>
 
@@ -291,15 +293,17 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
         {selectedCluster && (
           <>
             {activeTab === 'metrics' && (
-              <ClusterObservabilityView
-                clusterId={selectedCluster.id}
-                clusterName={selectedCluster.name}
-                resources={clusterResources}
-              />
+              <div className="p-6 lg:p-8 max-w-7xl mx-auto">
+                <ClusterObservabilityView
+                  clusterId={selectedCluster.id}
+                  clusterName={selectedCluster.name}
+                  resources={clusterResources}
+                />
+              </div>
             )}
 
             {activeTab === 'logs' && (
-              <div className="p-6 max-w-7xl mx-auto space-y-4">
+              <div className="p-6 lg:p-8 max-w-7xl mx-auto space-y-4">
                 {/* Pod Selection Bar */}
                 <div className="flex flex-wrap items-center gap-3 bg-zinc-900/60 border border-zinc-800/80 p-3 rounded-xl">
                   {/* Namespace filter */}
@@ -391,7 +395,7 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
             )}
 
             {activeTab === 'events' && (
-              <div className="p-6 max-w-7xl mx-auto">
+              <div className="p-6 lg:p-8 max-w-7xl mx-auto">
                 <ClusterEventsView
                   events={clusterEvents}
                   clusterResources={clusterResources}

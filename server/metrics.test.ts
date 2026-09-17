@@ -239,5 +239,77 @@ describe('Kubernetes Observability & Metrics Foundation', () => {
       assert.equal(clusterMetrics.isUsageAvailable, true);
       assert.equal(clusterMetrics.freshnessStatus, 'FRESH');
     });
+
+    it('handles Pod with completely unconfigured requests and limits (None vs Zero)', () => {
+      const podUnconfigured: KubernetesResource = {
+        id: 'pod-no-limits-1',
+        clusterId: 'cls-prod-1',
+        kind: 'Pod',
+        namespace: 'default',
+        name: 'best-effort-pod',
+        status: 'Running',
+        health: 'HEALTHY',
+        createdAt: 1700000000000,
+        updatedAt: 1700000050000,
+        specSummary: {},
+        statusSummary: {},
+        containers: [
+          {
+            name: 'app',
+            image: 'app:v1',
+            restartCount: 0,
+            ready: true,
+            state: 'running',
+            // No request or limit configured
+            cpuUsage: '120m',
+            memoryUsage: '64Mi'
+          }
+        ]
+      };
+
+      const metrics = buildPodResourceMetrics(podUnconfigured, 1700000060000);
+      // Requests and limits must be undefined/null, NOT 0
+      assert.equal(metrics.cpu.request, undefined);
+      assert.equal(metrics.cpu.limit, undefined);
+      assert.equal(metrics.memory.request, undefined);
+      assert.equal(metrics.memory.limit, undefined);
+      // Live usage is real
+      assert.equal(metrics.cpu.usage?.value, 120);
+      assert.equal(metrics.memory.usage?.value, 64 * 1024 * 1024);
+      assert.equal(metrics.isUsageAvailable, true);
+    });
+
+    it('differentiates CPU unavailable vs Memory unavailable vs Both unavailable', () => {
+      const podCpuOnly: KubernetesResource = {
+        id: 'pod-cpu-only',
+        clusterId: 'cls-prod-1',
+        kind: 'Pod',
+        namespace: 'default',
+        name: 'cpu-only-pod',
+        status: 'Running',
+        health: 'HEALTHY',
+        createdAt: 1700000000000,
+        updatedAt: 1700000050000,
+        specSummary: {},
+        statusSummary: {},
+        containers: [
+          {
+            name: 'app',
+            image: 'app:v1',
+            restartCount: 0,
+            ready: true,
+            state: 'running',
+            cpuRequest: '100m',
+            cpuUsage: '85m'
+            // Memory usage missing
+          }
+        ]
+      };
+
+      const metrics = buildPodResourceMetrics(podCpuOnly, 1700000060000);
+      assert.equal(metrics.cpu.usage?.value, 85);
+      assert.equal(metrics.memory.usage, undefined);
+      assert.equal(metrics.isUsageAvailable, true);
+    });
   });
 });

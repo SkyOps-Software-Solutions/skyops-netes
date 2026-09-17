@@ -427,5 +427,143 @@ describe('Phase 2 Smart Telemetry, Tiered Retention & Historical Intelligence', 
       assert.equal(baseline!.clusterId, cluster.id);
       assert.ok(baseline!.sampleSize >= 1);
     });
+
+    it('accurately calculates CPU and Memory averages independently when one metric is partially available', () => {
+      const store = new TelemetryStore();
+      const clusterId = 'cluster-partial-metrics';
+      const baseBucketTime = Math.floor(Date.now() / (5 * 60 * 1000)) * (5 * 60 * 1000);
+
+      // Observation 1: Both CPU (1000m) and Memory (1000 Bytes)
+      store.recordObservation(clusterId, {
+        timestamp: baseBucketTime + 10_000,
+        cpuCapacityMillicores: 4000,
+        cpuUsageMillicores: 1000,
+        cpuUsagePercent: 25,
+        memoryCapacityBytes: 4000,
+        memoryUsageBytes: 1000,
+        memoryUsagePercent: 25,
+        isUsageAvailable: true,
+        source: 'metrics.k8s.io'
+      });
+
+      // Observation 2: CPU only (3000m), Memory missing/undefined
+      store.recordObservation(clusterId, {
+        timestamp: baseBucketTime + 25_000,
+        cpuCapacityMillicores: 4000,
+        cpuUsageMillicores: 3000,
+        cpuUsagePercent: 75,
+        memoryCapacityBytes: 4000,
+        memoryUsageBytes: undefined,
+        memoryUsagePercent: undefined,
+        isUsageAvailable: true,
+        source: 'metrics.k8s.io'
+      });
+
+      const rollups = store.get5mRollups(clusterId, '1h');
+      assert.equal(rollups.length, 1);
+      const bucket = rollups[0];
+
+      // Sample count is 2 total
+      assert.equal(bucket.sampleCount, 2);
+      // CPU was present in 2 samples: sum = 4000m, avg = 4000 / 2 = 2000m (50%)
+      assert.equal(bucket.cpuUsageAvgMillicores, 2000);
+      assert.equal(bucket.cpuUsagePercent, 50);
+
+      // Memory was present in only 1 sample: sum = 1000 Bytes, avg must be 1000 / 1 = 1000 Bytes (25%), NOT 1000 / 2 = 500 Bytes!
+      assert.equal(bucket.memoryUsageAvgBytes, 1000);
+      assert.equal(bucket.memoryUsagePercent, 25);
+    });
+
+    it('truthfully preserves undefined for unconfigured requests and limits (None vs Zero semantics)', () => {
+      const store = new TelemetryStore();
+      const clusterId = 'cluster-unconfigured-spec';
+      const now = Date.now();
+
+      store.recordObservation(clusterId, {
+        timestamp: now,
+        cpuCapacityMillicores: 4000,
+        // No requests or limits specified in spec
+        cpuRequestMillicores: undefined,
+        cpuLimitMillicores: undefined,
+        cpuRequestedPercent: undefined,
+        cpuLimitPercent: undefined,
+        memoryCapacityBytes: 16 * 1024 * 1024 * 1024,
+        memoryRequestBytes: undefined,
+        memoryLimitBytes: undefined,
+        memoryRequestedPercent: undefined,
+        memoryLimitPercent: undefined,
+        isUsageAvailable: false,
+        source: 'spec-derived'
+      });
+
+      const history = store.getTelemetryHistory(clusterId, { range: '1h' });
+      // Crucial: current percentages must be undefined, NEVER converted to 0
+      assert.equal(history.summary.currentCpuRequestPercent, undefined);
+      assert.equal(history.summary.currentCpuLimitPercent, undefined);
+      assert.equal(history.summary.currentMemoryRequestPercent, undefined);
+      assert.equal(history.summary.currentMemoryLimitPercent, undefined);
+
+      // Points must preserve undefined
+      assert.equal(history.points[0].cpuRequestedPercent, undefined);
+      assert.equal(history.points[0].cpuLimitPercent, undefined);
+      assert.equal(history.points[0].memoryRequestedPercent, undefined);
+      assert.equal(history.points[0].memoryLimitPercent, undefined);
+    });
+
+    it('handles exact 10-observation rollup with sporadic unavailable usage (divides by valid samples, not 10)', () => {
+      const store = new TelemetryStore();
+      const clusterId = 'cluster-10-obs';
+      const baseBucketTime = Math.floor(Date.now() / (5 * 60 * 1000)) * (5 * 60 * 1000);
+
+      // 10 observations:
+      // CPU: 500m, 600m, unavailable, unavailable, 700m, unavailable, 800m, unavailable, unavailable, 900m
+      // Sum = 500 + 600 + 700 + 800 + 900 = 3500m
+      // Valid CPU count = 5. Average MUST be 3500 / 5 = 700m (NOT 3500 / 10 = 350m!)
+      // Memory: unavailable, 1000, 2000, unavailable, unavailable, 3000, unavailable, unavailable, unavailable, 4000
+      // Sum = 1000 + 2000 + 3000 + 4000 = 10000. Valid count = 4. Average MUST be 10000 / 4 = 2500.
+      const cpuSeries: Array<number | undefined> = [
+        500, 600, undefined, undefined, 700, undefined, 800, undefined, undefined, 900
+      ];
+      const memSeries: Array<number | undefined> = [
+        undefined, 1000, 2000, undefined, undefined, 3000, undefined, undefined, undefined, 4000
+      ];
+
+      for (let i = 0; i < 10; i++) {
+        const cpuVal = cpuSeries[i];
+        const memVal = memSeries[i];
+        store.recordObservation(clusterId, {
+          timestamp: baseBucketTime + i * 5000,
+          cpuCapacityMillicores: 10000,
+          cpuUsageMillicores: cpuVal,
+          cpuUsagePercent: cpuVal !== undefined ? Math.round((cpuVal / 10000) * 100) : undefined,
+          memoryCapacityBytes: 100000,
+          memoryUsageBytes: memVal,
+          memoryUsagePercent: memVal !== undefined ? Math.round((memVal / 100000) * 100) : undefined,
+          isUsageAvailable: cpuVal !== undefined || memVal !== undefined,
+          source: (cpuVal !== undefined || memVal !== undefined) ? 'metrics.k8s.io' : 'spec-derived'
+        });
+      }
+
+      const rollups = store.get5mRollups(clusterId, '1h');
+      assert.equal(rollups.length, 1);
+      const bucket = rollups[0];
+
+      // Total observations = 10
+      assert.equal(bucket.sampleCount, 10);
+
+      // CPU valid samples = 5. Avg = 3500 / 5 = 700m, NOT 350m
+      assert.equal(bucket.cpuUsageAvgMillicores, 700);
+      assert.equal(bucket.cpuUsagePercent, 7); // 700 / 10000 = 7%
+      assert.equal(bucket.cpuUsageMinMillicores, 500);
+      assert.equal(bucket.cpuUsageMaxMillicores, 900);
+      assert.equal(bucket.cpuUsageMillicores, 900); // latest observed
+
+      // Memory valid samples = 4. Avg = 10000 / 4 = 2500, NOT 1000
+      assert.equal(bucket.memoryUsageAvgBytes, 2500);
+      assert.equal(bucket.memoryUsagePercent, 3); // 2500 / 100000 = 2.5% rounded to 3%
+      assert.equal(bucket.memoryUsageMinBytes, 1000);
+      assert.equal(bucket.memoryUsageMaxBytes, 4000);
+      assert.equal(bucket.memoryUsageBytes, 4000); // latest observed
+    });
   });
 });

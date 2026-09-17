@@ -117,8 +117,8 @@ export const TelemetryIntelligenceView: React.FC<TelemetryIntelligenceViewProps>
     title: string,
     metricType: 'cpu' | 'memory',
     primaryColor: string,
-    reqPercent: number,
-    limPercent: number,
+    reqPercent: number | undefined,
+    limPercent: number | undefined,
     pointsData: MetricHistoryPoint[]
   ) => {
     const chartWidth = 700;
@@ -133,7 +133,7 @@ export const TelemetryIntelligenceView: React.FC<TelemetryIntelligenceViewProps>
     );
 
     // Y scale: max of 100% or highest limit/request
-    const maxY = Math.max(100, reqPercent * 1.15, limPercent * 1.15);
+    const maxY = Math.max(100, (reqPercent || 0) * 1.15, (limPercent || 0) * 1.15);
 
     const getY = (val: number) => {
       const clamped = Math.max(0, Math.min(val, maxY));
@@ -171,8 +171,8 @@ export const TelemetryIntelligenceView: React.FC<TelemetryIntelligenceViewProps>
       areaPath += ` L ${lastX} ${padding.top + innerH} Z`;
     }
 
-    const reqY = getY(reqPercent);
-    const limY = getY(limPercent);
+    const reqY = reqPercent !== undefined ? getY(reqPercent) : 0;
+    const limY = limPercent !== undefined ? getY(limPercent) : 0;
 
     return (
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-4">
@@ -188,12 +188,16 @@ export const TelemetryIntelligenceView: React.FC<TelemetryIntelligenceViewProps>
           <div className="flex items-center gap-3 text-xs font-mono">
             <span className="flex items-center gap-1.5 text-zinc-400">
               <span className="w-2.5 h-0.5 bg-sky-400 rounded-full inline-block" />
-              Request: <strong className="text-sky-300 font-bold">{reqPercent}%</strong>{' '}
+              Request: <strong className="text-sky-300 font-bold">
+                {reqPercent !== undefined ? `${reqPercent}%` : 'Not configured'}
+              </strong>{' '}
               <span className="text-[10px] text-zinc-500">(Spec)</span>
             </span>
             <span className="flex items-center gap-1.5 text-zinc-400">
               <span className="w-2.5 h-0.5 bg-amber-400 rounded-full inline-block" />
-              Limit: <strong className="text-amber-300 font-bold">{limPercent}%</strong>{' '}
+              Limit: <strong className="text-amber-300 font-bold">
+                {limPercent !== undefined ? `${limPercent}%` : 'Not configured'}
+              </strong>{' '}
               <span className="text-[10px] text-zinc-500">(Spec)</span>
             </span>
             <span className="flex items-center gap-1.5 text-zinc-400">
@@ -278,51 +282,59 @@ export const TelemetryIntelligenceView: React.FC<TelemetryIntelligenceViewProps>
               0%
             </text>
 
-            {/* Spec Request Baseline */}
-            <line
-              x1={padding.left}
-              y1={reqY}
-              x2={chartWidth - padding.right}
-              y2={reqY}
-              stroke="#38bdf8"
-              strokeWidth="1.5"
-              strokeDasharray="4 4"
-              opacity="0.8"
-            />
-            <text
-              x={chartWidth - padding.right}
-              y={reqY - 4}
-              fill="#38bdf8"
-              fontSize="9"
-              textAnchor="end"
-              fontFamily="monospace"
-              fontWeight="bold"
-            >
-              Req {reqPercent}% (Spec)
-            </text>
+            {/* Spec Request Baseline (only if configured) */}
+            {reqPercent !== undefined && (
+              <>
+                <line
+                  x1={padding.left}
+                  y1={reqY}
+                  x2={chartWidth - padding.right}
+                  y2={reqY}
+                  stroke="#38bdf8"
+                  strokeWidth="1.5"
+                  strokeDasharray="4 4"
+                  opacity="0.8"
+                />
+                <text
+                  x={chartWidth - padding.right}
+                  y={reqY - 4}
+                  fill="#38bdf8"
+                  fontSize="9"
+                  textAnchor="end"
+                  fontFamily="monospace"
+                  fontWeight="bold"
+                >
+                  Req {reqPercent}% (Spec)
+                </text>
+              </>
+            )}
 
-            {/* Spec Limit Baseline */}
-            <line
-              x1={padding.left}
-              y1={limY}
-              x2={chartWidth - padding.right}
-              y2={limY}
-              stroke="#f59e0b"
-              strokeWidth="1.5"
-              strokeDasharray="4 4"
-              opacity="0.8"
-            />
-            <text
-              x={chartWidth - padding.right}
-              y={limY - 4}
-              fill="#f59e0b"
-              fontSize="9"
-              textAnchor="end"
-              fontFamily="monospace"
-              fontWeight="bold"
-            >
-              Limit {limPercent}% (Spec)
-            </text>
+            {/* Spec Limit Baseline (only if configured) */}
+            {limPercent !== undefined && (
+              <>
+                <line
+                  x1={padding.left}
+                  y1={limY}
+                  x2={chartWidth - padding.right}
+                  y2={limY}
+                  stroke="#f59e0b"
+                  strokeWidth="1.5"
+                  strokeDasharray="4 4"
+                  opacity="0.8"
+                />
+                <text
+                  x={chartWidth - padding.right}
+                  y={limY - 4}
+                  fill="#f59e0b"
+                  fontSize="9"
+                  textAnchor="end"
+                  fontFamily="monospace"
+                  fontWeight="bold"
+                >
+                  Limit {limPercent}% (Spec)
+                </text>
+              </>
+            )}
 
             {/* Area Fill for Live Usage */}
             {hasUsage && areaPath && (
@@ -433,11 +445,27 @@ export const TelemetryIntelligenceView: React.FC<TelemetryIntelligenceViewProps>
                 )}
                 <div className="flex justify-between gap-4 text-sky-300">
                   <span>Req (Spec):</span>
-                  <span>{activeHoverPoint.cpuRequestedPercent ?? reqPercent}%</span>
+                  <span>
+                    {metricType === 'cpu'
+                      ? (activeHoverPoint.cpuRequestedPercent !== undefined
+                          ? `${activeHoverPoint.cpuRequestedPercent}%`
+                          : (reqPercent !== undefined ? `${reqPercent}%` : 'Not configured'))
+                      : (activeHoverPoint.memoryRequestedPercent !== undefined
+                          ? `${activeHoverPoint.memoryRequestedPercent}%`
+                          : (reqPercent !== undefined ? `${reqPercent}%` : 'Not configured'))}
+                  </span>
                 </div>
                 <div className="flex justify-between gap-4 text-amber-300">
                   <span>Limit (Spec):</span>
-                  <span>{activeHoverPoint.cpuLimitPercent ?? limPercent}%</span>
+                  <span>
+                    {metricType === 'cpu'
+                      ? (activeHoverPoint.cpuLimitPercent !== undefined
+                          ? `${activeHoverPoint.cpuLimitPercent}%`
+                          : (limPercent !== undefined ? `${limPercent}%` : 'Not configured'))
+                      : (activeHoverPoint.memoryLimitPercent !== undefined
+                          ? `${activeHoverPoint.memoryLimitPercent}%`
+                          : (limPercent !== undefined ? `${limPercent}%` : 'Not configured'))}
+                  </span>
                 </div>
                 <div className="text-[10px] text-zinc-500 pt-0.5 border-t border-zinc-800">
                   Source: {activeHoverPoint.source || (activeHoverPoint.isUsageAvailable ? 'metrics.k8s.io' : 'spec-derived')}
@@ -647,29 +675,37 @@ export const TelemetryIntelligenceView: React.FC<TelemetryIntelligenceViewProps>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5 space-y-1">
               <span className="text-[11px] font-mono text-zinc-400 uppercase">CPU Requests</span>
-              <div className="text-lg font-bold font-mono text-sky-400">
-                {telemetry?.summary.currentCpuRequestPercent ?? 0}%
+              <div className={`text-lg font-bold font-mono ${telemetry?.summary.currentCpuRequestPercent !== undefined ? 'text-sky-400' : 'text-zinc-500'}`}>
+                {telemetry?.summary.currentCpuRequestPercent !== undefined
+                  ? `${telemetry.summary.currentCpuRequestPercent}%`
+                  : 'Not configured'}
               </div>
               <span className="text-[10px] text-zinc-500 font-mono">Source: K8s Spec</span>
             </div>
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5 space-y-1">
               <span className="text-[11px] font-mono text-zinc-400 uppercase">CPU Limits</span>
-              <div className="text-lg font-bold font-mono text-amber-400">
-                {telemetry?.summary.currentCpuLimitPercent ?? 0}%
+              <div className={`text-lg font-bold font-mono ${telemetry?.summary.currentCpuLimitPercent !== undefined ? 'text-amber-400' : 'text-zinc-500'}`}>
+                {telemetry?.summary.currentCpuLimitPercent !== undefined
+                  ? `${telemetry.summary.currentCpuLimitPercent}%`
+                  : 'Not configured'}
               </div>
               <span className="text-[10px] text-zinc-500 font-mono">Source: K8s Spec</span>
             </div>
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5 space-y-1">
               <span className="text-[11px] font-mono text-zinc-400 uppercase">Memory Requests</span>
-              <div className="text-lg font-bold font-mono text-violet-400">
-                {telemetry?.summary.currentMemoryRequestPercent ?? 0}%
+              <div className={`text-lg font-bold font-mono ${telemetry?.summary.currentMemoryRequestPercent !== undefined ? 'text-violet-400' : 'text-zinc-500'}`}>
+                {telemetry?.summary.currentMemoryRequestPercent !== undefined
+                  ? `${telemetry.summary.currentMemoryRequestPercent}%`
+                  : 'Not configured'}
               </div>
               <span className="text-[10px] text-zinc-500 font-mono">Source: K8s Spec</span>
             </div>
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5 space-y-1">
               <span className="text-[11px] font-mono text-zinc-400 uppercase">Memory Limits</span>
-              <div className="text-lg font-bold font-mono text-emerald-400">
-                {telemetry?.summary.currentMemoryLimitPercent ?? 0}%
+              <div className={`text-lg font-bold font-mono ${telemetry?.summary.currentMemoryLimitPercent !== undefined ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                {telemetry?.summary.currentMemoryLimitPercent !== undefined
+                  ? `${telemetry.summary.currentMemoryLimitPercent}%`
+                  : 'Not configured'}
               </div>
               <span className="text-[10px] text-zinc-500 font-mono">Source: K8s Spec</span>
             </div>
@@ -678,19 +714,19 @@ export const TelemetryIntelligenceView: React.FC<TelemetryIntelligenceViewProps>
           {/* SVG Trends */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {renderTrendChart(
-              'CPU Allocation & Usage Trends',
+              'Cluster CPU Allocation & Usage Trends (Cluster Aggregate)',
               'cpu',
               '#38bdf8',
-              telemetry?.summary.currentCpuRequestPercent ?? 0,
-              telemetry?.summary.currentCpuLimitPercent ?? 0,
+              telemetry?.summary.currentCpuRequestPercent,
+              telemetry?.summary.currentCpuLimitPercent,
               points
             )}
             {renderTrendChart(
-              'Memory Allocation & Usage Trends',
+              'Cluster Memory Allocation & Usage Trends (Cluster Aggregate)',
               'memory',
               '#a78bfa',
-              telemetry?.summary.currentMemoryRequestPercent ?? 0,
-              telemetry?.summary.currentMemoryLimitPercent ?? 0,
+              telemetry?.summary.currentMemoryRequestPercent,
+              telemetry?.summary.currentMemoryLimitPercent,
               points
             )}
           </div>
@@ -727,11 +763,11 @@ export const TelemetryIntelligenceView: React.FC<TelemetryIntelligenceViewProps>
                 </thead>
                 <tbody className="divide-y divide-zinc-800">
                   {displayedObservations.map((pt) => {
-                    const cpuReq = pt.cpuRequestedPercent ?? 0;
-                    const cpuLim = pt.cpuLimitPercent ?? 0;
+                    const cpuReqStr = pt.cpuRequestedPercent !== undefined ? `${pt.cpuRequestedPercent}%` : 'Not configured';
+                    const cpuLimStr = pt.cpuLimitPercent !== undefined ? `${pt.cpuLimitPercent}%` : 'Not configured';
                     const cpuUse = pt.cpuUsagePercent;
-                    const memReq = pt.memoryRequestedPercent ?? 0;
-                    const memLim = pt.memoryLimitPercent ?? 0;
+                    const memReqStr = pt.memoryRequestedPercent !== undefined ? `${pt.memoryRequestedPercent}%` : 'Not configured';
+                    const memLimStr = pt.memoryLimitPercent !== undefined ? `${pt.memoryLimitPercent}%` : 'Not configured';
                     const memUse = pt.memoryUsagePercent;
                     const src = pt.source || (pt.isUsageAvailable ? 'metrics.k8s.io' : 'spec-derived');
 
@@ -741,8 +777,8 @@ export const TelemetryIntelligenceView: React.FC<TelemetryIntelligenceViewProps>
                           {formatTime(pt.timestamp)}{' '}
                           <span className="text-[10px] text-zinc-500">({formatElapsed(pt.timestamp)})</span>
                         </td>
-                        <td className="px-4 py-3 font-bold text-sky-400">{cpuReq}%</td>
-                        <td className="px-4 py-3 font-bold text-amber-400">{cpuLim}%</td>
+                        <td className={`px-4 py-3 font-bold ${pt.cpuRequestedPercent !== undefined ? 'text-sky-400' : 'text-zinc-500'}`}>{cpuReqStr}</td>
+                        <td className={`px-4 py-3 font-bold ${pt.cpuLimitPercent !== undefined ? 'text-amber-400' : 'text-zinc-500'}`}>{cpuLimStr}</td>
                         <td className="px-4 py-3 font-bold">
                           {cpuUse !== undefined ? (
                             <span className="text-emerald-400">{cpuUse}%</span>
@@ -750,8 +786,8 @@ export const TelemetryIntelligenceView: React.FC<TelemetryIntelligenceViewProps>
                             <span className="text-zinc-500">Unavailable</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 font-bold text-violet-400">{memReq}%</td>
-                        <td className="px-4 py-3 font-bold text-emerald-400">{memLim}%</td>
+                        <td className={`px-4 py-3 font-bold ${pt.memoryRequestedPercent !== undefined ? 'text-violet-400' : 'text-zinc-500'}`}>{memReqStr}</td>
+                        <td className={`px-4 py-3 font-bold ${pt.memoryLimitPercent !== undefined ? 'text-emerald-400' : 'text-zinc-500'}`}>{memLimStr}</td>
                         <td className="px-4 py-3 font-bold">
                           {memUse !== undefined ? (
                             <span className="text-emerald-400">{memUse}%</span>

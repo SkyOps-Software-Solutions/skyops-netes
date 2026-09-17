@@ -783,7 +783,7 @@ export interface ClusterObservabilityMetrics {
 export interface MetricHistoryPoint {
   timestamp: number;
   cpuUsageMillicores?: number;
-  cpuRequestMillicores: number;
+  cpuRequestMillicores?: number;
   cpuCapacityMillicores: number;
   cpuAllocatableMillicores?: number;
   cpuLimitMillicores?: number;
@@ -791,7 +791,7 @@ export interface MetricHistoryPoint {
   cpuLimitPercent?: number;
   cpuUsagePercent?: number;
   memoryUsageBytes?: number;
-  memoryRequestBytes: number;
+  memoryRequestBytes?: number;
   memoryCapacityBytes: number;
   memoryAllocatableBytes?: number;
   memoryLimitBytes?: number;
@@ -843,10 +843,10 @@ export interface TelemetrySummary {
   peakCpuUsagePercent?: number;
   avgMemoryUsagePercent?: number;
   peakMemoryUsagePercent?: number;
-  currentCpuRequestPercent: number;
-  currentCpuLimitPercent: number;
-  currentMemoryRequestPercent: number;
-  currentMemoryLimitPercent: number;
+  currentCpuRequestPercent?: number;
+  currentCpuLimitPercent?: number;
+  currentMemoryRequestPercent?: number;
+  currentMemoryLimitPercent?: number;
   unavailableReason?: string;
 }
 

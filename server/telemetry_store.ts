@@ -15,6 +15,8 @@ interface RollupBucket {
   timestamp: number; // bucket start timestamp
   resolution: '5m' | '1h';
   sampleCount: number;
+  cpuUsageSampleCount: number;
+  memoryUsageSampleCount: number;
   cpuRequestMillicores: number;
   cpuCapacityMillicores: number;
   cpuRequestedPercent?: number;
@@ -162,11 +164,16 @@ export class TelemetryStore {
     const bucketStart = Math.floor(ts / intervalMs) * intervalMs;
     let b = map.get(bucketStart);
 
+    const hasCpu = point.cpuUsageMillicores !== undefined && point.cpuUsageMillicores !== null;
+    const hasMem = point.memoryUsageBytes !== undefined && point.memoryUsageBytes !== null;
+
     if (!b) {
       b = {
         timestamp: bucketStart,
         resolution,
         sampleCount: 1,
+        cpuUsageSampleCount: hasCpu ? 1 : 0,
+        memoryUsageSampleCount: hasMem ? 1 : 0,
         cpuRequestMillicores: point.cpuRequestMillicores,
         cpuCapacityMillicores: point.cpuCapacityMillicores,
         cpuRequestedPercent: point.cpuRequestedPercent,
@@ -175,15 +182,15 @@ export class TelemetryStore {
         memoryCapacityBytes: point.memoryCapacityBytes,
         memoryRequestedPercent: point.memoryRequestedPercent,
         memoryLimitPercent: point.memoryLimitPercent,
-        cpuUsageSum: point.cpuUsageMillicores ?? 0,
-        cpuUsageMin: point.cpuUsageMillicores,
-        cpuUsageMax: point.cpuUsageMillicores,
-        cpuUsageLatest: point.cpuUsageMillicores,
-        memoryUsageSum: point.memoryUsageBytes ?? 0,
-        memoryUsageMin: point.memoryUsageBytes,
-        memoryUsageMax: point.memoryUsageBytes,
-        memoryUsageLatest: point.memoryUsageBytes,
-        isUsageAvailable: point.isUsageAvailable,
+        cpuUsageSum: hasCpu ? point.cpuUsageMillicores! : 0,
+        cpuUsageMin: hasCpu ? point.cpuUsageMillicores : undefined,
+        cpuUsageMax: hasCpu ? point.cpuUsageMillicores : undefined,
+        cpuUsageLatest: hasCpu ? point.cpuUsageMillicores : undefined,
+        memoryUsageSum: hasMem ? point.memoryUsageBytes! : 0,
+        memoryUsageMin: hasMem ? point.memoryUsageBytes : undefined,
+        memoryUsageMax: hasMem ? point.memoryUsageBytes : undefined,
+        memoryUsageLatest: hasMem ? point.memoryUsageBytes : undefined,
+        isUsageAvailable: hasCpu || hasMem || Boolean(point.isUsageAvailable),
         source: point.source,
         incidentId: point.incidentId
       };
@@ -203,18 +210,20 @@ export class TelemetryStore {
     if (point.source) b.source = point.source;
     if (point.incidentId) b.incidentId = point.incidentId;
 
-    if (point.cpuUsageMillicores !== undefined && point.cpuUsageMillicores !== null) {
-      b.cpuUsageSum += point.cpuUsageMillicores;
-      b.cpuUsageMin = b.cpuUsageMin !== undefined ? Math.min(b.cpuUsageMin, point.cpuUsageMillicores) : point.cpuUsageMillicores;
-      b.cpuUsageMax = b.cpuUsageMax !== undefined ? Math.max(b.cpuUsageMax, point.cpuUsageMillicores) : point.cpuUsageMillicores;
+    if (hasCpu) {
+      b.cpuUsageSum += point.cpuUsageMillicores!;
+      b.cpuUsageSampleCount = (b.cpuUsageSampleCount || 0) + 1;
+      b.cpuUsageMin = b.cpuUsageMin !== undefined ? Math.min(b.cpuUsageMin, point.cpuUsageMillicores!) : point.cpuUsageMillicores;
+      b.cpuUsageMax = b.cpuUsageMax !== undefined ? Math.max(b.cpuUsageMax, point.cpuUsageMillicores!) : point.cpuUsageMillicores;
       b.cpuUsageLatest = point.cpuUsageMillicores;
       b.isUsageAvailable = true;
     }
 
-    if (point.memoryUsageBytes !== undefined && point.memoryUsageBytes !== null) {
-      b.memoryUsageSum += point.memoryUsageBytes;
-      b.memoryUsageMin = b.memoryUsageMin !== undefined ? Math.min(b.memoryUsageMin, point.memoryUsageBytes) : point.memoryUsageBytes;
-      b.memoryUsageMax = b.memoryUsageMax !== undefined ? Math.max(b.memoryUsageMax, point.memoryUsageBytes) : point.memoryUsageBytes;
+    if (hasMem) {
+      b.memoryUsageSum += point.memoryUsageBytes!;
+      b.memoryUsageSampleCount = (b.memoryUsageSampleCount || 0) + 1;
+      b.memoryUsageMin = b.memoryUsageMin !== undefined ? Math.min(b.memoryUsageMin, point.memoryUsageBytes!) : point.memoryUsageBytes;
+      b.memoryUsageMax = b.memoryUsageMax !== undefined ? Math.max(b.memoryUsageMax, point.memoryUsageBytes!) : point.memoryUsageBytes;
       b.memoryUsageLatest = point.memoryUsageBytes;
       b.isUsageAvailable = true;
     }
@@ -336,7 +345,7 @@ export class TelemetryStore {
 
     // Detect if live runtime usage is available
     const anyUsage = returnedPoints.some((p) => p.isUsageAvailable && (p.cpuUsagePercent !== undefined || p.memoryUsagePercent !== undefined)) ||
-      bucket.rawPoints.slice(-10).some((p) => p.isUsageAvailable);
+      bucket.rawPoints.slice(-10).some((p) => p.isUsageAvailable && (p.cpuUsageMillicores !== undefined || p.memoryUsageBytes !== undefined));
 
     const latestPoint = bucket.rawPoints.length > 0 ? bucket.rawPoints[bucket.rawPoints.length - 1] : returnedPoints[returnedPoints.length - 1];
     const latestAge = latestPoint ? now - latestPoint.timestamp : Infinity;
@@ -344,9 +353,13 @@ export class TelemetryStore {
     let runtimeStatus: 'LIVE' | 'UNAVAILABLE' | 'STALE' = 'UNAVAILABLE';
     if (anyUsage) {
       runtimeStatus = latestAge < 180_000 ? 'LIVE' : 'STALE';
+    } else {
+      runtimeStatus = 'UNAVAILABLE';
     }
 
-    const metricsSource = anyUsage ? 'METRICS_SERVER' : 'SPEC_STATUS_ONLY';
+    const metricsSource: 'METRICS_SERVER' | 'SPEC_STATUS_ONLY' | 'UNAVAILABLE' = anyUsage
+      ? 'METRICS_SERVER'
+      : (latestPoint ? 'SPEC_STATUS_ONLY' : 'UNAVAILABLE');
 
     // Calculate summary statistics
     let sumCpuUsage = 0;
@@ -370,10 +383,10 @@ export class TelemetryStore {
       }
     }
 
-    const currentCpuReq = latestPoint?.cpuRequestedPercent ?? 0;
-    const currentCpuLim = latestPoint?.cpuLimitPercent ?? 0;
-    const currentMemReq = latestPoint?.memoryRequestedPercent ?? 0;
-    const currentMemLim = latestPoint?.memoryLimitPercent ?? 0;
+    const currentCpuReq = latestPoint?.cpuRequestedPercent;
+    const currentCpuLim = latestPoint?.cpuLimitPercent;
+    const currentMemReq = latestPoint?.memoryRequestedPercent;
+    const currentMemLim = latestPoint?.memoryLimitPercent;
 
     const unavailableReason = anyUsage
       ? undefined
@@ -417,8 +430,15 @@ export class TelemetryStore {
     for (const b of map.values()) {
       if (b.timestamp < cutoff) continue;
 
-      const cpuAvg = b.sampleCount > 0 && b.cpuUsageSum > 0 ? Math.round(b.cpuUsageSum / b.sampleCount) : undefined;
-      const memAvg = b.sampleCount > 0 && b.memoryUsageSum > 0 ? Math.round(b.memoryUsageSum / b.sampleCount) : undefined;
+      const cpuSamples = b.cpuUsageSampleCount !== undefined
+        ? b.cpuUsageSampleCount
+        : (b.cpuUsageSum > 0 ? b.sampleCount : 0);
+      const memSamples = b.memoryUsageSampleCount !== undefined
+        ? b.memoryUsageSampleCount
+        : (b.memoryUsageSum > 0 ? b.sampleCount : 0);
+
+      const cpuAvg = cpuSamples > 0 ? Math.round(b.cpuUsageSum / cpuSamples) : undefined;
+      const memAvg = memSamples > 0 ? Math.round(b.memoryUsageSum / memSamples) : undefined;
 
       const cpuUsagePct = cpuAvg !== undefined && b.cpuCapacityMillicores > 0
         ? Math.round((cpuAvg / b.cpuCapacityMillicores) * 100)
@@ -427,6 +447,8 @@ export class TelemetryStore {
       const memUsagePct = memAvg !== undefined && b.memoryCapacityBytes > 0
         ? Math.round((memAvg / b.memoryCapacityBytes) * 100)
         : undefined;
+
+      const hasUsage = cpuSamples > 0 || memSamples > 0;
 
       points.push({
         timestamp: b.timestamp,
@@ -450,8 +472,8 @@ export class TelemetryStore {
         memoryUsageMaxBytes: b.memoryUsageMax,
         memoryUsageAvgBytes: memAvg,
         memoryUsagePercent: memUsagePct,
-        isUsageAvailable: b.isUsageAvailable,
-        source: b.source,
+        isUsageAvailable: hasUsage || b.isUsageAvailable,
+        source: hasUsage ? (b.source || 'metrics.k8s.io') : 'spec-derived',
         incidentId: b.incidentId
       });
     }
@@ -968,13 +990,29 @@ export class TelemetryStore {
       const roll5m = new Map<number, RollupBucket>();
       if (Array.isArray(rawBucket.rollups5m)) {
         for (const [k, v] of rawBucket.rollups5m) {
-          if (typeof k === 'number' && v) roll5m.set(k, v);
+          if (typeof k === 'number' && v) {
+            if (v.cpuUsageSampleCount === undefined) {
+              v.cpuUsageSampleCount = v.cpuUsageSum > 0 ? v.sampleCount : 0;
+            }
+            if (v.memoryUsageSampleCount === undefined) {
+              v.memoryUsageSampleCount = v.memoryUsageSum > 0 ? v.sampleCount : 0;
+            }
+            roll5m.set(k, v);
+          }
         }
       }
       const roll1h = new Map<number, RollupBucket>();
       if (Array.isArray(rawBucket.rollups1h)) {
         for (const [k, v] of rawBucket.rollups1h) {
-          if (typeof k === 'number' && v) roll1h.set(k, v);
+          if (typeof k === 'number' && v) {
+            if (v.cpuUsageSampleCount === undefined) {
+              v.cpuUsageSampleCount = v.cpuUsageSum > 0 ? v.sampleCount : 0;
+            }
+            if (v.memoryUsageSampleCount === undefined) {
+              v.memoryUsageSampleCount = v.memoryUsageSum > 0 ? v.sampleCount : 0;
+            }
+            roll1h.set(k, v);
+          }
         }
       }
 

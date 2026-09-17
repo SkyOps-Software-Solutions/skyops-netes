@@ -18,23 +18,31 @@ import { incidentNotificationService } from './notifications/notificationService
 
 test('SkyOps Production Persistence Architecture & Isolation Gate', async (t) => {
   await t.test('Production Persistence Requirements: rejects startup without SKYOPS_DATA_DIR', () => {
-    assert.throws(
-      () => {
-        resolvePersistenceConfig('production', '');
-      },
-      (err: any) => {
-        return err.message.includes('Production environment requires an explicit persistent storage directory');
-      }
-    );
+    const origDataDir = process.env.SKYOPS_DATA_DIR;
+    try {
+      delete process.env.SKYOPS_DATA_DIR;
+      assert.throws(
+        () => {
+          resolvePersistenceConfig('production', '');
+        },
+        (err: any) => {
+          return err.message.includes('Production environment requires an explicit persistent storage directory');
+        }
+      );
 
-    assert.throws(
-      () => {
-        resolvePersistenceConfig('production', undefined);
-      },
-      (err: any) => {
-        return err.message.includes('Production environment requires an explicit persistent storage directory');
+      assert.throws(
+        () => {
+          resolvePersistenceConfig('production', undefined);
+        },
+        (err: any) => {
+          return err.message.includes('Production environment requires an explicit persistent storage directory');
+        }
+      );
+    } finally {
+      if (origDataDir !== undefined) {
+        process.env.SKYOPS_DATA_DIR = origDataDir;
       }
-    );
+    }
   });
 
   await t.test('Production Persistence: accepts valid directory and ensures writability probe', () => {

@@ -73,8 +73,9 @@ export function resolvePersistenceConfig(
   }
 
   if (env === 'test') {
-    const testDir = rawDataDir
-      ? path.resolve(rawDataDir.trim())
+    // In test mode, always isolate in temp directory unless explicitly overridden via parameter
+    const testDir = forcedDataDir !== undefined && forcedDataDir !== ''
+      ? path.resolve(forcedDataDir.trim())
       : path.join(os.tmpdir(), `skyops-test-${process.pid}`);
     if (!fs.existsSync(testDir)) {
       fs.mkdirSync(testDir, { recursive: true });

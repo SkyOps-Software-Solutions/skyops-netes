@@ -13,6 +13,16 @@ import { store } from '../store';
 import { billingService } from './billingService';
 import { getPlanDefinition } from './planConfig';
 
+export interface QuotaCheckResult {
+  allowed: boolean;
+  current: number;
+  limit: number;
+  plan: PlanTier;
+  upgradeRequired: boolean;
+  code?: 'PLAN_LIMIT_REACHED' | 'FEATURE_NOT_ENTITLED' | 'SUBSCRIPTION_RESTRICTED';
+  error?: string;
+}
+
 export class EntitlementService {
   /**
    * Get active subscription for organization
@@ -132,15 +142,7 @@ export class EntitlementService {
     orgId: string,
     resource: 'clusters' | 'nodes' | 'workloads' | 'members' | 'ai_investigations' | 'remediations' | 'webhooks',
     requestedQuantity = 1
-  ): {
-    allowed: boolean;
-    current: number;
-    limit: number;
-    plan: PlanTier;
-    upgradeRequired: boolean;
-    code?: 'PLAN_LIMIT_REACHED' | 'FEATURE_NOT_ENTITLED' | 'SUBSCRIPTION_RESTRICTED';
-    error?: string;
-  } {
+  ): QuotaCheckResult {
     const entitlements = this.getEntitlements(orgId);
     const plan = entitlements.planId;
 
@@ -204,7 +206,7 @@ export class EntitlementService {
     }
 
     if (resource === 'remediations') {
-      if (entitlements.features.automatedRemediation === 'disabled') {
+      if (entitlements.features.automatedRemediation === 'disabled' || !entitlements.features.automatedRemediation) {
         const error = `Automated remediations require a Pro or Business subscription.`;
         return {
           allowed: false,
@@ -216,10 +218,39 @@ export class EntitlementService {
           error
         };
       }
+
+      const usage = store.getOrgUsage(orgId);
+      const currentRemediations = usage.remediationsExecuted || 0;
+      const limitRemediations = plan === 'PRO' ? 25 : plan === 'BUSINESS' ? 200 : -1;
+
+      if (limitRemediations !== -1 && currentRemediations + requestedQuantity > limitRemediations) {
+        const error = `Monthly automated remediation quota reached (${currentRemediations}/${limitRemediations}). Upgrade your plan to execute additional remediations.`;
+        auditService.record({
+          orgId,
+          actorId: 'system',
+          actorName: 'Entitlement Quota Engine',
+          actorType: 'SYSTEM',
+          action: 'plan_limit_reached',
+          resourceType: 'SUBSCRIPTION',
+          resourceId: 'remediations',
+          result: 'FAILURE',
+          details: { resource: 'remediations', current: currentRemediations, limit: limitRemediations, plan }
+        });
+        return {
+          allowed: false,
+          current: currentRemediations,
+          limit: limitRemediations,
+          plan,
+          upgradeRequired: true,
+          code: 'PLAN_LIMIT_REACHED',
+          error
+        };
+      }
+
       return {
         allowed: true,
-        current: 0,
-        limit: -1,
+        current: currentRemediations,
+        limit: limitRemediations,
         plan,
         upgradeRequired: false
       };
@@ -286,24 +317,24 @@ export class EntitlementService {
     };
   }
 
-  public canCreateCluster(orgId: string): boolean {
-    return this.checkQuota(orgId, 'clusters').allowed;
+  public canCreateCluster(orgId: string): QuotaCheckResult {
+    return this.checkQuota(orgId, 'clusters');
   }
 
-  public canAddMember(orgId: string): boolean {
-    return this.checkQuota(orgId, 'members').allowed;
+  public canAddMember(orgId: string): QuotaCheckResult {
+    return this.checkQuota(orgId, 'members');
   }
 
-  public canUseAI(orgId: string): boolean {
-    return this.checkQuota(orgId, 'ai_investigations').allowed;
+  public canUseAI(orgId: string): QuotaCheckResult {
+    return this.checkQuota(orgId, 'ai_investigations');
   }
 
-  public canExecuteRemediation(orgId: string): boolean {
-    return this.checkQuota(orgId, 'remediations').allowed;
+  public canExecuteRemediation(orgId: string): QuotaCheckResult {
+    return this.checkQuota(orgId, 'remediations');
   }
 
-  public canUseWebhooks(orgId: string): boolean {
-    return this.checkQuota(orgId, 'webhooks').allowed;
+  public canUseWebhooks(orgId: string): QuotaCheckResult {
+    return this.checkQuota(orgId, 'webhooks');
   }
 
   public hasFeature(orgId: string, featureKey: keyof PlanFeatures): boolean {

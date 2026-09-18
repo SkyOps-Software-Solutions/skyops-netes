@@ -1,4 +1,4 @@
-import { BillingInterval, Plan, PlanId, PlanLimits } from '../types';
+import { BillingInterval, Plan, PlanId, PlanIntervalPricing, PlanLimits } from '../types';
 
 export const BILLING_INTERVALS: Array<{
   id: BillingInterval;
@@ -71,7 +71,8 @@ export const PLANS: Record<PlanId, Plan> = {
       members: 1,
       dataRetentionDays: 7,
       aiInvestigationsMonthly: 20,
-      remediationsMonthly: 5,
+      aiMonthlyAllowance: 20,
+      remediationsMonthly: 0,
       auditLogsDays: 7
     },
     features: {
@@ -106,6 +107,11 @@ export const PLANS: Record<PlanId, Plan> = {
     description: 'Full AI investigation, automated incident correlation, extended retention and team RBAC.',
     badge: 'Most Popular',
     recommended: true,
+    currency: 'INR',
+    razorpayPlanIds: {
+      MONTHLY: (typeof process !== 'undefined' && process.env?.RAZORPAY_PRO_MONTHLY_PLAN_ID) || 'plan_pro_monthly',
+      YEARLY: (typeof process !== 'undefined' && process.env?.RAZORPAY_PRO_YEARLY_PLAN_ID) || 'plan_pro_yearly'
+    },
     pricing: {
       MONTHLY: {
         interval: 'MONTHLY',
@@ -155,6 +161,7 @@ export const PLANS: Record<PlanId, Plan> = {
       members: 10,
       dataRetentionDays: 30,
       aiInvestigationsMonthly: 200,
+      aiMonthlyAllowance: 200,
       remediationsMonthly: 25,
       auditLogsDays: 30
     },
@@ -191,6 +198,11 @@ export const PLANS: Record<PlanId, Plan> = {
     description: 'High capacity quotas, 90-day retention, advanced RBAC, and heavy AI investigations.',
     badge: 'Advanced Ops',
     recommended: false,
+    currency: 'INR',
+    razorpayPlanIds: {
+      MONTHLY: (typeof process !== 'undefined' && process.env?.RAZORPAY_BUSINESS_MONTHLY_PLAN_ID) || 'plan_biz_monthly',
+      YEARLY: (typeof process !== 'undefined' && process.env?.RAZORPAY_BUSINESS_YEARLY_PLAN_ID) || 'plan_biz_yearly'
+    },
     pricing: {
       MONTHLY: {
         interval: 'MONTHLY',
@@ -240,6 +252,7 @@ export const PLANS: Record<PlanId, Plan> = {
       members: 50,
       dataRetentionDays: 90,
       aiInvestigationsMonthly: 1000,
+      aiMonthlyAllowance: 1000,
       remediationsMonthly: 200,
       auditLogsDays: 90
     },
@@ -325,6 +338,7 @@ export const PLANS: Record<PlanId, Plan> = {
       members: -1,
       dataRetentionDays: 365,
       aiInvestigationsMonthly: -1,
+      aiMonthlyAllowance: -1,
       remediationsMonthly: -1,
       auditLogsDays: 365
     },
@@ -354,7 +368,38 @@ export const PLANS: Record<PlanId, Plan> = {
   }
 };
 
+export const BILLING_INTERVAL_CONFIG: Record<
+  BillingInterval,
+  { months: number; label: string; shortLabel: string }
+> = {
+  MONTHLY: { months: 1, label: '1 Month', shortLabel: '/mo' },
+  QUARTERLY: { months: 3, label: '3 Months', shortLabel: '/qtr' },
+  HALF_YEARLY: { months: 6, label: '6 Months', shortLabel: '/half-yr' },
+  YEARLY: { months: 12, label: '12 Months', shortLabel: '/yr' }
+};
+
+export const TRIAL_CONFIG = {
+  planId: 'PRO' as PlanId,
+  durationDays: 14,
+  durationMs: 14 * 24 * 60 * 60 * 1000
+};
+
 export const PLANS_LIST: Plan[] = Object.values(PLANS);
+
+/**
+ * Get plan definition by PlanId
+ */
+export function getPlanDefinition(planId: PlanId | string): Plan {
+  return PLANS[planId as PlanId] || PLANS.FREE;
+}
+
+/**
+ * Get pricing definition by PlanId and BillingInterval
+ */
+export function getPlanPricing(planId: PlanId | string, interval: BillingInterval): PlanIntervalPricing {
+  const plan = getPlanDefinition(planId);
+  return plan.pricing[interval] || plan.pricing.MONTHLY;
+}
 
 /**
  * Format INR currency value

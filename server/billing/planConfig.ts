@@ -1,73 +1,52 @@
 import {
+  BILLING_INTERVALS as SRC_BILLING_INTERVALS,
+  PLANS as SRC_PLANS,
+  TRIAL_CONFIG as SRC_TRIAL_CONFIG
+} from '../../src/config/plans';
+import {
   BillingInterval,
   IntervalPricing,
   PlanDefinition,
-  PlanFeatures,
-  PlanLimits,
   PlanTier
 } from '../../src/types/billing';
 
-export const BILLING_INTERVALS: Record<
-  BillingInterval,
-  { months: number; label: string; shortLabel: string }
-> = {
-  MONTHLY: { months: 1, label: '1 Month', shortLabel: '/mo' },
-  QUARTERLY: { months: 3, label: '3 Months', shortLabel: '/qtr' },
-  HALF_YEARLY: { months: 6, label: '6 Months', shortLabel: '/half-yr' },
-  YEARLY: { months: 12, label: '12 Months', shortLabel: '/yr' }
-};
+export const BILLING_INTERVALS = SRC_BILLING_INTERVALS;
+
+function adaptPricing(srcPricing: any): Record<BillingInterval, IntervalPricing> {
+  const result: any = {};
+  const intervals: BillingInterval[] = ['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY'];
+  for (const interval of intervals) {
+    const p = srcPricing[interval] || srcPricing.MONTHLY;
+    result[interval] = {
+      durationMonths: p.durationMonths || 1,
+      label: p.label || '1 Month',
+      totalPrice: p.totalPrice || 0,
+      effectiveMonthlyPrice: p.monthlyEquivalent || p.effectiveMonthlyPrice || (p.totalPrice / (p.durationMonths || 1)),
+      savingsAmount: p.savings || p.savingsAmount || 0,
+      savingsPercent: p.savingsPercentage || p.savingsPercent || 0
+    };
+  }
+  return result;
+}
 
 export const PLANS: Record<PlanTier, PlanDefinition> = {
   FREE: {
     id: 'FREE',
-    name: 'Developer Free',
-    tagline: 'Essential Kubernetes observability for individuals & dev environments',
-    description: 'Connect a single cluster to explore real-time telemetry, pod logs, and basic incident alerts.',
+    name: SRC_PLANS.FREE.name,
+    tagline: SRC_PLANS.FREE.tagline,
+    description: SRC_PLANS.FREE.description,
     currency: 'INR',
-    badge: 'Standard Free',
-    pricing: {
-      MONTHLY: {
-        durationMonths: 1,
-        label: '1 Month',
-        totalPrice: 0,
-        effectiveMonthlyPrice: 0,
-        savingsAmount: 0,
-        savingsPercent: 0
-      },
-      QUARTERLY: {
-        durationMonths: 3,
-        label: '3 Months',
-        totalPrice: 0,
-        effectiveMonthlyPrice: 0,
-        savingsAmount: 0,
-        savingsPercent: 0
-      },
-      HALF_YEARLY: {
-        durationMonths: 6,
-        label: '6 Months',
-        totalPrice: 0,
-        effectiveMonthlyPrice: 0,
-        savingsAmount: 0,
-        savingsPercent: 0
-      },
-      YEARLY: {
-        durationMonths: 12,
-        label: '12 Months',
-        totalPrice: 0,
-        effectiveMonthlyPrice: 0,
-        savingsAmount: 0,
-        savingsPercent: 0
-      }
-    },
+    badge: SRC_PLANS.FREE.badge || 'Standard Free',
+    pricing: adaptPricing(SRC_PLANS.FREE.pricing),
     limits: {
-      clusters: 1,
-      nodes: 5,
-      workloads: 100,
-      members: 1,
-      dataRetentionDays: 7,
-      auditRetentionDays: 7,
-      aiMonthlyAllowance: 20,
-      storageGb: 5
+      clusters: SRC_PLANS.FREE.limits.clusters,
+      nodes: SRC_PLANS.FREE.limits.nodes,
+      workloads: SRC_PLANS.FREE.limits.workloads,
+      members: SRC_PLANS.FREE.limits.members,
+      dataRetentionDays: SRC_PLANS.FREE.limits.dataRetentionDays,
+      auditRetentionDays: SRC_PLANS.FREE.limits.auditLogsDays,
+      aiMonthlyAllowance: SRC_PLANS.FREE.limits.aiMonthlyAllowance ?? SRC_PLANS.FREE.limits.aiInvestigationsMonthly,
+      storageGb: 10
     },
     features: {
       incidentDetection: true,
@@ -79,61 +58,28 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
       notifications: 'basic',
       webhooks: false,
       rbac: 'basic',
-      slaSupport: 'community'
+      slaSupport: 'community',
+      customIntegrations: false
     }
   },
-
   PRO: {
     id: 'PRO',
-    name: 'Team Pro',
-    tagline: 'Full operational visibility and AI root-cause analysis for growing teams',
-    description: 'Multi-cluster support, 30-day telemetry retention, outbound webhooks, and AI-assisted remediations.',
+    name: SRC_PLANS.PRO.name,
+    tagline: SRC_PLANS.PRO.tagline,
+    description: SRC_PLANS.PRO.description,
     currency: 'INR',
-    badge: 'Popular',
+    badge: SRC_PLANS.PRO.badge || 'Most Popular',
     isPopular: true,
-    pricing: {
-      MONTHLY: {
-        durationMonths: 1,
-        label: '1 Month',
-        totalPrice: 5000,
-        effectiveMonthlyPrice: 5000,
-        savingsAmount: 0,
-        savingsPercent: 0
-      },
-      QUARTERLY: {
-        durationMonths: 3,
-        label: '3 Months',
-        totalPrice: 14000,
-        effectiveMonthlyPrice: 4667,
-        savingsAmount: 1000,
-        savingsPercent: 7
-      },
-      HALF_YEARLY: {
-        durationMonths: 6,
-        label: '6 Months',
-        totalPrice: 26000,
-        effectiveMonthlyPrice: 4333,
-        savingsAmount: 4000,
-        savingsPercent: 13
-      },
-      YEARLY: {
-        durationMonths: 12,
-        label: '12 Months',
-        totalPrice: 48000,
-        effectiveMonthlyPrice: 4000,
-        savingsAmount: 12000,
-        savingsPercent: 20
-      }
-    },
+    pricing: adaptPricing(SRC_PLANS.PRO.pricing),
     limits: {
-      clusters: 5,
-      nodes: 50,
-      workloads: 1000,
-      members: 10,
-      dataRetentionDays: 30,
-      auditRetentionDays: 30,
-      aiMonthlyAllowance: 200,
-      storageGb: 25
+      clusters: SRC_PLANS.PRO.limits.clusters,
+      nodes: SRC_PLANS.PRO.limits.nodes,
+      workloads: SRC_PLANS.PRO.limits.workloads,
+      members: SRC_PLANS.PRO.limits.members,
+      dataRetentionDays: SRC_PLANS.PRO.limits.dataRetentionDays,
+      auditRetentionDays: SRC_PLANS.PRO.limits.auditLogsDays,
+      aiMonthlyAllowance: SRC_PLANS.PRO.limits.aiMonthlyAllowance ?? SRC_PLANS.PRO.limits.aiInvestigationsMonthly,
+      storageGb: 50
     },
     features: {
       incidentDetection: true,
@@ -141,64 +87,31 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
       aiInvestigation: 'full',
       rca: 'full',
       remediationRecommendations: 'full',
-      automatedRemediation: 'limited', // approval required
+      automatedRemediation: 'limited',
       notifications: 'advanced',
       webhooks: true,
       rbac: 'full',
-      slaSupport: 'standard_8h'
+      slaSupport: 'standard_8h',
+      customIntegrations: false
     }
   },
-
   BUSINESS: {
     id: 'BUSINESS',
-    name: 'Business Scale',
-    tagline: 'High-density infrastructure, autonomous auto-recovery, and compliance',
-    description: 'Up to 20 clusters, 90-day retention, full autonomous remediation, priority incident queues, and 50 team members.',
+    name: SRC_PLANS.BUSINESS.name,
+    tagline: SRC_PLANS.BUSINESS.tagline,
+    description: SRC_PLANS.BUSINESS.description,
     currency: 'INR',
-    badge: 'Scale',
-    pricing: {
-      MONTHLY: {
-        durationMonths: 1,
-        label: '1 Month',
-        totalPrice: 12000,
-        effectiveMonthlyPrice: 12000,
-        savingsAmount: 0,
-        savingsPercent: 0
-      },
-      QUARTERLY: {
-        durationMonths: 3,
-        label: '3 Months',
-        totalPrice: 33000,
-        effectiveMonthlyPrice: 11000,
-        savingsAmount: 3000,
-        savingsPercent: 8
-      },
-      HALF_YEARLY: {
-        durationMonths: 6,
-        label: '6 Months',
-        totalPrice: 60000,
-        effectiveMonthlyPrice: 10000,
-        savingsAmount: 12000,
-        savingsPercent: 17
-      },
-      YEARLY: {
-        durationMonths: 12,
-        label: '12 Months',
-        totalPrice: 108000,
-        effectiveMonthlyPrice: 9000,
-        savingsAmount: 36000,
-        savingsPercent: 25
-      }
-    },
+    badge: SRC_PLANS.BUSINESS.badge || 'Advanced Ops',
+    pricing: adaptPricing(SRC_PLANS.BUSINESS.pricing),
     limits: {
-      clusters: 20,
-      nodes: 200,
-      workloads: 5000,
-      members: 50,
-      dataRetentionDays: 90,
-      auditRetentionDays: 90,
-      aiMonthlyAllowance: 1000,
-      storageGb: 100
+      clusters: SRC_PLANS.BUSINESS.limits.clusters,
+      nodes: SRC_PLANS.BUSINESS.limits.nodes,
+      workloads: SRC_PLANS.BUSINESS.limits.workloads,
+      members: SRC_PLANS.BUSINESS.limits.members,
+      dataRetentionDays: SRC_PLANS.BUSINESS.limits.dataRetentionDays,
+      auditRetentionDays: SRC_PLANS.BUSINESS.limits.auditLogsDays,
+      aiMonthlyAllowance: SRC_PLANS.BUSINESS.limits.aiMonthlyAllowance ?? SRC_PLANS.BUSINESS.limits.aiInvestigationsMonthly,
+      storageGb: 250
     },
     features: {
       incidentDetection: true,
@@ -210,60 +123,27 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
       notifications: 'advanced',
       webhooks: true,
       rbac: 'advanced',
-      slaSupport: 'business_4h'
+      slaSupport: 'business_4h',
+      customIntegrations: true
     }
   },
-
   ENTERPRISE: {
     id: 'ENTERPRISE',
-    name: 'Enterprise Dedicated',
-    tagline: 'Custom fleet sizing, sovereign data tenancy, custom integrations, and 1-hour SLA',
-    description: 'Custom cluster capacity, tailored security boundaries, dedicated technical account manager, and 24/7 incident hotline.',
+    name: SRC_PLANS.ENTERPRISE.name,
+    tagline: SRC_PLANS.ENTERPRISE.tagline,
+    description: SRC_PLANS.ENTERPRISE.description,
     currency: 'INR',
     badge: 'Enterprise',
-    pricing: {
-      MONTHLY: {
-        durationMonths: 1,
-        label: '1 Month',
-        totalPrice: 0, // Custom negotiated
-        effectiveMonthlyPrice: 0,
-        savingsAmount: 0,
-        savingsPercent: 0
-      },
-      QUARTERLY: {
-        durationMonths: 3,
-        label: '3 Months',
-        totalPrice: 0,
-        effectiveMonthlyPrice: 0,
-        savingsAmount: 0,
-        savingsPercent: 0
-      },
-      HALF_YEARLY: {
-        durationMonths: 6,
-        label: '6 Months',
-        totalPrice: 0,
-        effectiveMonthlyPrice: 0,
-        savingsAmount: 0,
-        savingsPercent: 0
-      },
-      YEARLY: {
-        durationMonths: 12,
-        label: '12 Months',
-        totalPrice: 0,
-        effectiveMonthlyPrice: 0,
-        savingsAmount: 0,
-        savingsPercent: 0
-      }
-    },
+    pricing: adaptPricing(SRC_PLANS.ENTERPRISE.pricing),
     limits: {
-      clusters: 100, // Or custom
-      nodes: 1000,
-      workloads: 25000,
-      members: 250,
+      clusters: -1,
+      nodes: -1,
+      workloads: -1,
+      members: -1,
       dataRetentionDays: 365,
       auditRetentionDays: 365,
-      aiMonthlyAllowance: -1, // Unlimited
-      storageGb: 1000
+      aiMonthlyAllowance: -1,
+      storageGb: -1
     },
     features: {
       incidentDetection: true,
@@ -281,33 +161,15 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
   }
 };
 
-/**
- * Get definition of a plan
- */
 export function getPlanDefinition(tier: PlanTier): PlanDefinition {
   return PLANS[tier] || PLANS.FREE;
 }
 
-/**
- * Get pricing for a plan and billing interval
- */
 export function getPlanPricing(tier: PlanTier, interval: BillingInterval): IntervalPricing {
   const plan = getPlanDefinition(tier);
-  return (
-    plan.pricing[interval] || {
-      durationMonths: 1,
-      label: '1 Month',
-      totalPrice: 0,
-      effectiveMonthlyPrice: 0,
-      savingsAmount: 0,
-      savingsPercent: 0
-    }
-  );
+  return plan.pricing[interval] || plan.pricing.MONTHLY;
 }
 
-/**
- * Default Trial configuration (14 days of PRO plan)
- */
 export const TRIAL_CONFIG = {
   planId: 'PRO' as PlanTier,
   durationDays: 14,

@@ -376,10 +376,10 @@ export class BillingService {
     let planId: PlanId;
     let interval: BillingInterval;
     let actor: { id: string; name: string; email?: string };
-    let paymentVerification: { razorpayOrderId: string; razorpayPaymentId: string; razorpaySignature: string } | undefined;
+    let paymentVerification: { razorpayOrderId?: string; razorpaySubscriptionId?: string; razorpayPaymentId: string; razorpaySignature: string } | undefined;
 
     // Case 1: Called as confirmCheckout(sessionId, orgId, actor, paymentVerification)
-    if (typeof arg1 === 'string' && (arg1.startsWith('cs_') || arg1.startsWith('order_') || this.checkoutSessions.has(arg1))) {
+    if (typeof arg1 === 'string' && (arg1.startsWith('cs_') || arg1.startsWith('order_') || arg1.startsWith('sub_') || this.checkoutSessions.has(arg1))) {
       const session = this.checkoutSessions.get(arg1);
       orgId = arg2;
       planId = (session?.planId || 'PRO') as PlanId;
@@ -400,7 +400,7 @@ export class BillingService {
       const provider = getBillingProvider();
       if ('verifyPaymentSignature' in provider) {
         const isValid = (provider as any).verifyPaymentSignature(
-          paymentVerification.razorpayOrderId,
+          paymentVerification,
           paymentVerification.razorpayPaymentId,
           paymentVerification.razorpaySignature
         );
@@ -424,7 +424,7 @@ export class BillingService {
     const periodMonths = pricing.durationMonths || 1;
     const periodEnd = now + periodMonths * 30 * 86400000;
     const providerType = (paymentVerification ? 'razorpay' : 'mock') as any;
-    const providerSubId = paymentVerification?.razorpayPaymentId || `sub_prov_${crypto.randomBytes(8).toString('hex')}`;
+    const providerSubId = paymentVerification?.razorpaySubscriptionId || paymentVerification?.razorpayPaymentId || `sub_prov_${crypto.randomBytes(8).toString('hex')}`;
 
     let sub = store.getSubscription(orgId);
     if (!sub) {
@@ -440,6 +440,9 @@ export class BillingService {
         cancelAtPeriodEnd: false,
         provider: providerType,
         providerSubscriptionId: providerSubId,
+        latestPaymentId: paymentVerification?.razorpayPaymentId,
+        paidAt: now,
+        activatedAt: now,
         createdAt: now,
         updatedAt: now
       };
@@ -455,6 +458,9 @@ export class BillingService {
       sub.trialEndsAt = undefined;
       sub.provider = providerType;
       sub.providerSubscriptionId = providerSubId;
+      sub.latestPaymentId = paymentVerification?.razorpayPaymentId;
+      sub.paidAt = now;
+      sub.activatedAt = now;
       sub.updatedAt = now;
 
       auditService.record({

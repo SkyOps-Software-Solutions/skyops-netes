@@ -5,18 +5,20 @@ declare global {
 }
 
 export interface RazorpayPaymentSuccessResponse {
-  razorpay_order_id: string;
   razorpay_payment_id: string;
+  razorpay_order_id?: string;
+  razorpay_subscription_id?: string;
   razorpay_signature: string;
 }
 
 export interface LaunchRazorpayOptions {
   key: string;
-  amount: number; // in paise (e.g. 500000 for ₹5,000)
+  amount?: number; // in paise (e.g. 500000 for ₹5,000)
   currency?: string;
   name?: string;
   description?: string;
-  order_id: string;
+  order_id?: string;
+  subscription_id?: string;
   prefill?: {
     name?: string;
     email?: string;
@@ -61,13 +63,11 @@ export async function openRazorpayCheckout(
   }
 
   return new Promise((resolve, reject) => {
-    const rzp = new window.Razorpay({
+    const checkoutPayload: any = {
       key: options.key,
-      amount: options.amount,
       currency: options.currency || 'INR',
       name: options.name || 'SkyOps',
       description: options.description || 'SkyOps Cloud Subscription',
-      order_id: options.order_id,
       prefill: options.prefill,
       notes: options.notes,
       theme: {
@@ -81,7 +81,19 @@ export async function openRazorpayCheckout(
       handler: (response: RazorpayPaymentSuccessResponse) => {
         resolve(response);
       }
-    });
+    };
+
+    if (options.subscription_id) {
+      checkoutPayload.subscription_id = options.subscription_id;
+    }
+    if (options.order_id) {
+      checkoutPayload.order_id = options.order_id;
+    }
+    if (options.amount) {
+      checkoutPayload.amount = options.amount;
+    }
+
+    const rzp = new window.Razorpay(checkoutPayload);
 
     rzp.on('payment.failed', (response: any) => {
       reject(new Error(response?.error?.description || 'Payment processing failed'));

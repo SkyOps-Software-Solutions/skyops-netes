@@ -2175,6 +2175,7 @@ const ConfirmCheckoutSchema = z.object({
   billingInterval: z.enum(['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY']).optional(),
   sessionId: z.string().optional(),
   razorpayOrderId: z.string().optional(),
+  razorpaySubscriptionId: z.string().optional(),
   razorpayPaymentId: z.string().optional(),
   razorpaySignature: z.string().optional()
 });
@@ -2189,9 +2190,10 @@ app.post('/api/v1/billing/checkout/confirm', requireUserAuth, requireOrgMembersh
     const actor = { id: req.user!.id, name: req.user!.name || req.user!.email, email: req.user!.email };
     let result: any;
 
-    const paymentVerification = (parsed.data.razorpayOrderId && parsed.data.razorpayPaymentId && parsed.data.razorpaySignature)
+    const paymentVerification = (parsed.data.razorpayPaymentId && parsed.data.razorpaySignature && (parsed.data.razorpayOrderId || parsed.data.razorpaySubscriptionId))
       ? {
           razorpayOrderId: parsed.data.razorpayOrderId,
+          razorpaySubscriptionId: parsed.data.razorpaySubscriptionId,
           razorpayPaymentId: parsed.data.razorpayPaymentId,
           razorpaySignature: parsed.data.razorpaySignature
         }

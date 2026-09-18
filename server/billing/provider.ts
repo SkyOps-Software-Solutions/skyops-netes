@@ -30,6 +30,7 @@ export interface CheckoutSessionResult {
   planId: PlanId;
   billingInterval: BillingInterval;
   orderId?: string;
+  subscriptionId?: string;
   keyId?: string;
 }
 
@@ -75,6 +76,11 @@ export interface BillingProvider {
   ): Promise<{ success: boolean; cancelAt: number }>;
   resumeSubscription(providerSubscriptionId: string): Promise<{ success: boolean }>;
   getInvoice(providerInvoiceId: string): Promise<Partial<Invoice> | null>;
+  verifyPaymentSignature?(
+    orderOrVerification: string | { orderId?: string; subscriptionId?: string; razorpayOrderId?: string; razorpaySubscriptionId?: string; razorpayPaymentId?: string; paymentId?: string; razorpaySignature?: string; signature?: string },
+    paymentId?: string,
+    signature?: string
+  ): boolean;
   verifyWebhookSignature(payload: string | Buffer, signature: string): { valid: boolean; event?: BillingWebhookEvent; error?: string };
 }
 

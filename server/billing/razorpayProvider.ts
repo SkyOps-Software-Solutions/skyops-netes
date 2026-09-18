@@ -75,6 +75,48 @@ export class RazorpayBillingProvider implements BillingProvider {
     const amountInPaise = Math.round(params.amount * 100);
     const receipt = `rcpt_${params.orgId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10)}_${Date.now().toString().slice(-6)}`;
 
+    const planKey = `${params.planId}_${params.billingInterval}`.toUpperCase();
+    const envPlanId = process.env[`RAZORPAY_${planKey}_PLAN_ID`];
+
+    // If Razorpay Plan ID is explicitly configured, initiate a Razorpay Subscription
+    if (envPlanId) {
+      try {
+        const totalCount = params.billingInterval === 'YEARLY' ? 5 : 60;
+        const subscription: any = await (client as any).subscriptions.create({
+          plan_id: envPlanId,
+          total_count: totalCount,
+          quantity: 1,
+          customer_notify: 1,
+          notes: {
+            orgId: params.orgId,
+            planId: params.planId,
+            billingInterval: params.billingInterval,
+            customerEmail: params.customerEmail,
+            customerName: params.customerName
+          }
+        });
+
+        const sessionId = subscription.id;
+        const checkoutUrl = `/billing/checkout?session_id=${sessionId}&subscription_id=${subscription.id}&org_id=${params.orgId}&plan=${params.planId}&interval=${params.billingInterval}`;
+
+        return {
+          id: subscription.id,
+          sessionId: subscription.id,
+          subscriptionId: subscription.id,
+          keyId: this.keyId,
+          checkoutUrl,
+          provider: 'razorpay',
+          amount: params.amount,
+          currency: params.currency || 'INR',
+          planId: params.planId,
+          billingInterval: params.billingInterval
+        };
+      } catch (subErr) {
+        console.warn('Subscription creation error, falling back to Razorpay Order:', subErr);
+      }
+    }
+
+    // Default: Razorpay Order for checkout session
     const order = await client.orders.create({
       amount: amountInPaise,
       currency: params.currency || 'INR',
@@ -105,16 +147,58 @@ export class RazorpayBillingProvider implements BillingProvider {
     };
   }
 
-  public verifyPaymentSignature(orderId: string, paymentId: string, signature: string): boolean {
+  public verifyPaymentSignature(
+    arg1: string | { orderId?: string; subscriptionId?: string; razorpayOrderId?: string; razorpaySubscriptionId?: string; razorpayPaymentId?: string; paymentId?: string; razorpaySignature?: string; signature?: string },
+    paymentIdParam?: string,
+    signatureParam?: string
+  ): boolean {
     if (!this.keySecret) return false;
-    const expected = crypto
-      .createHmac('sha256', this.keySecret)
-      .update(`${orderId}|${paymentId}`)
-      .digest('hex');
-    const expBuf = Buffer.from(expected, 'hex');
-    const sigBuf = Buffer.from(signature, 'hex');
-    if (expBuf.length !== sigBuf.length) return false;
-    return crypto.timingSafeEqual(expBuf, sigBuf);
+
+    let orderId: string | undefined;
+    let subscriptionId: string | undefined;
+    let paymentId: string | undefined;
+    let signature: string | undefined;
+
+    if (typeof arg1 === 'object' && arg1 !== null) {
+      orderId = arg1.orderId || arg1.razorpayOrderId;
+      subscriptionId = arg1.subscriptionId || arg1.razorpaySubscriptionId;
+      paymentId = arg1.paymentId || arg1.razorpayPaymentId;
+      signature = arg1.signature || arg1.razorpaySignature;
+    } else if (typeof arg1 === 'string') {
+      orderId = arg1;
+      paymentId = paymentIdParam;
+      signature = signatureParam;
+    }
+
+    if (!paymentId || !signature) return false;
+
+    // Check subscription signature: payment_id + '|' + subscription_id
+    if (subscriptionId) {
+      const expectedSub = crypto
+        .createHmac('sha256', this.keySecret)
+        .update(`${paymentId}|${subscriptionId}`)
+        .digest('hex');
+      const expBuf = Buffer.from(expectedSub, 'hex');
+      const sigBuf = Buffer.from(signature, 'hex');
+      if (expBuf.length === sigBuf.length && crypto.timingSafeEqual(expBuf, sigBuf)) {
+        return true;
+      }
+    }
+
+    // Check order signature: order_id + '|' + payment_id
+    if (orderId) {
+      const expectedOrd = crypto
+        .createHmac('sha256', this.keySecret)
+        .update(`${orderId}|${paymentId}`)
+        .digest('hex');
+      const expBuf = Buffer.from(expectedOrd, 'hex');
+      const sigBuf = Buffer.from(signature, 'hex');
+      if (expBuf.length === sigBuf.length && crypto.timingSafeEqual(expBuf, sigBuf)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   public async getSubscription(providerSubscriptionId: string): Promise<Partial<Subscription> | null> {
@@ -192,16 +276,25 @@ export class RazorpayBillingProvider implements BillingProvider {
 
       if (eventType === 'order.paid' || eventType === 'payment.captured') {
         mappedType = 'checkout.completed';
-      } else if (eventType === 'subscription.activated') {
+      } else if (eventType === 'subscription.activated' || eventType === 'subscription.authenticated') {
         mappedType = 'subscription.created';
-      } else if (eventType === 'subscription.halted' || eventType === 'subscription.cancelled') {
+      } else if (eventType === 'subscription.charged' || eventType === 'invoice.paid') {
+        mappedType = 'invoice.paid';
+      } else if (eventType === 'subscription.updated' || eventType === 'subscription.resumed') {
+        mappedType = 'subscription.updated';
+      } else if (eventType === 'subscription.halted' || eventType === 'subscription.cancelled' || eventType === 'subscription.paused') {
         mappedType = 'subscription.canceled';
-      } else if (eventType === 'payment.failed') {
+      } else if (eventType === 'payment.failed' || eventType === 'invoice.payment_failed') {
         mappedType = 'invoice.payment_failed';
       }
 
-      const entity = parsed.payload?.payment?.entity || parsed.payload?.order?.entity || {};
-      const notes = entity.notes || {};
+      const entity =
+        parsed.payload?.payment?.entity ||
+        parsed.payload?.order?.entity ||
+        parsed.payload?.subscription?.entity ||
+        parsed.payload?.invoice?.entity ||
+        {};
+      const notes = entity.notes || (parsed.payload?.subscription?.entity?.notes) || {};
 
       const event: BillingWebhookEvent = {
         id: parsed.id || `evt_${Date.now()}`,
@@ -209,6 +302,9 @@ export class RazorpayBillingProvider implements BillingProvider {
         createdAt: parsed.created_at ? parsed.created_at * 1000 : Date.now(),
         data: {
           orgId: notes.orgId || '',
+          subscriptionId: entity.subscription_id || (parsed.payload?.subscription?.entity?.id) || undefined,
+          providerSubscriptionId: entity.subscription_id || (parsed.payload?.subscription?.entity?.id) || undefined,
+          providerCustomerId: entity.customer_id || (parsed.payload?.subscription?.entity?.customer_id) || undefined,
           planId: notes.planId,
           billingInterval: notes.billingInterval,
           invoiceId: entity.id,

@@ -67,20 +67,22 @@ export const UsageManager: React.FC = () => {
       const session = checkout.session;
 
       // Step 2: If live Razorpay checkout is configured, trigger the Razorpay modal
-      if (session && session.provider === 'razorpay' && session.keyId && session.orderId) {
+      if (session && session.provider === 'razorpay' && session.keyId && (session.orderId || session.subscriptionId)) {
         try {
           const paymentResult = await openRazorpayCheckout({
             key: session.keyId,
-            amount: Math.round((session.amount || checkout.totalPrice || 0) * 100),
+            amount: session.amount ? Math.round(session.amount * 100) : (checkout.totalPrice ? Math.round(checkout.totalPrice * 100) : undefined),
             currency: session.currency || 'INR',
             name: 'SkyOps',
             description: `${checkout.planName || planId} Plan Subscription`,
-            order_id: session.orderId
+            order_id: session.orderId,
+            subscription_id: session.subscriptionId
           });
 
           // Step 3: Cryptographically verify and confirm with backend
           const confirmRes = await api.confirmCheckout(planId, interval, session.id, {
             razorpayOrderId: paymentResult.razorpay_order_id,
+            razorpaySubscriptionId: paymentResult.razorpay_subscription_id,
             razorpayPaymentId: paymentResult.razorpay_payment_id,
             razorpaySignature: paymentResult.razorpay_signature
           });

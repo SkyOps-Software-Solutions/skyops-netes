@@ -973,6 +973,7 @@ class ApiClient {
       id: string;
       sessionId: string;
       orderId?: string;
+      subscriptionId?: string;
       keyId?: string;
       checkoutUrl: string;
       provider: string;
@@ -999,6 +1000,7 @@ class ApiClient {
     sessionId?: string,
     razorpayVerification?: {
       razorpayOrderId?: string;
+      razorpaySubscriptionId?: string;
       razorpayPaymentId?: string;
       razorpaySignature?: string;
     }

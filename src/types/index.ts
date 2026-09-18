@@ -78,8 +78,11 @@ export interface PlanLimits {
   members: number;
   dataRetentionDays: number;
   aiInvestigationsMonthly: number;
+  aiMonthlyAllowance?: number;
   remediationsMonthly: number;
   auditLogsDays: number;
+  auditRetentionDays?: number;
+  storageGb?: number;
 }
 
 export interface PlanFeatures {
@@ -90,7 +93,7 @@ export interface PlanFeatures {
   incidentCorrelation: 'basic' | 'advanced' | 'custom';
   rca: 'basic' | 'advanced' | 'custom';
   remediationRecommendations: 'limited' | 'enabled' | 'custom';
-  automatedRemediation: boolean | 'limited' | 'enabled' | 'custom';
+  automatedRemediation: boolean | 'disabled' | 'limited' | 'enabled' | 'full' | 'custom';
   notifications: 'basic' | 'advanced' | 'custom';
   webhooks: boolean;
   rbac: 'basic' | 'standard' | 'advanced' | 'custom';
@@ -115,6 +118,8 @@ export interface Plan {
   description: string;
   badge?: string;
   recommended?: boolean;
+  currency?: string;
+  razorpayPlanIds?: Partial<Record<BillingInterval, string>>;
   pricing: Record<BillingInterval, PlanIntervalPricing>;
   limits: PlanLimits;
   features: PlanFeatures;
@@ -137,6 +142,12 @@ export interface Subscription {
   provider: string; // 'mock' | 'stripe' | 'razorpay'
   providerCustomerId?: string;
   providerSubscriptionId?: string;
+  providerPlanId?: string;
+  latestPaymentId?: string;
+  latestInvoiceId?: string;
+  nextBillingAt?: number;
+  paidAt?: number;
+  activatedAt?: number;
   customLimits?: Partial<PlanLimits>;
   createdAt: number;
   updatedAt: number;

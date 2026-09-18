@@ -76,6 +76,12 @@ export interface Subscription {
   provider: BillingProviderType;
   providerCustomerId?: string;
   providerSubscriptionId?: string;
+  providerPlanId?: string;
+  latestPaymentId?: string;
+  latestInvoiceId?: string;
+  nextBillingAt?: number;
+  paidAt?: number;
+  activatedAt?: number;
   customLimits?: Partial<PlanLimits>;
   createdAt: number;
   updatedAt: number;

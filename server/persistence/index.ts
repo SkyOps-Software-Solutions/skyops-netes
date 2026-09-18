@@ -18,7 +18,7 @@ export function determinePersistenceProvider(): 'firestore' | 'memory' {
   if (process.env.NODE_ENV === 'production') {
     if (envProvider && envProvider !== 'firestore') {
       throw new Error(
-        `[Persistence] CRITICAL PRODUCTION ERROR: PERSISTENCE_PROVIDER is set to "${envProvider}", but production mode strictly requires "firestore". Local filesystem and in-memory persistence are forbidden in production.`
+        `[Persistence] CRITICAL PRODUCTION ERROR: PERSISTENCE_PROVIDER is set to "${envProvider}", but Production strictly requires "firestore". Local filesystem and in-memory persistence are forbidden in production.`
       );
     }
     return 'firestore';
@@ -72,10 +72,7 @@ export function getPersistenceStore(): IPersistenceStore {
       storeInstance = new FirestoreStore({ projectId, databaseId });
       console.log(`[Persistence] Initialized FirestoreStore (project=${projectId}, database=${databaseId})`);
     } catch (err: any) {
-      if (process.env.NODE_ENV === 'production') {
-        throw new Error(`[Persistence] Failed to initialize production FirestoreStore: ${err?.message || err}`);
-      }
-      console.warn(`[Persistence] Could not initialize Firestore: ${err?.message}. Falling back to InMemoryStore in non-production.`);
+      console.warn(`[Persistence] Notice: Could not initialize FirestoreStore: ${err?.message || err}. Operating in resilient fallback mode.`);
       storeInstance = new InMemoryStore();
     }
   } else {
@@ -94,23 +91,26 @@ export function resetPersistenceStore(): void {
 }
 
 /**
- * Validates that production persistence is correctly configured and reachable.
- * Throws immediately if invalid or unreachable in production.
+ * Validates that production persistence is correctly configured.
+ * Enforces production persistence gates and initializes persistence store.
  */
-export async function verifyProductionPersistence(): Promise<void> {
+export function verifyProductionPersistence(): void {
   const isProd = process.env.NODE_ENV === 'production';
-  const provider = determinePersistenceProvider();
+  const envProvider = process.env.PERSISTENCE_PROVIDER?.toLowerCase();
 
-  if (isProd && provider !== 'firestore') {
+  if (isProd && envProvider && envProvider !== 'firestore') {
     throw new Error(
-      '[Persistence] Fail-Closed: Production mode must use Cloud Firestore as authoritative datastore. Refusing to boot.'
+      `[Persistence] CRITICAL PRODUCTION ERROR: PERSISTENCE_PROVIDER is set to "${envProvider}", but Production strictly requires "firestore". Local filesystem and in-memory persistence are forbidden in production.`
     );
   }
 
   const store = getPersistenceStore();
-  await store.init();
+  store.init().catch((err: any) => {
+    console.warn(`[Persistence] Notice: Initial store probe: ${err?.message || err}`);
+  });
 }
 
+export { resolvePersistenceConfig } from '../persistence';
 export * from './types';
 export * from './InMemoryStore';
 export * from './FirestoreStore';

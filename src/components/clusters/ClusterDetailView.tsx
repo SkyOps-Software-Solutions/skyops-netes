@@ -837,10 +837,10 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
                     const isReady = node.status === 'Ready';
                     const conds = Array.isArray(node.conditions) ? node.conditions : [];
                     const hasMemoryPressure = conds.some(
-                      (c) => c.type === 'MemoryPressure' && (c.status === 'True' || c.status === true)
+                      (c) => c.type === 'MemoryPressure' && (c.status === 'True' || (c.status as any) === true)
                     );
                     const hasDiskPressure = conds.some(
-                      (c) => c.type === 'DiskPressure' && (c.status === 'True' || c.status === true)
+                      (c) => c.type === 'DiskPressure' && (c.status === 'True' || (c.status as any) === true)
                     );
                     const nodePods = pods.filter((p) => p.nodeName === node.name);
 

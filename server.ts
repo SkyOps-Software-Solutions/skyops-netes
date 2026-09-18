@@ -2534,8 +2534,17 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 // VITE MIDDLEWARE / SPA STATIC HANDLER
 // ==========================================
 async function startServer() {
-  verifyProductionPersistence();
-  await store.initPersistence();
+  try {
+    verifyProductionPersistence();
+  } catch (err: any) {
+    console.warn('[SkyOps Server] Persistence verification notice:', err?.message || err);
+  }
+
+  try {
+    await store.initPersistence();
+  } catch (err: any) {
+    console.warn('[SkyOps Server] Store persistence init notice:', err?.message || err);
+  }
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

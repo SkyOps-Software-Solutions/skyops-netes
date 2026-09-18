@@ -190,10 +190,10 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
       const hasPressure = conds.some(
         (c) =>
           (c.type === 'MemoryPressure' || c.type === 'DiskPressure' || c.type === 'PIDPressure') &&
-          (c.status === 'True' || c.status === true)
+          (c.status === 'True' || (c.status as any) === true)
       );
       const isNotReady = conds.some(
-        (c) => c.type === 'Ready' && (c.status === 'False' || c.status === false)
+        (c) => c.type === 'Ready' && (c.status === 'False' || (c.status as any) === false)
       );
       return hasPressure || isNotReady || n.status !== 'Ready';
     });

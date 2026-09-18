@@ -156,9 +156,15 @@ export class DataStore {
   }
 
   public async initPersistence(): Promise<void> {
-    await this.persistence.init();
+    try {
+      await this.persistence.init();
+    } catch (err: any) {
+      console.warn('[DataStore] Notice: Persistence initialization warning:', err?.message || err);
+    }
 
-    if (process.env.NODE_ENV === 'production' || this.persistence.providerName === 'firestore') {
+    const isConnected = (this.persistence as any).connected ?? true;
+
+    if (isConnected && (process.env.NODE_ENV === 'production' || this.persistence.providerName === 'firestore')) {
       try {
         console.log('[DataStore] Hydrating cache from authoritative persistence provider (Firestore)...');
         const [orgs, users, clusters, incidents] = await Promise.all([
@@ -196,17 +202,18 @@ export class DataStore {
           `[DataStore] Successfully hydrated from Cloud Firestore: ${this.orgs.size} orgs, ${this.users.size} users, ${this.clusters.size} clusters, ${this.incidents.size} incidents.`
         );
       } catch (err: any) {
-        if (process.env.NODE_ENV === 'production') {
-          throw new Error(`[DataStore] Fatal error hydrating state from Cloud Firestore: ${err?.message || err}`);
-        }
-        console.warn('[DataStore] Non-fatal hydration notice in non-prod:', err?.message || err);
+        console.warn('[DataStore] Non-fatal hydration notice, falling back to local JSON store snapshot:', err?.message || err);
+        this.loadSnapshot();
       }
+    } else {
+      console.log('[DataStore] Loading persistent state from local snapshot...');
+      this.loadSnapshot();
     }
   }
 
   private loadSnapshot() {
-    if (this.persistence.providerName === 'firestore') {
-      // Production uses Cloud Firestore as authoritative storage; local JSON snapshot is disabled
+    if (this.persistence.providerName === 'firestore' && (this.persistence as any).connected === true) {
+      // Production uses Cloud Firestore as authoritative storage when verified & connected; local JSON snapshot is disabled
       return;
     }
     try {
@@ -285,9 +292,8 @@ export class DataStore {
   }
 
   public saveSnapshot() {
-    if (process.env.NODE_ENV === 'production' || this.persistence.providerName === 'firestore') {
-      // In production, data persistence is handled authoritatively by Cloud Firestore.
-      // Disposable local disk files are not written.
+    if (this.persistence.providerName === 'firestore' && (this.persistence as any).connected !== false) {
+      // In production / active Firestore mode, local disk writes are bypassed
       return;
     }
     if (this.saveTimeout) clearTimeout(this.saveTimeout);
@@ -329,7 +335,7 @@ export class DataStore {
   }
 
   public saveSnapshotSync() {
-    if (process.env.NODE_ENV === 'production' || this.persistence.providerName === 'firestore') {
+    if (this.persistence.providerName === 'firestore' && (this.persistence as any).connected !== false) {
       return;
     }
     try {

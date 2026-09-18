@@ -1,207 +1,279 @@
+import React, { useEffect, useState } from 'react';
 import {
-  Activity,
-  Boxes,
-  CheckCircle2,
-  Cpu,
   CreditCard,
-  Database,
-  HardDrive,
-  Layers,
-  Loader2,
   RefreshCw,
-  Server,
+  Sparkles,
+  Loader2,
+  Database,
+  Activity,
+  FileText,
   ShieldAlert,
   Zap
 } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
+import { OrgBillingOverview, PlanId, BillingInterval } from '../../types/index';
 import { Button } from '../common/UI';
+import { SubscriptionCard } from '../billing/SubscriptionCard';
+import { QuotaProgress } from '../billing/QuotaProgress';
+import { InvoicesTable } from '../billing/InvoicesTable';
+import { PlanComparisonModal } from '../billing/PlanComparisonModal';
+import { BillingSimulator } from '../billing/BillingSimulator';
 
 export const UsageManager: React.FC = () => {
-  const [usage, setUsage] = useState<any>(null);
+  const [overview, setOverview] = useState<OrgBillingOverview | null>(null);
+  const [rawUsage, setRawUsage] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [plansModalOpen, setPlansModalOpen] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const fetchUsage = async () => {
+  const fetchOverview = async () => {
     try {
       setLoading(true);
-      const res = await api.getOrgUsage();
-      setUsage(res.usage);
-    } catch (err) {
-      console.error('Failed to load org usage:', err);
+      setErrorMessage(null);
+      const [ovData, usageData] = await Promise.all([
+        api.getSubscriptionOverview(),
+        api.getOrgUsage().catch(() => null)
+      ]);
+      setOverview(ovData);
+      if (usageData && usageData.usage) {
+        setRawUsage(usageData.usage);
+      }
+    } catch (err: any) {
+      console.error('Failed to load subscription overview:', err);
+      setErrorMessage(err?.message || 'Failed to load organization subscription and usage data');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchUsage();
+    fetchOverview();
   }, []);
 
-  if (loading) {
+  const handleSelectPlan = async (planId: PlanId, interval: BillingInterval) => {
+    try {
+      setActionLoading(true);
+      if (planId === 'FREE') {
+        const res = await api.downgradePlan(planId, interval);
+        setOverview(res.overview);
+      } else {
+        const res = await api.upgradePlan(planId, interval);
+        setOverview(res.overview);
+      }
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancelSubscription = async () => {
+    try {
+      setActionLoading(true);
+      const res = await api.cancelSubscription();
+      setOverview(res.overview);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleResumeSubscription = async () => {
+    try {
+      setActionLoading(true);
+      const res = await api.resumeSubscription();
+      setOverview(res.overview);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSimulate = async (state: string, planId?: PlanId, interval?: BillingInterval) => {
+    try {
+      setActionLoading(true);
+      const res = await api.simulateSubscriptionState(state, planId, interval);
+      setOverview(res.overview);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  if (loading && !overview) {
     return (
-      <div className="p-12 text-center text-zinc-400 font-mono text-xs flex flex-col items-center gap-2">
-        <Loader2 className="w-5 h-5 animate-spin text-sky-400" />
-        <span>Calculating organization usage metrics...</span>
+      <div className="p-16 text-center text-zinc-400 font-mono text-xs flex flex-col items-center gap-3">
+        <Loader2 className="w-6 h-6 animate-spin text-sky-400" />
+        <span>Loading subscription status, quotas & telemetry metrics...</span>
       </div>
     );
   }
 
-  const u = usage || {
+  if (errorMessage && !overview) {
+    return (
+      <div className="p-8 rounded-xl bg-rose-950/40 border border-rose-800 text-rose-300 font-mono text-xs space-y-3">
+        <div className="font-bold text-sm">Failed to Load Subscription Data</div>
+        <p>{errorMessage}</p>
+        <Button variant="outline" size="sm" onClick={fetchOverview} className="text-xs font-mono">
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  const u = rawUsage || {
     period: new Date().toISOString().substring(0, 7),
-    totalClusters: 0,
-    totalNodes: 0,
-    totalWorkloads: 0,
+    totalClusters: overview?.usage.clusters.current || 0,
+    totalNodes: overview?.usage.nodes.current || 0,
+    totalWorkloads: overview?.usage.workloads.current || 0,
     telemetryBatchesIngested: 0,
     telemetryResourcesIngested: 0,
     incidentsDetected: 0,
     incidentsResolved: 0,
-    remediationsExecuted: 0,
-    aiAnalysesPerformed: 0,
+    remediationsExecuted: overview?.usage.remediations.current || 0,
+    aiAnalysesPerformed: overview?.usage.aiInvestigations.current || 0,
     auditEventsRecorded: 0
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800 pb-4">
         <div>
           <h3 className="text-sm font-bold text-zinc-100 font-mono flex items-center gap-2">
             <CreditCard className="w-4 h-4 text-sky-400" />
-            Tenant Usage & Plan Quotas
+            Tenant Subscription, Entitlements & Usage
           </h3>
           <p className="text-xs text-zinc-400 font-mono mt-0.5">
-            Real-time consumption tracking for Kubernetes telemetry ingestion, managed nodes, and autonomous remediations.
+            SaaS subscription lifecycle, billing intervals, quota limits, and real-time Kubernetes telemetry consumption.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-mono text-zinc-400">
-            Billing Period: <code className="text-sky-300 font-bold">{u.period}</code>
-          </span>
+        <div className="flex items-center gap-2.5">
           <Button
             variant="outline"
             size="sm"
-            onClick={fetchUsage}
-            icon={<RefreshCw className="w-3.5 h-3.5" />}
+            onClick={fetchOverview}
+            disabled={loading || actionLoading}
+            icon={<RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />}
             className="font-mono text-xs"
           >
             Refresh
           </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setPlansModalOpen(true)}
+            icon={<Sparkles className="w-3.5 h-3.5" />}
+            className="font-mono text-xs bg-sky-600 hover:bg-sky-500"
+          >
+            View All Plans
+          </Button>
         </div>
       </div>
 
-      {/* Plan Overview Card */}
-      <div className="p-5 rounded-xl bg-gradient-to-r from-sky-950/30 to-zinc-900/60 border border-sky-900/40 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full bg-sky-600 text-white font-mono text-xs font-bold uppercase tracking-wider">
-              Enterprise Dedicated
+      {/* 1. Subscription Overview Card */}
+      {overview && (
+        <SubscriptionCard
+          overview={overview}
+          onOpenPlans={() => setPlansModalOpen(true)}
+          onCancel={handleCancelSubscription}
+          onResume={handleResumeSubscription}
+          loading={actionLoading}
+        />
+      )}
+
+      {/* 2. Quota & Entitlements Progress */}
+      {overview && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold text-zinc-300 font-mono uppercase tracking-wider flex items-center gap-2">
+              <Activity className="w-4 h-4 text-sky-400" />
+              Resource Quotas & Real-time Consumption
+            </h4>
+            <span className="text-[11px] font-mono text-zinc-500">
+              Retention SLA: {overview.plan.limits.telemetryRetentionDays} Days
             </span>
-            <span className="text-xs font-mono text-zinc-400">Active Tenant Tier</span>
           </div>
-          <span className="text-xs font-mono text-emerald-400 flex items-center gap-1">
-            <CheckCircle2 className="w-3.5 h-3.5" /> High-Availability Cluster SLA (99.95%)
+
+          <QuotaProgress overview={overview} onUpgrade={() => setPlansModalOpen(true)} />
+        </div>
+      )}
+
+      {/* 3. Ingestion & Incident Telemetry Stats */}
+      <div className="space-y-3">
+        <h4 className="text-xs font-bold text-zinc-300 font-mono uppercase tracking-wider flex items-center gap-2">
+          <Database className="w-4 h-4 text-emerald-400" />
+          Ingestion & Automated Remediation Metrics
+        </h4>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono text-xs">
+          <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800/80 space-y-2">
+            <div className="flex items-center justify-between text-zinc-400">
+              <span className="flex items-center gap-1.5 font-semibold text-zinc-300">
+                <Database className="w-4 h-4 text-emerald-400" /> Ingested Batches
+              </span>
+              <span className="text-zinc-100 font-bold">{u.telemetryBatchesIngested.toLocaleString()}</span>
+            </div>
+            <div className="text-[11px] text-zinc-500">
+              {u.telemetryResourcesIngested.toLocaleString()} individual K8s resource snapshots processed.
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800/80 space-y-2">
+            <div className="flex items-center justify-between text-zinc-400">
+              <span className="flex items-center gap-1.5 font-semibold text-zinc-300">
+                <ShieldAlert className="w-4 h-4 text-rose-400" /> Incidents Resolved
+              </span>
+              <span className="text-zinc-100 font-bold">
+                {u.incidentsResolved} / {u.incidentsDetected}
+              </span>
+            </div>
+            <div className="text-[11px] text-zinc-500">
+              {u.incidentsDetected > 0
+                ? `${Math.round((u.incidentsResolved / u.incidentsDetected) * 100)}% auto-remediation rate`
+                : 'Zero unresolved incident bottlenecks'}
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800/80 space-y-2">
+            <div className="flex items-center justify-between text-zinc-400">
+              <span className="flex items-center gap-1.5 font-semibold text-zinc-300">
+                <Zap className="w-4 h-4 text-cyan-400" /> AI Remediations
+              </span>
+              <span className="text-zinc-100 font-bold">{u.remediationsExecuted} Executed</span>
+            </div>
+            <div className="text-[11px] text-zinc-500">
+              {u.aiAnalysesPerformed} Gemini RCA diagnostics completed this cycle.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 4. Invoices & Billing History */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h4 className="text-xs font-bold text-zinc-300 font-mono uppercase tracking-wider flex items-center gap-2">
+            <FileText className="w-4 h-4 text-sky-400" />
+            Invoices & Payment Receipts
+          </h4>
+          <span className="text-[11px] font-mono text-zinc-500">
+            {overview?.invoices?.length || 0} Invoices on Record
           </span>
         </div>
-        <p className="text-xs font-mono text-zinc-300">
-          Unlimited Kubernetes telemetry streaming, full Gemini 2.5 AI incident analysis engine, role-based access control, and 1-year cryptographic audit ledger retention.
-        </p>
+
+        <InvoicesTable invoices={overview?.invoices || []} loading={loading} />
       </div>
 
-      {/* Usage Metrics Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 font-mono text-xs">
-        {/* Clusters */}
-        <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800/80 space-y-2">
-          <div className="flex items-center justify-between text-zinc-400">
-            <span className="flex items-center gap-1.5 font-semibold text-zinc-300">
-              <Server className="w-4 h-4 text-sky-400" /> Managed Clusters
-            </span>
-            <span>{u.totalClusters} / 25 Max</span>
-          </div>
-          <div className="w-full bg-zinc-900 h-2 rounded-full overflow-hidden">
-            <div
-              className="bg-sky-500 h-full rounded-full"
-              style={{ width: `${Math.min(100, (u.totalClusters / 25) * 100)}%` }}
-            ></div>
-          </div>
-          <div className="text-[11px] text-zinc-500">Includes connected production & staging clusters.</div>
-        </div>
+      {/* 5. Dev / QA Simulation Tooling */}
+      <BillingSimulator onSimulate={handleSimulate} loading={actionLoading} />
 
-        {/* Nodes */}
-        <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800/80 space-y-2">
-          <div className="flex items-center justify-between text-zinc-400">
-            <span className="flex items-center gap-1.5 font-semibold text-zinc-300">
-              <Cpu className="w-4 h-4 text-indigo-400" /> Monitored Nodes
-            </span>
-            <span>{u.totalNodes} / 200 Max</span>
-          </div>
-          <div className="w-full bg-zinc-900 h-2 rounded-full overflow-hidden">
-            <div
-              className="bg-indigo-500 h-full rounded-full"
-              style={{ width: `${Math.min(100, (u.totalNodes / 200) * 100)}%` }}
-            ></div>
-          </div>
-          <div className="text-[11px] text-zinc-500">Live compute nodes currently streaming heartbeats.</div>
-        </div>
-
-        {/* Workloads */}
-        <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800/80 space-y-2">
-          <div className="flex items-center justify-between text-zinc-400">
-            <span className="flex items-center gap-1.5 font-semibold text-zinc-300">
-              <Boxes className="w-4 h-4 text-amber-400" /> Workload Pods
-            </span>
-            <span>{u.totalWorkloads} / 2,000</span>
-          </div>
-          <div className="w-full bg-zinc-900 h-2 rounded-full overflow-hidden">
-            <div
-              className="bg-amber-500 h-full rounded-full"
-              style={{ width: `${Math.min(100, (u.totalWorkloads / 2000) * 100)}%` }}
-            ></div>
-          </div>
-          <div className="text-[11px] text-zinc-500">Tracked Deployments, DaemonSets, and Pod replicas.</div>
-        </div>
-
-        {/* Telemetry Ingested */}
-        <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800/80 space-y-2">
-          <div className="flex items-center justify-between text-zinc-400">
-            <span className="flex items-center gap-1.5 font-semibold text-zinc-300">
-              <Database className="w-4 h-4 text-emerald-400" /> Ingested Batches
-            </span>
-            <span className="text-zinc-200 font-bold">{u.telemetryBatchesIngested.toLocaleString()}</span>
-          </div>
-          <div className="text-[11px] text-zinc-500">
-            {u.telemetryResourcesIngested.toLocaleString()} individual K8s resource snapshots processed.
-          </div>
-        </div>
-
-        {/* Incidents Resolved */}
-        <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800/80 space-y-2">
-          <div className="flex items-center justify-between text-zinc-400">
-            <span className="flex items-center gap-1.5 font-semibold text-zinc-300">
-              <ShieldAlert className="w-4 h-4 text-rose-400" /> Incidents Resolved
-            </span>
-            <span className="text-zinc-200 font-bold">
-              {u.incidentsResolved} / {u.incidentsDetected}
-            </span>
-          </div>
-          <div className="text-[11px] text-zinc-500">
-            {u.incidentsDetected > 0
-              ? `${Math.round((u.incidentsResolved / u.incidentsDetected) * 100)}% auto-remediation & recovery rate`
-              : 'Zero active incident bottlenecks'}
-          </div>
-        </div>
-
-        {/* Remediations Executed */}
-        <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800/80 space-y-2">
-          <div className="flex items-center justify-between text-zinc-400">
-            <span className="flex items-center gap-1.5 font-semibold text-zinc-300">
-              <Zap className="w-4 h-4 text-cyan-400" /> AI Remediations
-            </span>
-            <span className="text-zinc-200 font-bold">{u.remediationsExecuted} Executed</span>
-          </div>
-          <div className="text-[11px] text-zinc-500">
-            {u.aiAnalysesPerformed} Gemini root-cause analyses generated this cycle.
-          </div>
-        </div>
-      </div>
+      {/* Plans & Pricing Modal */}
+      {overview && (
+        <PlanComparisonModal
+          isOpen={plansModalOpen}
+          onClose={() => setPlansModalOpen(false)}
+          currentPlanId={overview.subscription.planId}
+          currentInterval={overview.subscription.billingInterval}
+          onSelectPlan={handleSelectPlan}
+          loading={actionLoading}
+        />
+      )}
     </div>
   );
 };

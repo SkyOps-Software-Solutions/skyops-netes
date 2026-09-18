@@ -201,7 +201,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
             { id: 'support', label: 'Enterprise Helpdesk', icon: <Headphones className="w-3.5 h-3.5" /> },
             { id: 'notifications', label: 'Notifications', icon: <Bell className="w-3.5 h-3.5" /> },
             { id: 'webhooks', label: 'Webhooks & Integrations', icon: <Webhook className="w-3.5 h-3.5" /> },
-            { id: 'usage', label: 'Usage & Quotas', icon: <CreditCard className="w-3.5 h-3.5" /> },
+            { id: 'usage', label: 'Subscription & Billing', icon: <CreditCard className="w-3.5 h-3.5" /> },
             { id: 'system', label: 'System Health Probes', icon: <HeartPulse className="w-3.5 h-3.5" /> },
             ...(import.meta.env.DEV
               ? [{ id: 'testbed', label: 'Failure QA Testbed', icon: <Zap className="w-3.5 h-3.5" /> }]

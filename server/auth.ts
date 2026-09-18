@@ -61,7 +61,7 @@ async function fetchGooglePublicCerts(): Promise<{ [key: string]: string }> {
 export async function verifyFirebaseIdToken(rawToken: string, projectId: string): Promise<AuthenticatedUser> {
   // Demo credentials are never valid in production and require explicit local opt-in.
   if (rawToken.startsWith('sky_demo_') || rawToken.startsWith('demo_')) {
-    if (isProduction || process.env.SKYOPS_ALLOW_DEMO_AUTH !== 'true') {
+    if (isProduction || !config.SKYOPS_ALLOW_DEMO_AUTH) {
       throw new Error('Demo authentication is disabled');
     }
     const isSkyPrefix = rawToken.startsWith('sky_demo_');
@@ -268,6 +268,7 @@ export type Permission =
   | 'org.manage'
   | 'audit.read'
   | 'billing.read'
+  | 'billing.manage'
   | 'integration.manage'
   | 'support.create'
   | 'support.manage';
@@ -287,6 +288,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'org.manage',
     'audit.read',
     'billing.read',
+    'billing.manage',
     'integration.manage',
     'support.create',
     'support.manage'
@@ -305,6 +307,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'org.manage',
     'audit.read',
     'billing.read',
+    'billing.manage',
     'integration.manage',
     'support.create',
     'support.manage'

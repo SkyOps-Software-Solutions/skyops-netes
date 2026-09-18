@@ -32,6 +32,9 @@ import { skyOpsAIService } from './server/ai/service';
 import { SkyOpsIntelligenceEngine } from './server/engine/intelligence';
 import { AGENT_DEFAULT_NAMESPACE, AGENT_VERSION } from './src/config/version';
 import { KubernetesResource } from './src/types/index';
+import { entitlementService } from './server/billing/entitlements';
+import { billingService } from './server/billing/billingService';
+import { PLANS, BILLING_INTERVALS, DEFAULT_TRIAL_DAYS } from './src/config/plans';
 
 dotenv.config();
 
@@ -283,6 +286,11 @@ app.post(
   requireOrgMembership,
   requireRole(['OWNER', 'ADMIN']),
   (req: AuthenticatedUserRequest, res) => {
+    const entitlement = entitlementService.canAddMember(req.orgId!);
+    if (!entitlement.allowed) {
+      return res.status(402).json(entitlement.error);
+    }
+
     const parsed = InviteMemberSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid invitation payload' });
@@ -524,6 +532,11 @@ const CreateClusterSchema = z.object({
 });
 
 app.post('/api/v1/clusters', requireUserAuth, requireOrgMembership, requirePermission('cluster.manage'), (req: AuthenticatedUserRequest, res) => {
+  const entitlement = entitlementService.canCreateCluster(req.orgId!);
+  if (!entitlement.allowed) {
+    return res.status(402).json(entitlement.error);
+  }
+
   const parsed = CreateClusterSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid cluster payload' });
@@ -1510,6 +1523,11 @@ app.get('/api/v1/incidents/:id/intelligence', requireUserAuth, requireOrgMembers
 });
 
 app.post('/api/v1/incidents/:id/investigate', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const entitlement = entitlementService.canUseAI(req.orgId!);
+  if (!entitlement.allowed) {
+    return res.status(402).json(entitlement.error);
+  }
+
   const incident = store.getIncident(req.params.id, req.orgId!);
   if (!incident) {
     return res.status(404).json({ error: 'Incident not found' });
@@ -1563,6 +1581,11 @@ app.get('/api/v1/incidents/:id/ai-analysis', requireUserAuth, requireOrgMembersh
 });
 
 app.post('/api/v1/incidents/:id/ai-analysis', requireUserAuth, requireOrgMembership, async (req: AuthenticatedUserRequest, res) => {
+  const entitlement = entitlementService.canUseAI(req.orgId!);
+  if (!entitlement.allowed) {
+    return res.status(402).json(entitlement.error);
+  }
+
   const incident = store.getIncident(req.params.id, req.orgId!);
   if (!incident) {
     return res.status(404).json({ error: 'Incident not found' });
@@ -1618,6 +1641,11 @@ app.post(
   requireOrgMembership,
   requirePermission('remediation.approve'),
   (req: AuthenticatedUserRequest, res) => {
+    const entitlement = entitlementService.canExecuteRemediation(req.orgId!);
+    if (!entitlement.allowed) {
+      return res.status(402).json(entitlement.error);
+    }
+
     const parsed = ApproveRemediationSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid approval payload' });
@@ -1992,6 +2020,11 @@ app.get('/api/v1/integrations/webhooks', requireUserAuth, requireOrgMembership, 
 });
 
 app.post('/api/v1/integrations/webhooks', requireUserAuth, requireOrgMembership, requirePermission('integration.manage'), (req: AuthenticatedUserRequest, res) => {
+  const entitlement = entitlementService.canUseWebhooks(req.orgId!);
+  if (!entitlement.allowed) {
+    return res.status(402).json(entitlement.error);
+  }
+
   const parsed = CreateWebhookSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid webhook payload' });
@@ -2052,7 +2085,260 @@ app.get('/api/v1/integrations/webhooks/:id/deliveries', requireUserAuth, require
 app.get('/api/v1/orgs/usage', requireUserAuth, requireOrgMembership, requirePermission('billing.read'), (req: AuthenticatedUserRequest, res) => {
   const usage = store.getOrgUsage(req.orgId!);
   const metrics = store.getUsageMetrics(req.orgId!);
-  res.json({ usage, metrics });
+  const overview = billingService.getSubscriptionOverview(req.orgId!);
+  res.json({ usage, metrics, subscription: overview.subscription, plan: overview.plan, entitlements: overview.entitlements, quotaUsage: overview.usage });
+});
+
+// ==========================================
+// BILLING, SUBSCRIPTIONS, PLANS & INVOICES
+// ==========================================
+
+// Public / Authenticated: List all plans, intervals, pricing, limits, and features
+app.get('/api/v1/billing/plans', (req, res) => {
+  res.json({
+    plans: PLANS,
+    intervals: BILLING_INTERVALS,
+    defaultTrialDays: DEFAULT_TRIAL_DAYS
+  });
+});
+
+// Get current organization subscription & usage overview
+app.get('/api/v1/billing/subscription', requireUserAuth, requireOrgMembership, requirePermission('billing.read'), (req: AuthenticatedUserRequest, res) => {
+  const overview = billingService.getSubscriptionOverview(req.orgId!);
+  res.json(overview);
+});
+
+// Initiate checkout session for upgrade / new plan selection
+const CheckoutSchema = z.object({
+  planId: z.enum(['PRO', 'BUSINESS']),
+  interval: z.enum(['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY']),
+  returnUrl: z.string().optional()
+});
+
+app.post('/api/v1/billing/checkout', requireUserAuth, requireOrgMembership, requirePermission('billing.manage'), async (req: AuthenticatedUserRequest, res) => {
+  const parsed = CheckoutSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid checkout payload' });
+  }
+
+  try {
+    const result = await billingService.createCheckout(
+      req.orgId!,
+      parsed.data.planId,
+      parsed.data.interval,
+      req.user!,
+      parsed.data.returnUrl
+    );
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Failed to initiate checkout' });
+  }
+});
+
+// Complete / Confirm checkout session (used for instant checkout activation)
+const ConfirmCheckoutSchema = z.object({
+  planId: z.enum(['PRO', 'BUSINESS']),
+  interval: z.enum(['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY']),
+  sessionId: z.string().optional()
+});
+
+app.post('/api/v1/billing/checkout/confirm', requireUserAuth, requireOrgMembership, requirePermission('billing.manage'), async (req: AuthenticatedUserRequest, res) => {
+  const parsed = ConfirmCheckoutSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid confirmation payload' });
+  }
+
+  try {
+    const result = await billingService.confirmCheckout(
+      req.orgId!,
+      parsed.data.planId,
+      parsed.data.interval,
+      { id: req.user!.id, name: req.user!.name || req.user!.email, email: req.user!.email }
+    );
+    const overview = billingService.getSubscriptionOverview(req.orgId!);
+    res.json({ success: true, ...result, overview });
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Failed to confirm checkout' });
+  }
+});
+
+// Upgrade plan / interval directly
+app.post('/api/v1/billing/upgrade', requireUserAuth, requireOrgMembership, requirePermission('billing.manage'), async (req: AuthenticatedUserRequest, res) => {
+  const parsed = ConfirmCheckoutSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid upgrade payload' });
+  }
+
+  try {
+    const result = await billingService.confirmCheckout(
+      req.orgId!,
+      parsed.data.planId,
+      parsed.data.interval,
+      { id: req.user!.id, name: req.user!.name || req.user!.email, email: req.user!.email }
+    );
+    const overview = billingService.getSubscriptionOverview(req.orgId!);
+    res.json({ success: true, ...result, overview });
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Failed to upgrade subscription' });
+  }
+});
+
+// Safe downgrade implementation
+const DowngradeSchema = z.object({
+  planId: z.enum(['FREE', 'PRO']),
+  interval: z.enum(['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY']).default('MONTHLY')
+});
+
+app.post('/api/v1/billing/downgrade', requireUserAuth, requireOrgMembership, requirePermission('billing.manage'), async (req: AuthenticatedUserRequest, res) => {
+  const parsed = DowngradeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid downgrade payload' });
+  }
+
+  try {
+    const subscription = await billingService.downgradeSubscription(
+      req.orgId!,
+      parsed.data.planId,
+      parsed.data.interval,
+      { id: req.user!.id, name: req.user!.name || req.user!.email }
+    );
+    const overview = billingService.getSubscriptionOverview(req.orgId!);
+    res.json({ success: true, subscription, overview });
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Failed to downgrade subscription' });
+  }
+});
+
+// Cancel subscription at period end
+app.post('/api/v1/billing/cancel', requireUserAuth, requireOrgMembership, requirePermission('billing.manage'), async (req: AuthenticatedUserRequest, res) => {
+  try {
+    const subscription = await billingService.cancelSubscription(
+      req.orgId!,
+      { id: req.user!.id, name: req.user!.name || req.user!.email }
+    );
+    const overview = billingService.getSubscriptionOverview(req.orgId!);
+    res.json({ success: true, subscription, overview });
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Failed to cancel subscription' });
+  }
+});
+
+// Resume canceled subscription
+app.post('/api/v1/billing/resume', requireUserAuth, requireOrgMembership, requirePermission('billing.manage'), async (req: AuthenticatedUserRequest, res) => {
+  try {
+    const subscription = await billingService.resumeSubscription(
+      req.orgId!,
+      { id: req.user!.id, name: req.user!.name || req.user!.email }
+    );
+    const overview = billingService.getSubscriptionOverview(req.orgId!);
+    res.json({ success: true, subscription, overview });
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Failed to resume subscription' });
+  }
+});
+
+// List invoices for organization
+app.get('/api/v1/billing/invoices', requireUserAuth, requireOrgMembership, requirePermission('billing.read'), (req: AuthenticatedUserRequest, res) => {
+  const invoices = store.getInvoices(req.orgId!);
+  res.json({ invoices });
+});
+
+// Download/View invoice details
+app.get('/api/v1/billing/invoices/:id/download', requireUserAuth, requireOrgMembership, requirePermission('billing.read'), (req: AuthenticatedUserRequest, res) => {
+  const invoices = store.getInvoices(req.orgId!);
+  const invoice = invoices.find((i) => i.id === req.params.id);
+  if (!invoice) {
+    return res.status(404).json({ error: 'Invoice not found' });
+  }
+  const org = store.getOrganization(req.orgId!);
+  res.setHeader('Content-Type', 'text/html');
+  res.send(`<!DOCTYPE html>
+<html>
+  <head>
+    <title>Invoice #${invoice.id} - SkyOps</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; color: #0f172a; max-width: 680px; margin: 0 auto; line-height: 1.5; }
+      .header { display: flex; justify-content: space-between; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; }
+      .logo { font-size: 24px; font-weight: bold; color: #0284c7; }
+      .badge { display: inline-block; padding: 4px 12px; background: #ecfdf5; color: #047857; font-weight: 600; font-size: 13px; border-radius: 9999px; }
+      .table { width: 100%; border-collapse: collapse; margin-top: 30px; }
+      .table th, .table td { text-align: left; padding: 12px 8px; border-bottom: 1px solid #f1f5f9; }
+      .total { font-size: 18px; font-weight: bold; text-align: right; margin-top: 24px; }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div>
+        <div class="logo">SkyOps</div>
+        <p style="margin: 4px 0 0; color: #64748b; font-size: 14px;">Kubernetes Observability & Incident Platform</p>
+      </div>
+      <div style="text-align: right;">
+        <h3 style="margin: 0; font-size: 18px;">INVOICE</h3>
+        <p style="margin: 4px 0; font-family: monospace; font-size: 13px; color: #475569;">#${invoice.id}</p>
+        <span class="badge">${invoice.status}</span>
+      </div>
+    </div>
+    <div style="margin-top: 24px; display: flex; justify-content: space-between; font-size: 14px;">
+      <div>
+        <strong style="color: #475569;">BILLED TO:</strong><br/>
+        <strong>${org?.name || 'SkyOps Workspace'}</strong><br/>
+        Org ID: ${req.orgId}
+      </div>
+      <div style="text-align: right;">
+        <strong style="color: #475569;">ISSUE DATE:</strong><br/>
+        ${new Date(invoice.issuedAt).toLocaleDateString('en-IN', { dateStyle: 'medium' })}<br/>
+        <strong>Payment Status:</strong> Paid in Full
+      </div>
+    </div>
+    <table class="table">
+      <thead>
+        <tr style="background: #f8fafc; font-size: 13px; color: #475569;">
+          <th>DESCRIPTION</th>
+          <th>DURATION</th>
+          <th style="text-align: right;">AMOUNT</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>${invoice.description}</strong></td>
+          <td>${invoice.billingInterval}</td>
+          <td style="text-align: right; font-weight: 600;">₹${invoice.amount.toLocaleString('en-IN')}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="total">
+      Total Paid: ₹${invoice.amount.toLocaleString('en-IN')}
+    </div>
+  </body>
+</html>`);
+});
+
+// Incoming webhook handler
+app.post('/api/v1/billing/webhook', async (req, res) => {
+  const signature = (req.headers['x-skyops-signature'] || req.headers['stripe-signature'] || '') as string;
+  try {
+    const rawPayload = JSON.stringify(req.body);
+    const result = await billingService.handleWebhook(rawPayload, signature);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Webhook signature or processing error' });
+  }
+});
+
+// Dev/QA simulation endpoint
+app.post('/api/v1/billing/dev/simulate-state', requireUserAuth, requireOrgMembership, requirePermission('billing.manage'), (req: AuthenticatedUserRequest, res) => {
+  const { state, planId, interval } = req.body;
+  if (!state) {
+    return res.status(400).json({ error: 'Subscription state is required' });
+  }
+
+  try {
+    const sub = billingService.simulateSubscriptionState(req.orgId!, state, planId, interval);
+    const overview = billingService.getSubscriptionOverview(req.orgId!);
+    res.json({ success: true, subscription: sub, overview });
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Failed to simulate state' });
+  }
 });
 
 // --- Development & QA Scenario Simulation (Strictly Protected) ---

@@ -48,7 +48,12 @@ import {
   OrgUsageMetrics,
   MetricsServerStatus,
   MetricsServerStateType,
-  MetricsServerVerificationEvidence
+  MetricsServerVerificationEvidence,
+  Subscription,
+  Invoice,
+  InvoiceStatus,
+  PlanId,
+  BillingInterval
 } from '../src/types/index';
 import { TelemetryStore } from './telemetry_store';
 import { AGENT_VERSION } from '../src/config/version';
@@ -118,6 +123,9 @@ export class DataStore {
   private clusterActionHistory: Map<string, number[]> = new Map(); // clusterId -> timestamps
   private telemetryBatchCounts: Map<string, number> = new Map(); // orgId -> count
   private telemetryResourceCounts: Map<string, number> = new Map(); // orgId -> count
+  private subscriptions: Map<string, Subscription> = new Map(); // orgId -> Subscription
+  private invoices: Map<string, Invoice> = new Map(); // invoiceId -> Invoice
+  private processedWebhookIds: Set<string> = new Set();
   private incidentCounter = 1001;
   private storagePath = getPersistenceConfig().storeFile;
   private saveTimeout: NodeJS.Timeout | null = null;
@@ -162,6 +170,11 @@ export class DataStore {
         if (data.incidentFailures) this.incidentFailures = new Map(Object.entries(data.incidentFailures));
         if (data.incidentCounter) this.incidentCounter = data.incidentCounter;
         if (data.userNotificationSettings) this.userNotificationSettings = new Map(Object.entries(data.userNotificationSettings));
+        if (data.subscriptions) this.subscriptions = new Map(Object.entries(data.subscriptions));
+        if (data.invoices) this.invoices = new Map(Object.entries(data.invoices));
+        if (data.processedWebhookIds && Array.isArray(data.processedWebhookIds)) {
+          this.processedWebhookIds = new Set(data.processedWebhookIds);
+        }
         if (data.clusterMetricHistory) {
           this.clusterMetricHistory = new Map(Object.entries(data.clusterMetricHistory));
         }
@@ -233,6 +246,9 @@ export class DataStore {
           incidentFailures: Object.fromEntries(this.incidentFailures),
           incidentCounter: this.incidentCounter,
           userNotificationSettings: Object.fromEntries(this.userNotificationSettings),
+          subscriptions: Object.fromEntries(this.subscriptions),
+          invoices: Object.fromEntries(this.invoices),
+          processedWebhookIds: Array.from(this.processedWebhookIds),
           clusterMetricHistory: Object.fromEntries(this.clusterMetricHistory),
           telemetryStore: this.telemetryStore.exportSnapshot()
         };
@@ -268,6 +284,9 @@ export class DataStore {
         incidentFailures: Object.fromEntries(this.incidentFailures),
         incidentCounter: this.incidentCounter,
         userNotificationSettings: Object.fromEntries(this.userNotificationSettings),
+        subscriptions: Object.fromEntries(this.subscriptions),
+        invoices: Object.fromEntries(this.invoices),
+        processedWebhookIds: Array.from(this.processedWebhookIds),
         clusterMetricHistory: Object.fromEntries(this.clusterMetricHistory),
         telemetryStore: this.telemetryStore.exportSnapshot()
       };
@@ -481,6 +500,8 @@ export class DataStore {
     ]);
 
     this.saveSnapshot();
+    this.getOrCreateOrgSubscription(orgId);
+
     auditService.record({
       orgId,
       actorId: ownerUserId,
@@ -494,6 +515,75 @@ export class DataStore {
     });
 
     return org;
+  }
+
+  // --- Subscription & Billing Management ---
+  public getSubscription(orgId: string): Subscription | null {
+    return this.subscriptions.get(orgId) || null;
+  }
+
+  public getOrCreateOrgSubscription(orgId: string): Subscription {
+    let sub = this.subscriptions.get(orgId);
+    if (!sub) {
+      const now = Date.now();
+      sub = {
+        id: `sub-${crypto.randomBytes(8).toString('hex')}`,
+        organizationId: orgId,
+        planId: 'PRO',
+        billingInterval: 'YEARLY',
+        status: 'TRIALING',
+        startedAt: now,
+        currentPeriodStart: now,
+        currentPeriodEnd: now + 14 * 86400000,
+        trialStartedAt: now,
+        trialEndsAt: now + 14 * 86400000,
+        cancelAtPeriodEnd: false,
+        provider: 'mock',
+        providerSubscriptionId: `sub_mock_${crypto.randomBytes(8).toString('hex')}`,
+        createdAt: now,
+        updatedAt: now
+      };
+      this.subscriptions.set(orgId, sub);
+      this.saveSnapshot();
+    }
+    return { ...sub };
+  }
+
+  public saveSubscription(sub: Subscription): Subscription {
+    this.subscriptions.set(sub.organizationId, { ...sub, updatedAt: Date.now() });
+    this.saveSnapshot();
+    return { ...sub };
+  }
+
+  public getInvoices(orgId: string): Invoice[] {
+    return Array.from(this.invoices.values())
+      .filter((i) => i.organizationId === orgId)
+      .sort((a, b) => b.issuedAt - a.issuedAt);
+  }
+
+  public addInvoice(inv: Invoice): Invoice {
+    this.invoices.set(inv.id, { ...inv });
+    this.saveSnapshot();
+    return { ...inv };
+  }
+
+  public updateInvoiceStatus(invoiceId: string, status: InvoiceStatus): Invoice | null {
+    const inv = this.invoices.get(invoiceId);
+    if (!inv) return null;
+    inv.status = status;
+    if (status === 'PAID') inv.paidAt = Date.now();
+    this.invoices.set(invoiceId, inv);
+    this.saveSnapshot();
+    return { ...inv };
+  }
+
+  public hasProcessedWebhook(id: string): boolean {
+    return this.processedWebhookIds.has(id);
+  }
+
+  public markWebhookProcessed(id: string): void {
+    this.processedWebhookIds.add(id);
+    this.saveSnapshot();
   }
 
   public updateOrganization(

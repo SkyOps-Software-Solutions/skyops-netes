@@ -11,7 +11,7 @@ export interface AuditEvent {
   actorName: string;
   actorType: 'USER' | 'AGENT' | 'SYSTEM' | 'AUTONOMOUS_POLICY';
   action: string;
-  resourceType: 'CLUSTER' | 'INCIDENT' | 'REMEDIATION' | 'POLICY' | 'ORGANIZATION' | 'TEAM' | 'INTEGRATION' | 'AUTH' | 'SUPPORT_TICKET';
+  resourceType: 'CLUSTER' | 'INCIDENT' | 'REMEDIATION' | 'POLICY' | 'ORGANIZATION' | 'TEAM' | 'INTEGRATION' | 'AUTH' | 'SUPPORT_TICKET' | 'SUBSCRIPTION' | 'INVOICE';
   resourceId: string;
   result: 'SUCCESS' | 'FAILURE';
   details?: Record<string, unknown>;

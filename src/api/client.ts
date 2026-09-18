@@ -33,7 +33,13 @@ import {
   ResourceBaseline,
   TelemetryAnomaly,
   InvestigationQuestionResult,
-  MetricsServerStatus
+  MetricsServerStatus,
+  BillingInterval,
+  Invoice,
+  OrgBillingOverview,
+  Plan,
+  PlanId,
+  Subscription
 } from '../types/index';
 
 /**
@@ -943,6 +949,101 @@ class ApiClient {
 
   async getNotificationDeliveries(): Promise<{ deliveries: any[] }> {
     return this.request('/api/v1/settings/notifications/deliveries');
+  }
+
+  // --- SaaS Subscriptions, Plans & Billing ---
+  async getBillingPlans(): Promise<{
+    plans: Plan[];
+    intervals: any[];
+    defaultTrialDays: number;
+  }> {
+    return this.request('/api/v1/billing/plans');
+  }
+
+  async getSubscriptionOverview(): Promise<OrgBillingOverview> {
+    return this.request('/api/v1/billing/subscription');
+  }
+
+  async createCheckout(planId: PlanId, interval: BillingInterval, returnUrl?: string): Promise<{
+    sessionId: string;
+    checkoutUrl: string;
+    provider: string;
+    planId: PlanId;
+    interval: BillingInterval;
+    amount: number;
+  }> {
+    return this.request('/api/v1/billing/checkout', {
+      method: 'POST',
+      body: JSON.stringify({ planId, interval, returnUrl })
+    });
+  }
+
+  async confirmCheckout(planId: PlanId, interval: BillingInterval, sessionId?: string): Promise<{
+    success: boolean;
+    subscription: Subscription;
+    overview: OrgBillingOverview;
+  }> {
+    return this.request('/api/v1/billing/checkout/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ planId, interval, sessionId })
+    });
+  }
+
+  async upgradePlan(planId: PlanId, interval: BillingInterval): Promise<{
+    success: boolean;
+    subscription: Subscription;
+    overview: OrgBillingOverview;
+  }> {
+    return this.request('/api/v1/billing/upgrade', {
+      method: 'POST',
+      body: JSON.stringify({ planId, interval })
+    });
+  }
+
+  async downgradePlan(planId: PlanId, interval: BillingInterval = 'MONTHLY'): Promise<{
+    success: boolean;
+    subscription: Subscription;
+    overview: OrgBillingOverview;
+  }> {
+    return this.request('/api/v1/billing/downgrade', {
+      method: 'POST',
+      body: JSON.stringify({ planId, interval })
+    });
+  }
+
+  async cancelSubscription(): Promise<{
+    success: boolean;
+    subscription: Subscription;
+    overview: OrgBillingOverview;
+  }> {
+    return this.request('/api/v1/billing/cancel', {
+      method: 'POST'
+    });
+  }
+
+  async resumeSubscription(): Promise<{
+    success: boolean;
+    subscription: Subscription;
+    overview: OrgBillingOverview;
+  }> {
+    return this.request('/api/v1/billing/resume', {
+      method: 'POST'
+    });
+  }
+
+  async getInvoices(): Promise<{ invoices: Invoice[] }> {
+    return this.request('/api/v1/billing/invoices');
+  }
+
+  async simulateSubscriptionState(state: string, planId?: PlanId, interval?: BillingInterval): Promise<{
+    success: boolean;
+    subscription: Subscription;
+    overview: OrgBillingOverview;
+  }> {
+    return this.request('/api/v1/billing/dev/simulate-state', {
+      method: 'POST',
+      body: JSON.stringify({ state, planId, interval })
+    });
   }
 }
 

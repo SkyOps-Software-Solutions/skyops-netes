@@ -57,6 +57,142 @@ export interface Organization {
 
 export type OrgMemberStatus = 'ACTIVE' | 'INVITED' | 'SUSPENDED' | 'REMOVED';
 
+// --- Subscription, Plans, Billing & Entitlements ---
+export type PlanId = 'FREE' | 'PRO' | 'BUSINESS' | 'ENTERPRISE';
+
+export type BillingInterval = 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY';
+
+export type SubscriptionStatus =
+  | 'TRIALING'
+  | 'ACTIVE'
+  | 'PAST_DUE'
+  | 'GRACE_PERIOD'
+  | 'SUSPENDED'
+  | 'CANCELED'
+  | 'EXPIRED';
+
+export interface PlanLimits {
+  clusters: number;
+  nodes: number;
+  workloads: number;
+  members: number;
+  dataRetentionDays: number;
+  aiInvestigationsMonthly: number;
+  remediationsMonthly: number;
+  auditLogsDays: number;
+}
+
+export interface PlanFeatures {
+  incidentDetection: boolean;
+  metrics: boolean;
+  events: boolean;
+  logs: 'basic' | 'standard' | 'full' | 'custom';
+  incidentCorrelation: 'basic' | 'advanced' | 'custom';
+  rca: 'basic' | 'advanced' | 'custom';
+  remediationRecommendations: 'limited' | 'enabled' | 'custom';
+  automatedRemediation: boolean | 'limited' | 'enabled' | 'custom';
+  notifications: 'basic' | 'advanced' | 'custom';
+  webhooks: boolean;
+  rbac: 'basic' | 'standard' | 'advanced' | 'custom';
+  support: 'community' | 'standard' | 'priority' | 'dedicated_sla';
+}
+
+export interface PlanIntervalPricing {
+  interval: BillingInterval;
+  label: string;
+  durationMonths: number;
+  totalPrice: number; // in INR
+  monthlyEquivalent: number;
+  savings: number;
+  savingsPercentage: number;
+  currency: string;
+}
+
+export interface Plan {
+  id: PlanId;
+  name: string;
+  tagline: string;
+  description: string;
+  badge?: string;
+  recommended?: boolean;
+  pricing: Record<BillingInterval, PlanIntervalPricing>;
+  limits: PlanLimits;
+  features: PlanFeatures;
+  highlights: string[];
+}
+
+export interface Subscription {
+  id: string;
+  organizationId: string;
+  planId: PlanId;
+  billingInterval: BillingInterval;
+  status: SubscriptionStatus;
+  startedAt: number;
+  currentPeriodStart: number;
+  currentPeriodEnd: number;
+  trialStartedAt?: number;
+  trialEndsAt?: number;
+  cancelAtPeriodEnd: boolean;
+  canceledAt?: number;
+  provider: string; // 'mock' | 'stripe' | 'razorpay'
+  providerCustomerId?: string;
+  providerSubscriptionId?: string;
+  customLimits?: Partial<PlanLimits>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type InvoiceStatus = 'DRAFT' | 'OPEN' | 'PAID' | 'VOID' | 'UNCOLLECTIBLE';
+
+export interface Invoice {
+  id: string;
+  organizationId: string;
+  subscriptionId: string;
+  providerInvoiceId?: string;
+  amount: number;
+  currency: string;
+  status: InvoiceStatus;
+  issuedAt: number;
+  dueAt: number;
+  paidAt?: number;
+  invoiceUrl?: string;
+  description: string;
+  planId: PlanId;
+  billingInterval: BillingInterval;
+  createdAt: number;
+}
+
+export interface PlanLimitError {
+  code: 'PLAN_LIMIT_REACHED';
+  error: string;
+  resource: string;
+  current: number;
+  limit: number;
+  plan: PlanId;
+  upgradeRequired: boolean;
+}
+
+export interface OrgBillingOverview {
+  subscription: Subscription;
+  plan: Plan;
+  entitlements: {
+    limits: PlanLimits;
+    features: PlanFeatures;
+  };
+  usage: {
+    clusters: { current: number; limit: number; percentage: number };
+    nodes: { current: number; limit: number; percentage: number };
+    workloads: { current: number; limit: number; percentage: number };
+    members: { current: number; limit: number; percentage: number };
+    aiInvestigations: { current: number; limit: number; percentage: number };
+    remediations: { current: number; limit: number; percentage: number };
+    retentionDays: number;
+  };
+  invoices: Invoice[];
+  isTrial: boolean;
+  trialDaysRemaining?: number;
+}
+
 export interface OrgMember {
   userId: string;
   orgId?: string;

@@ -39,7 +39,10 @@ const ConfigSchema = z.object({
     .optional()
     .transform((val) => val === 'true' || val === '1'),
   SKYOPS_SMTP_USER: z.string().optional(),
-  SKYOPS_SMTP_PASS: z.string().optional()
+  SKYOPS_SMTP_PASS: z.string().optional(),
+  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional()
 }).superRefine((values, ctx) => {
   if (values.NODE_ENV === 'production') {
     if (!values.FIREBASE_PROJECT_ID && !values.FIREBASE_TRUSTED_PROJECT_IDS) {

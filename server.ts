@@ -34,6 +34,7 @@ import { AGENT_DEFAULT_NAMESPACE, AGENT_VERSION } from './src/config/version';
 import { KubernetesResource } from './src/types/index';
 import { entitlementService } from './server/billing/entitlements';
 import { billingService } from './server/billing/billingService';
+import { getBillingConfig } from './server/billing/provider';
 import { PLANS, BILLING_INTERVALS, DEFAULT_TRIAL_DAYS } from './src/config/plans';
 
 dotenv.config();
@@ -2097,6 +2098,11 @@ app.get('/api/v1/orgs/usage', requireUserAuth, requireOrgMembership, requirePerm
 // BILLING, SUBSCRIPTIONS, PLANS & INVOICES
 // ==========================================
 
+// Public: Get billing gateway configuration (Razorpay vs Sandbox)
+app.get('/api/v1/billing/config', (req, res) => {
+  res.json(getBillingConfig());
+});
+
 // Public / Authenticated: List all plans, intervals, pricing, limits, and features
 app.get('/api/v1/billing/plans', (req, res) => {
   res.json({
@@ -2167,7 +2173,10 @@ const ConfirmCheckoutSchema = z.object({
   planId: z.enum(['PRO', 'BUSINESS']).optional(),
   interval: z.enum(['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY']).optional(),
   billingInterval: z.enum(['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY']).optional(),
-  sessionId: z.string().optional()
+  sessionId: z.string().optional(),
+  razorpayOrderId: z.string().optional(),
+  razorpayPaymentId: z.string().optional(),
+  razorpaySignature: z.string().optional()
 });
 
 app.post('/api/v1/billing/checkout/confirm', requireUserAuth, requireOrgMembership, requirePermission('billing.manage'), async (req: AuthenticatedUserRequest, res) => {
@@ -2180,12 +2189,20 @@ app.post('/api/v1/billing/checkout/confirm', requireUserAuth, requireOrgMembersh
     const actor = { id: req.user!.id, name: req.user!.name || req.user!.email, email: req.user!.email };
     let result: any;
 
+    const paymentVerification = (parsed.data.razorpayOrderId && parsed.data.razorpayPaymentId && parsed.data.razorpaySignature)
+      ? {
+          razorpayOrderId: parsed.data.razorpayOrderId,
+          razorpayPaymentId: parsed.data.razorpayPaymentId,
+          razorpaySignature: parsed.data.razorpaySignature
+        }
+      : undefined;
+
     if (parsed.data.sessionId) {
-      result = await billingService.confirmCheckout(parsed.data.sessionId, req.orgId!, actor);
+      result = await billingService.confirmCheckout(parsed.data.sessionId, req.orgId!, actor, paymentVerification);
     } else {
       const planId = parsed.data.planId || 'PRO';
       const interval = parsed.data.interval || parsed.data.billingInterval || 'MONTHLY';
-      result = await billingService.confirmCheckout(req.orgId!, planId, interval, actor);
+      result = await billingService.confirmCheckout(req.orgId!, planId, interval, actor, paymentVerification);
     }
 
     const overview = billingService.getSubscriptionOverview(req.orgId!);
@@ -2354,7 +2371,7 @@ app.get('/api/v1/billing/invoices/:id/download', requireUserAuth, requireOrgMemb
 
 // Incoming webhook handler
 app.post('/api/v1/billing/webhook', async (req, res) => {
-  const signature = (req.headers['x-skyops-signature'] || req.headers['stripe-signature'] || '') as string;
+  const signature = (req.headers['x-razorpay-signature'] || req.headers['x-skyops-signature'] || req.headers['stripe-signature'] || '') as string;
   try {
     const rawPayload = JSON.stringify(req.body);
     const result = await billingService.handleWebhook(rawPayload, signature);

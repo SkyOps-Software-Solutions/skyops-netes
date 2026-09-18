@@ -100,6 +100,17 @@ export const SubscriptionCard: React.FC<SubscriptionCardProps> = ({
                 {subscription.billingInterval} Duration
               </span>
             )}
+
+            {/* Payment Provider Pill */}
+            {subscription.planId !== 'FREE' && subscription.provider && (
+              <span className={`px-2.5 py-0.5 rounded-full border text-xs font-mono font-medium ${
+                subscription.provider === 'razorpay'
+                  ? 'bg-sky-950/60 border-sky-600/50 text-sky-300'
+                  : 'bg-zinc-800/60 border-zinc-700/50 text-zinc-400'
+              }`}>
+                {subscription.provider === 'razorpay' ? 'Razorpay Gateway' : 'Sandbox Gateway'}
+              </span>
+            )}
           </div>
           <p className="text-xs text-zinc-400 font-mono mt-1.5">{plan.description}</p>
         </div>

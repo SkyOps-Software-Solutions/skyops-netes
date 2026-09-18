@@ -960,17 +960,32 @@ class ApiClient {
     return this.request('/api/v1/billing/plans');
   }
 
+  async getBillingConfig(): Promise<{ provider: 'razorpay' | 'mock'; keyId: string | null; currency: string }> {
+    return this.request('/api/v1/billing/config');
+  }
+
   async getSubscriptionOverview(): Promise<OrgBillingOverview> {
     return this.request('/api/v1/billing/subscription');
   }
 
   async createCheckout(planId: PlanId, interval: BillingInterval, returnUrl?: string): Promise<{
-    sessionId: string;
-    checkoutUrl: string;
-    provider: string;
-    planId: PlanId;
-    interval: BillingInterval;
-    amount: number;
+    session: {
+      id: string;
+      sessionId: string;
+      orderId?: string;
+      keyId?: string;
+      checkoutUrl: string;
+      provider: string;
+      amount: number;
+      currency: string;
+      planId: PlanId;
+      billingInterval: BillingInterval;
+    };
+    planName?: string;
+    intervalLabel?: string;
+    totalPrice?: number;
+    currency?: string;
+    savings?: string;
   }> {
     return this.request('/api/v1/billing/checkout', {
       method: 'POST',
@@ -978,14 +993,28 @@ class ApiClient {
     });
   }
 
-  async confirmCheckout(planId: PlanId, interval: BillingInterval, sessionId?: string): Promise<{
+  async confirmCheckout(
+    planId: PlanId,
+    interval: BillingInterval,
+    sessionId?: string,
+    razorpayVerification?: {
+      razorpayOrderId?: string;
+      razorpayPaymentId?: string;
+      razorpaySignature?: string;
+    }
+  ): Promise<{
     success: boolean;
     subscription: Subscription;
     overview: OrgBillingOverview;
   }> {
     return this.request('/api/v1/billing/checkout/confirm', {
       method: 'POST',
-      body: JSON.stringify({ planId, interval, sessionId })
+      body: JSON.stringify({
+        planId,
+        interval,
+        sessionId,
+        ...(razorpayVerification || {})
+      })
     });
   }
 

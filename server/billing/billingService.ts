@@ -369,26 +369,45 @@ export class BillingService {
     arg1: string,
     arg2: any,
     arg3?: any,
-    arg4?: any
+    arg4?: any,
+    arg5?: any
   ): Promise<{ subscription: Subscription; invoice: Invoice }> {
     let orgId: string;
     let planId: PlanId;
     let interval: BillingInterval;
     let actor: { id: string; name: string; email?: string };
+    let paymentVerification: { razorpayOrderId: string; razorpayPaymentId: string; razorpaySignature: string } | undefined;
 
-    // Case 1: Called as confirmCheckout(sessionId, orgId, actor)
-    if (typeof arg1 === 'string' && (arg1.startsWith('cs_') || this.checkoutSessions.has(arg1))) {
+    // Case 1: Called as confirmCheckout(sessionId, orgId, actor, paymentVerification)
+    if (typeof arg1 === 'string' && (arg1.startsWith('cs_') || arg1.startsWith('order_') || this.checkoutSessions.has(arg1))) {
       const session = this.checkoutSessions.get(arg1);
       orgId = arg2;
       planId = (session?.planId || 'PRO') as PlanId;
       interval = (session?.billingInterval || 'MONTHLY') as BillingInterval;
       actor = arg3 || { id: 'system', name: 'System Checkout' };
+      paymentVerification = arg4;
     } else {
-      // Case 2: Called as confirmCheckout(orgId, planId, interval, actor)
+      // Case 2: Called as confirmCheckout(orgId, planId, interval, actor, paymentVerification)
       orgId = arg1;
       planId = arg2 as PlanId;
       interval = arg3 as BillingInterval;
       actor = arg4 || { id: 'system', name: 'System Checkout' };
+      paymentVerification = arg5;
+    }
+
+    // Cryptographically verify Razorpay signature if payment verification details provided
+    if (paymentVerification) {
+      const provider = getBillingProvider();
+      if ('verifyPaymentSignature' in provider) {
+        const isValid = (provider as any).verifyPaymentSignature(
+          paymentVerification.razorpayOrderId,
+          paymentVerification.razorpayPaymentId,
+          paymentVerification.razorpaySignature
+        );
+        if (!isValid) {
+          throw new Error('Razorpay payment signature verification failed');
+        }
+      }
     }
 
     const plan = PLANS[planId] || PLANS.PRO;
@@ -404,6 +423,8 @@ export class BillingService {
     const now = Date.now();
     const periodMonths = pricing.durationMonths || 1;
     const periodEnd = now + periodMonths * 30 * 86400000;
+    const providerType = (paymentVerification ? 'razorpay' : 'mock') as any;
+    const providerSubId = paymentVerification?.razorpayPaymentId || `sub_prov_${crypto.randomBytes(8).toString('hex')}`;
 
     let sub = store.getSubscription(orgId);
     if (!sub) {
@@ -417,8 +438,8 @@ export class BillingService {
         currentPeriodStart: now,
         currentPeriodEnd: periodEnd,
         cancelAtPeriodEnd: false,
-        provider: 'mock',
-        providerSubscriptionId: `sub_prov_${crypto.randomBytes(8).toString('hex')}`,
+        provider: providerType,
+        providerSubscriptionId: providerSubId,
         createdAt: now,
         updatedAt: now
       };
@@ -432,6 +453,8 @@ export class BillingService {
       sub.cancelAtPeriodEnd = false;
       sub.canceledAt = undefined;
       sub.trialEndsAt = undefined;
+      sub.provider = providerType;
+      sub.providerSubscriptionId = providerSubId;
       sub.updatedAt = now;
 
       auditService.record({
@@ -443,7 +466,15 @@ export class BillingService {
         resourceType: 'SUBSCRIPTION',
         resourceId: sub.id,
         result: 'SUCCESS',
-        details: { previousPlan: oldPlan, newPlan: planId, interval, amount: pricing.totalPrice }
+        details: {
+          previousPlan: oldPlan,
+          newPlan: planId,
+          interval,
+          amount: pricing.totalPrice,
+          paymentMethod: paymentVerification ? 'razorpay' : 'sandbox',
+          razorpayPaymentId: paymentVerification?.razorpayPaymentId,
+          razorpayOrderId: paymentVerification?.razorpayOrderId
+        }
       });
     }
 
@@ -455,7 +486,7 @@ export class BillingService {
       id: invoiceId,
       organizationId: orgId,
       subscriptionId: sub.id,
-      providerInvoiceId: `pi_${crypto.randomBytes(8).toString('hex')}`,
+      providerInvoiceId: paymentVerification?.razorpayPaymentId || `pi_${crypto.randomBytes(8).toString('hex')}`,
       amount: pricing.totalPrice,
       currency: pricing.currency,
       status: 'PAID',

@@ -29,6 +29,8 @@ export interface CheckoutSessionResult {
   currency: string;
   planId: PlanId;
   billingInterval: BillingInterval;
+  orderId?: string;
+  keyId?: string;
 }
 
 export interface BillingWebhookEvent {
@@ -181,12 +183,28 @@ export class MockBillingProvider implements BillingProvider {
 }
 
 // Singleton billing provider instance
-let activeBillingProvider: BillingProvider = new MockBillingProvider();
+let customBillingProvider: BillingProvider | null = null;
 
 export function getBillingProvider(): BillingProvider {
-  return activeBillingProvider;
+  if (customBillingProvider) {
+    return customBillingProvider;
+  }
+  if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET && process.env.NODE_ENV !== 'test') {
+    const { RazorpayBillingProvider } = require('./razorpayProvider');
+    return new RazorpayBillingProvider();
+  }
+  return new MockBillingProvider();
 }
 
-export function setBillingProvider(provider: BillingProvider): void {
-  activeBillingProvider = provider;
+export function setBillingProvider(provider: BillingProvider | null): void {
+  customBillingProvider = provider;
+}
+
+export function getBillingConfig(): { provider: 'razorpay' | 'mock'; keyId: string | null; currency: string } {
+  const isRazorpay = Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET && process.env.NODE_ENV !== 'test');
+  return {
+    provider: isRazorpay ? 'razorpay' : 'mock',
+    keyId: isRazorpay ? (process.env.RAZORPAY_KEY_ID || null) : null,
+    currency: 'INR'
+  };
 }

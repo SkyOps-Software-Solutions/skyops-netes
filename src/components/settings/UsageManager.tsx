@@ -18,6 +18,7 @@ import { QuotaProgress } from '../billing/QuotaProgress';
 import { InvoicesTable } from '../billing/InvoicesTable';
 import { PlanComparisonModal } from '../billing/PlanComparisonModal';
 import { BillingSimulator } from '../billing/BillingSimulator';
+import { openRazorpayCheckout } from '../../utils/razorpay';
 
 export const UsageManager: React.FC = () => {
   const [overview, setOverview] = useState<OrgBillingOverview | null>(null);
@@ -54,13 +55,51 @@ export const UsageManager: React.FC = () => {
   const handleSelectPlan = async (planId: PlanId, interval: BillingInterval) => {
     try {
       setActionLoading(true);
+      setErrorMessage(null);
       if (planId === 'FREE') {
         const res = await api.downgradePlan(planId, interval);
         setOverview(res.overview);
-      } else {
-        const res = await api.upgradePlan(planId, interval);
-        setOverview(res.overview);
+        return;
       }
+
+      // Step 1: Create checkout session
+      const checkout = await api.createCheckout(planId, interval);
+      const session = checkout.session;
+
+      // Step 2: If live Razorpay checkout is configured, trigger the Razorpay modal
+      if (session && session.provider === 'razorpay' && session.keyId && session.orderId) {
+        try {
+          const paymentResult = await openRazorpayCheckout({
+            key: session.keyId,
+            amount: Math.round((session.amount || checkout.totalPrice || 0) * 100),
+            currency: session.currency || 'INR',
+            name: 'SkyOps',
+            description: `${checkout.planName || planId} Plan Subscription`,
+            order_id: session.orderId
+          });
+
+          // Step 3: Cryptographically verify and confirm with backend
+          const confirmRes = await api.confirmCheckout(planId, interval, session.id, {
+            razorpayOrderId: paymentResult.razorpay_order_id,
+            razorpayPaymentId: paymentResult.razorpay_payment_id,
+            razorpaySignature: paymentResult.razorpay_signature
+          });
+          setOverview(confirmRes.overview);
+        } catch (err: any) {
+          if (err.message === 'PAYMENT_CANCELLED') {
+            return; // User intentionally dismissed payment modal
+          }
+          throw err;
+        }
+      } else {
+        // Direct sandbox / simulated confirmation
+        const confirmRes = await api.confirmCheckout(planId, interval, session?.id);
+        setOverview(confirmRes.overview);
+      }
+    } catch (err: any) {
+      console.error('Subscription checkout error:', err);
+      setErrorMessage(err?.message || 'Failed to complete subscription upgrade');
+      throw err;
     } finally {
       setActionLoading(false);
     }

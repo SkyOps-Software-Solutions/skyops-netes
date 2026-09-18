@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Search,
   Shield,
+  Sparkles,
   Trash2,
   UserCheck,
   UserMinus,
@@ -20,6 +21,7 @@ import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { OrgInvitation, OrgMember, OrgMemberStatus, Role } from '../../types/index';
 import { Button } from '../common/UI';
+import { PlanComparisonModal } from '../billing/PlanComparisonModal';
 
 const ROLE_DESCRIPTIONS: Record<Role, string> = {
   OWNER: 'Full tenant ownership, organizational configuration, billing & member administration.',
@@ -50,6 +52,8 @@ export const TeamManager: React.FC = () => {
   const [inviteRole, setInviteRole] = useState<Role>('ENGINEER');
   const [inviting, setInviting] = useState(false);
   const [inviteResult, setInviteResult] = useState<OrgInvitation | null>(null);
+  const [isQuotaError, setIsQuotaError] = useState(false);
+  const [showPlanModal, setShowPlanModal] = useState(false);
 
   // Member Action state
   const [actionMember, setActionMember] = useState<OrgMember | null>(null);
@@ -91,11 +95,17 @@ export const TeamManager: React.FC = () => {
     try {
       setInviting(true);
       setError(null);
+      setIsQuotaError(false);
       const res = await api.inviteMember(inviteEmail.trim(), inviteRole);
       setInviteResult(res.invitation);
       showNotification(`Invitation created for ${inviteEmail}`);
       loadData();
     } catch (err: any) {
+      const isQuota =
+        err?.code === 'PLAN_LIMIT_REACHED' ||
+        err?.status === 403 ||
+        (err?.message && /quota|limit|plan|upgrade/i.test(err.message));
+      setIsQuotaError(Boolean(isQuota));
       setError(err.message || 'Failed to send invitation');
     } finally {
       setInviting(false);
@@ -200,14 +210,27 @@ export const TeamManager: React.FC = () => {
       )}
 
       {error && (
-        <div className="p-3 bg-rose-950/40 border border-rose-800/80 rounded-lg text-rose-300 text-xs font-mono flex items-center justify-between">
+        <div className="p-3 bg-rose-950/40 border border-rose-800/80 rounded-lg text-rose-300 text-xs font-mono flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
             <span>{error}</span>
           </div>
-          <button onClick={() => setError(null)} className="text-zinc-500 hover:text-zinc-300">
-            <X className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {isQuotaError && (
+              <Button
+                variant="primary"
+                size="sm"
+                className="bg-sky-600 hover:bg-sky-500 text-white font-bold"
+                onClick={() => setShowPlanModal(true)}
+                icon={<Sparkles className="w-3.5 h-3.5" />}
+              >
+                Upgrade Plan
+              </Button>
+            )}
+            <button onClick={() => setError(null)} className="text-zinc-500 hover:text-zinc-300">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -680,6 +703,16 @@ export const TeamManager: React.FC = () => {
           </div>
         </div>
       )}
+
+      <PlanComparisonModal
+        isOpen={showPlanModal}
+        onClose={() => setShowPlanModal(false)}
+        onPlanChanged={() => {
+          setError(null);
+          setIsQuotaError(false);
+          loadData();
+        }}
+      />
     </div>
   );
 };

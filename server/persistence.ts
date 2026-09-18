@@ -10,6 +10,7 @@ export interface PersistenceConfig {
   auditFile: string;
   webhooksFile: string;
   notificationsFile: string;
+  billingFile: string;
 }
 
 /**
@@ -68,7 +69,8 @@ export function resolvePersistenceConfig(
       storeFile: path.join(resolvedDir, 'skyops_store.json'),
       auditFile: path.join(resolvedDir, 'skyops_audit.json'),
       webhooksFile: path.join(resolvedDir, 'skyops_webhooks.json'),
-      notificationsFile: path.join(resolvedDir, 'skyops_notifications.json')
+      notificationsFile: path.join(resolvedDir, 'skyops_notifications.json'),
+      billingFile: path.join(resolvedDir, 'skyops_billing.json')
     };
   }
 
@@ -87,7 +89,8 @@ export function resolvePersistenceConfig(
       storeFile: path.join(testDir, 'skyops_store.json'),
       auditFile: path.join(testDir, 'skyops_audit.json'),
       webhooksFile: path.join(testDir, 'skyops_webhooks.json'),
-      notificationsFile: path.join(testDir, 'skyops_notifications.json')
+      notificationsFile: path.join(testDir, 'skyops_notifications.json'),
+      billingFile: path.join(testDir, 'skyops_billing.json')
     };
   }
 
@@ -106,7 +109,8 @@ export function resolvePersistenceConfig(
     storeFile: path.join(devDir, 'skyops_store.json'),
     auditFile: path.join(devDir, 'skyops_audit.json'),
     webhooksFile: path.join(devDir, 'skyops_webhooks.json'),
-    notificationsFile: path.join(devDir, 'skyops_notifications.json')
+    notificationsFile: path.join(devDir, 'skyops_notifications.json'),
+    billingFile: path.join(devDir, 'skyops_billing.json')
   };
 }
 

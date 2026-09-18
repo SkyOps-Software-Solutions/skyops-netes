@@ -13,12 +13,14 @@ import {
   Radio,
   Server,
   ShieldCheck,
+  Sparkles,
   Terminal
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { AgentManifestsResponse, Cluster } from '../../types/index';
 import { Button, Modal } from '../common/UI';
+import { PlanComparisonModal } from '../billing/PlanComparisonModal';
 
 interface AddClusterModalProps {
   isOpen: boolean;
@@ -41,6 +43,8 @@ export const AddClusterModal: React.FC<AddClusterModalProps> = ({
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isQuotaError, setIsQuotaError] = useState(false);
+  const [showPlanModal, setShowPlanModal] = useState(false);
   const [createdCluster, setCreatedCluster] = useState<Cluster | null>(null);
   const [manifestData, setManifestData] = useState<AgentManifestsResponse | null>(null);
   const [copied, setCopied] = useState(false);
@@ -61,6 +65,7 @@ export const AddClusterModal: React.FC<AddClusterModalProps> = ({
     try {
       setLoading(true);
       setError(null);
+      setIsQuotaError(false);
       const desc = description.trim() || `Environment: ${environmentType}`;
       const res = await api.createCluster(clusterName.trim(), desc);
       setCreatedCluster(res.cluster);
@@ -72,6 +77,11 @@ export const AddClusterModal: React.FC<AddClusterModalProps> = ({
 
       setCurrentStep(2);
     } catch (err: any) {
+      const isQuota =
+        err?.code === 'PLAN_LIMIT_REACHED' ||
+        err?.status === 403 ||
+        (err?.message && /quota|plan limit|exceeded|maximum/i.test(err.message));
+      setIsQuotaError(Boolean(isQuota));
       setError(err.message || 'Failed to initialize cluster creation.');
     } finally {
       setLoading(false);
@@ -240,9 +250,22 @@ export const AddClusterModal: React.FC<AddClusterModalProps> = ({
         </div>
 
         {error && (
-          <div className="p-3.5 text-xs rounded-xl bg-rose-950/40 border border-rose-800 text-rose-300 font-mono flex items-start gap-2.5">
-            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-            <div className="leading-relaxed">{error}</div>
+          <div className="p-3.5 text-xs rounded-xl bg-rose-950/40 border border-rose-800 text-rose-300 font-mono flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+              <div className="leading-relaxed">{error}</div>
+            </div>
+            {isQuotaError && (
+              <Button
+                variant="primary"
+                size="sm"
+                className="bg-sky-600 hover:bg-sky-500 text-white shrink-0 font-bold"
+                onClick={() => setShowPlanModal(true)}
+                icon={<Sparkles className="w-3.5 h-3.5" />}
+              >
+                Upgrade Plan
+              </Button>
+            )}
           </div>
         )}
 
@@ -591,6 +614,15 @@ export const AddClusterModal: React.FC<AddClusterModalProps> = ({
             </div>
           </div>
         )}
+
+        <PlanComparisonModal
+          isOpen={showPlanModal}
+          onClose={() => setShowPlanModal(false)}
+          onPlanChanged={() => {
+            setError(null);
+            setIsQuotaError(false);
+          }}
+        />
       </div>
     </Modal>
   );

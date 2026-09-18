@@ -12,6 +12,7 @@ import {
   Radio,
   RefreshCw,
   Send,
+  Sparkles,
   Trash2,
   Webhook,
   XCircle
@@ -19,6 +20,7 @@ import {
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { Button, CodeBlock, CopyButton, Modal } from '../common/UI';
+import { PlanComparisonModal } from '../billing/PlanComparisonModal';
 
 export const WebhooksManager: React.FC = () => {
   const [webhooks, setWebhooks] = useState<any[]>([]);
@@ -41,6 +43,8 @@ export const WebhooksManager: React.FC = () => {
   ]);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [isQuotaError, setIsQuotaError] = useState(false);
+  const [showPlanModal, setShowPlanModal] = useState(false);
 
   // Test Execution State
   const [testingId, setTestingId] = useState<string | null>(null);
@@ -72,6 +76,7 @@ export const WebhooksManager: React.FC = () => {
     try {
       setSubmitting(true);
       setFormError(null);
+      setIsQuotaError(false);
       await api.createWebhook({
         name: formName.trim(),
         url: formUrl.trim(),
@@ -84,6 +89,12 @@ export const WebhooksManager: React.FC = () => {
       setFormSecret('');
       fetchWebhooks();
     } catch (err: any) {
+      const isQuota =
+        err?.code === 'FEATURE_NOT_ENTITLED' ||
+        err?.code === 'PLAN_LIMIT_REACHED' ||
+        err?.status === 403 ||
+        (err?.message && /entitled|plan limit|upgrade/i.test(err.message));
+      setIsQuotaError(Boolean(isQuota));
       setFormError(err.message || 'Failed to create webhook');
     } finally {
       setSubmitting(false);
@@ -290,9 +301,22 @@ export const WebhooksManager: React.FC = () => {
       <Modal isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} title="Register Outbound Webhook">
         <form onSubmit={handleCreate} className="space-y-4 text-xs font-mono">
           {formError && (
-            <div className="p-2.5 rounded bg-rose-950/40 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{formError}</span>
+            <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-800 text-rose-300 text-xs flex items-start justify-between gap-2">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{formError}</span>
+              </div>
+              {isQuotaError && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="bg-sky-600 hover:bg-sky-500 text-white shrink-0 font-bold"
+                  onClick={() => setShowPlanModal(true)}
+                  icon={<Sparkles className="w-3.5 h-3.5" />}
+                >
+                  Upgrade Plan
+                </Button>
+              )}
             </div>
           )}
 
@@ -427,6 +451,16 @@ export const WebhooksManager: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      <PlanComparisonModal
+        isOpen={showPlanModal}
+        onClose={() => setShowPlanModal(false)}
+        onPlanChanged={() => {
+          setFormError(null);
+          setIsQuotaError(false);
+          fetchWebhooks();
+        }}
+      />
     </div>
   );
 };

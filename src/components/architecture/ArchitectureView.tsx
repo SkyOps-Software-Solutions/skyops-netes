@@ -1,42 +1,38 @@
-import React, { useMemo, useState } from 'react';
 import {
   Activity,
-  AlertCircle,
   AlertOctagon,
   AlertTriangle,
+  ArrowRight,
   Boxes,
   CheckCircle2,
   ChevronDown,
-  Clock,
-  Cpu,
-  Database,
   Filter,
-  Grid,
-  HardDrive,
-  Info,
-  Layers,
-  LayoutGrid,
+  Maximize2,
   Network,
-  Radio,
   RefreshCw,
+  Search,
   Server,
-  Shield,
-  ShieldAlert,
-  ShieldCheck,
+  Sparkles,
   Workflow,
-  Zap
+  X
 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
 import { Cluster, Incident, KubernetesResource } from '../../types/index';
-import { Button } from '../common/UI';
 import { NodeDetailModal } from '../resources/NodeDetailModal';
 import { PodDetailModal } from '../resources/PodDetailModal';
 import { ServiceDetailModal } from '../resources/ServiceDetailModal';
 import { WorkloadDetailModal } from '../resources/WorkloadDetailModal';
-import { ArchitectureDomainCard } from './ArchitectureDomainCard';
-import { ArchitectureDomainView } from './ArchitectureDomainView';
 import { buildArchitectureTelemetry } from './architectureTelemetry';
-import { ClusterArchitectureGraph } from './ClusterArchitectureGraph';
 import { GenericResourceDetailModal } from './GenericResourceDetailModal';
+import { ArchitectureExplanationModal } from './topology/ArchitectureExplanationModal';
+import { buildTopologyGraph } from './topology/topologyGraphBuilder';
+import { TopologyCanvas } from './topology/TopologyCanvas';
+import { TopologyInspectorDrawer } from './topology/TopologyInspectorDrawer';
+import {
+  TopologyFilterState,
+  TopologyNode,
+  TopologyViewMode
+} from './topology/types';
 import { ArchitectureDomainId, ArchitectureTelemetryState } from './types';
 
 interface ArchitectureViewProps {
@@ -62,12 +58,25 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
   onRefresh,
   isLoading = false
 }) => {
+  // Filters & View state
   const [selectedNamespace, setSelectedNamespace] = useState<string>('all');
-  const [activeDomainId, setActiveDomainId] = useState<ArchitectureDomainId | null>(null);
-  const [viewLayout, setViewLayout] = useState<'graph' | 'grid'>('graph');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [healthFilter, setHealthFilter] = useState<'all' | 'HEALTHY' | 'WARNING' | 'CRITICAL'>('all');
+  const [domainFilter, setDomainFilter] = useState<'all' | ArchitectureDomainId>('all');
+  const [incidentsOnly, setIncidentsOnly] = useState<boolean>(false);
+  const [viewMode, setViewMode] = useState<TopologyViewMode>('topology');
+  const [showFiltersPopover, setShowFiltersPopover] = useState<boolean>(false);
+
+  // Canvas & Interaction state
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [expandedNodeIds, setExpandedNodeIds] = useState<Set<string>>(new Set());
+  const [showMiniMap, setShowMiniMap] = useState<boolean>(true);
+  const [showExplainModal, setShowExplainModal] = useState<boolean>(false);
+
+  // Full Resource Detail Modal state
   const [activeResource, setActiveResource] = useState<KubernetesResource | null>(null);
 
-  // Filter resources by selectedClusterId if specific cluster chosen
+  // Filter resources by cluster
   const clusterFilteredResources = useMemo(() => {
     if (!selectedClusterId || selectedClusterId === 'all') {
       return resources;
@@ -75,7 +84,7 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
     return resources.filter((r) => r.clusterId === selectedClusterId);
   }, [resources, selectedClusterId]);
 
-  // Compute available namespaces from real telemetry
+  // Available namespaces from live telemetry
   const availableNamespaces = useMemo(() => {
     const nsSet = new Set<string>();
     for (const r of clusterFilteredResources) {
@@ -84,261 +93,463 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
     return Array.from(nsSet).sort();
   }, [clusterFilteredResources]);
 
-  // Target cluster entity if selected
+  // Active Cluster object
   const activeCluster = useMemo(() => {
     return clusters.find((c) => c.id === selectedClusterId) || clusters[0] || null;
   }, [clusters, selectedClusterId]);
 
-  // Build the complete Architecture Telemetry State
+  // Telemetry state
   const telemetry: ArchitectureTelemetryState = useMemo(() => {
     return buildArchitectureTelemetry(clusterFilteredResources, clusters, incidents);
   }, [clusterFilteredResources, clusters, incidents]);
 
-  // Identify resource kind for modal dispatch
-  const isWorkloadKind = (kind: string) => {
-    return ['Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet', 'Job', 'CronJob', 'Rollout'].includes(kind);
+  // Filter state for builder
+  const filterState: TopologyFilterState = useMemo(
+    () => ({
+      namespace: selectedNamespace,
+      search: searchQuery,
+      health: healthFilter,
+      domain: domainFilter,
+      incidentsOnly
+    }),
+    [selectedNamespace, searchQuery, healthFilter, domainFilter, incidentsOnly]
+  );
+
+  // Build Topology Graph
+  const graphData = useMemo(() => {
+    return buildTopologyGraph({
+      resources: clusterFilteredResources,
+      cluster: activeCluster,
+      incidents,
+      filters: filterState,
+      expandedNodeIds
+    });
+  }, [clusterFilteredResources, activeCluster, incidents, filterState, expandedNodeIds]);
+
+  // Active selected topology node
+  const selectedNode = useMemo(() => {
+    if (!selectedNodeId) return null;
+    return graphData.nodeMap.get(selectedNodeId) || null;
+  }, [selectedNodeId, graphData.nodeMap]);
+
+  // Node expand / collapse toggle
+  const handleToggleExpand = (nodeId: string) => {
+    setExpandedNodeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+      } else {
+        next.add(nodeId);
+      }
+      return next;
+    });
   };
 
-  // Close active modal
+  // Node selection in canvas
+  const handleSelectNode = (node: TopologyNode | null) => {
+    setSelectedNodeId(node ? node.id : null);
+  };
+
+  // Helper to open full resource detail modal
+  const handleOpenDetailsModal = (res: KubernetesResource) => {
+    setActiveResource(res);
+  };
+
   const handleCloseModal = () => {
     setActiveResource(null);
   };
 
-  // Switch modal to a new resource when clicked inside topology tree
-  const handleSelectResourceInModal = (res: KubernetesResource) => {
-    setActiveResource(res);
+  const isWorkloadKind = (kind: string) => {
+    return ['Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet', 'Job', 'CronJob', 'Rollout'].includes(kind);
   };
 
-  const domainKeys: ArchitectureDomainId[] = [
-    'compute',
-    'workloads',
-    'networking',
-    'storage',
-    'configuration',
-    'scheduling',
-    'scaling',
-    'security'
-  ];
+  // Operational metrics summary
+  const nodeCount = clusterFilteredResources.filter((r) => r.kind === 'Node').length;
+  const readyNodesCount = clusterFilteredResources.filter(
+    (r) => r.kind === 'Node' && (r.status === 'Ready' || r.health === 'HEALTHY')
+  ).length;
+
+  const podCount = clusterFilteredResources.filter((r) => r.kind === 'Pod').length;
+  const readyPodsCount = clusterFilteredResources.filter(
+    (r) => r.kind === 'Pod' && (r.status === 'Running' || r.health === 'HEALTHY')
+  ).length;
+
+  const serviceCount = clusterFilteredResources.filter((r) => r.kind === 'Service').length;
+  const pvcCount = clusterFilteredResources.filter((r) => r.kind === 'PersistentVolumeClaim').length;
+  const boundPvcCount = clusterFilteredResources.filter(
+    (r) => r.kind === 'PersistentVolumeClaim' && (r.status === 'Bound' || r.health === 'HEALTHY')
+  ).length;
+
+  // Active incidents for the current cluster
+  const activeClusterIncidents = useMemo(() => {
+    return incidents.filter(
+      (i) => (!activeCluster?.id || i.clusterId === activeCluster.id) && i.status !== 'RESOLVED'
+    );
+  }, [incidents, activeCluster]);
 
   return (
-    <div className="space-y-6">
-      {/* Top Architecture Controls Header */}
-      <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl p-5 shadow-sm">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-mono font-bold tracking-wider text-sky-400 uppercase">
-                Architecture Center
-              </span>
-              <span
-                className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold flex items-center gap-1 ${
-                  telemetry.freshness === 'LIVE'
-                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                    : telemetry.freshness === 'STALE'
-                    ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
-                    : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
-                }`}
-              >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    telemetry.freshness === 'LIVE'
-                      ? 'bg-emerald-400 animate-pulse'
-                      : telemetry.freshness === 'STALE'
-                      ? 'bg-amber-400'
-                      : 'bg-zinc-500'
-                  }`}
-                />
-                {telemetry.freshness === 'LIVE'
-                  ? 'LIVE TELEMETRY'
-                  : telemetry.freshness === 'STALE'
-                  ? `STALE (${telemetry.ageSeconds}s ago)`
-                  : 'TELEMETRY UNAVAILABLE'}
-              </span>
-            </div>
-            <h1 className="text-xl font-bold text-zinc-100 tracking-tight">
-              Real Cluster Architecture & Telemetry Mesh
+    <div className="flex flex-col h-[calc(100vh-140px)] min-h-[700px] w-full bg-zinc-950 text-zinc-100 rounded-2xl border border-zinc-800/90 shadow-2xl overflow-hidden font-sans">
+      {/* ==========================================
+          1. HEADER TOOLBAR
+          ========================================== */}
+      <div className="p-4 border-b border-zinc-800/90 bg-zinc-950/80 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 shrink-0">
+        {/* Left: Title & Subtitle */}
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-lg font-bold text-zinc-100 tracking-tight flex items-center gap-2">
+              <span>Architecture</span>
             </h1>
-            <p className="text-xs text-zinc-400 mt-1 max-w-2xl">
-              Verified end-to-end topology computed dynamically from live Kubernetes agent telemetry across Compute, Networking, Workloads, Storage, Configuration, Scheduling, Scaling, and Security.
-            </p>
+            <span
+              className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold flex items-center gap-1.5 ${
+                telemetry.freshness === 'LIVE'
+                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                  : telemetry.freshness === 'STALE'
+                  ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                  : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+              }`}
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  telemetry.freshness === 'LIVE'
+                    ? 'bg-emerald-400 animate-pulse'
+                    : telemetry.freshness === 'STALE'
+                    ? 'bg-amber-400'
+                    : 'bg-zinc-500'
+                }`}
+              />
+              {telemetry.freshness === 'LIVE'
+                ? 'Live Topology'
+                : telemetry.freshness === 'STALE'
+                ? `Stale (${telemetry.ageSeconds}s)`
+                : 'Offline'}
+            </span>
           </div>
+          <p className="text-xs text-zinc-400 mt-0.5 hidden sm:block">
+            Visualize your Kubernetes cluster, understand relationships, and explore your infrastructure.
+          </p>
+        </div>
 
-          {/* Controls: Cluster Select, Namespace Filter, View Mode, Refresh */}
-          <div className="flex items-center gap-2.5 flex-wrap">
-            {/* Cluster Selector */}
-            <div className="relative">
+        {/* Center & Right: Controls */}
+        <div className="flex items-center gap-2 flex-wrap ml-auto">
+          {/* Cluster Selector */}
+          <div className="relative">
+            <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 pr-7 text-xs font-mono text-zinc-200 cursor-pointer hover:border-zinc-700">
+              <Server className="w-3.5 h-3.5 text-sky-400 mr-1.5 shrink-0" />
               <select
                 value={selectedClusterId}
                 onChange={(e) => onSelectCluster(e.target.value)}
-                className="bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 rounded-lg px-3 py-2 pr-8 focus:outline-none focus:border-sky-500 appearance-none font-mono cursor-pointer"
+                className="bg-transparent text-xs text-zinc-200 focus:outline-none appearance-none cursor-pointer pr-1"
               >
-                <option value="all">Fleet View (All Clusters)</option>
+                <option value="all" className="bg-zinc-950 text-zinc-200">
+                  Cluster: Fleet View
+                </option>
                 {clusters.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.region || 'global'})
+                  <option key={c.id} value={c.id} className="bg-zinc-950 text-zinc-200">
+                    Cluster: {c.name}
                   </option>
                 ))}
               </select>
-              <ChevronDown className="w-3.5 h-3.5 text-zinc-500 absolute right-2.5 top-3 pointer-events-none" />
             </div>
+            <ChevronDown className="w-3.5 h-3.5 text-zinc-500 absolute right-2.5 top-2.5 pointer-events-none" />
+          </div>
 
-            {/* Namespace Filter */}
-            <div className="relative">
-              <select
-                value={selectedNamespace}
-                onChange={(e) => setSelectedNamespace(e.target.value)}
-                className="bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 rounded-lg px-3 py-2 pr-8 focus:outline-none focus:border-sky-500 appearance-none font-mono cursor-pointer"
-              >
-                <option value="all">All Namespaces</option>
-                {availableNamespaces.map((ns) => (
-                  <option key={ns} value={ns}>
-                    ns: {ns}
-                  </option>
-                ))}
-              </select>
-              <Filter className="w-3.5 h-3.5 text-zinc-500 absolute right-2.5 top-3 pointer-events-none" />
-            </div>
+          {/* Namespace Filter */}
+          <div className="relative">
+            <select
+              value={selectedNamespace}
+              onChange={(e) => setSelectedNamespace(e.target.value)}
+              className="bg-zinc-900 border border-zinc-800 text-xs text-zinc-200 rounded-lg px-2.5 py-1.5 pr-7 focus:outline-none focus:border-sky-500 appearance-none font-mono cursor-pointer hover:border-zinc-700"
+            >
+              <option value="all" className="bg-zinc-950">All Namespaces</option>
+              {availableNamespaces.map((ns) => (
+                <option key={ns} value={ns} className="bg-zinc-950">
+                  {ns}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-zinc-500 absolute right-2.5 top-2.5 pointer-events-none" />
+          </div>
 
-            {/* View Mode Toggle (Graph vs Grid) */}
-            <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded-lg p-0.5">
+          {/* Search Input */}
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-2.5 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Filter resources..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-zinc-900 border border-zinc-800 text-xs text-zinc-200 rounded-lg pl-8 pr-3 py-1.5 focus:outline-none focus:border-sky-500 font-mono w-40 sm:w-48 placeholder-zinc-500 hover:border-zinc-700"
+            />
+            {searchQuery && (
               <button
-                onClick={() => setViewLayout('graph')}
-                title="Architecture Mesh Graph"
-                className={`p-1.5 rounded text-xs transition-colors cursor-pointer ${
-                  viewLayout === 'graph'
-                    ? 'bg-sky-500/20 text-sky-400 font-semibold'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-2 text-zinc-500 hover:text-zinc-300 text-xs"
               >
-                <Workflow className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setViewLayout('grid')}
-                title="Domain Cards Grid"
-                className={`p-1.5 rounded text-xs transition-colors cursor-pointer ${
-                  viewLayout === 'grid'
-                    ? 'bg-sky-500/20 text-sky-400 font-semibold'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Refresh */}
-            {onRefresh && (
-              <button
-                onClick={onRefresh}
-                disabled={isLoading}
-                title="Poll live telemetry"
-                className="p-2 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
-              >
-                <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-sky-400' : ''}`} />
+                ✕
               </button>
             )}
           </div>
+
+          {/* View Dropdown */}
+          <div className="relative">
+            <select
+              value={viewMode}
+              onChange={(e) => setViewMode(e.target.value as TopologyViewMode)}
+              className="bg-zinc-900 border border-zinc-800 text-xs text-zinc-200 rounded-lg px-2.5 py-1.5 pr-7 focus:outline-none appearance-none font-mono cursor-pointer hover:border-zinc-700"
+            >
+              <option value="topology" className="bg-zinc-950">View: Topology</option>
+              <option value="grouped_namespace" className="bg-zinc-950">View: By Namespace</option>
+              <option value="grouped_domain" className="bg-zinc-950">View: By Domain</option>
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-zinc-500 absolute right-2.5 top-2.5 pointer-events-none" />
+          </div>
+
+          {/* Filters Toggle Button */}
+          <div className="relative">
+            <button
+              onClick={() => setShowFiltersPopover(!showFiltersPopover)}
+              className={`p-1.5 px-2.5 rounded-lg border text-xs font-mono flex items-center gap-1.5 transition cursor-pointer ${
+                healthFilter !== 'all' || domainFilter !== 'all' || incidentsOnly
+                  ? 'bg-sky-500/20 border-sky-500/40 text-sky-400'
+                  : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700'
+              }`}
+            >
+              <Filter className="w-3.5 h-3.5" />
+              <span>Filters</span>
+              {(healthFilter !== 'all' || domainFilter !== 'all' || incidentsOnly) && (
+                <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+              )}
+            </button>
+
+            {/* Filters Popover */}
+            {showFiltersPopover && (
+              <div className="absolute right-0 top-full mt-2 w-64 bg-zinc-950 border border-zinc-800 rounded-xl p-3 shadow-2xl z-40 space-y-3 font-mono text-xs">
+                <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+                  <span className="font-bold text-zinc-200">Topology Filters</span>
+                  <button
+                    onClick={() => {
+                      setHealthFilter('all');
+                      setDomainFilter('all');
+                      setIncidentsOnly(false);
+                    }}
+                    className="text-[10px] text-sky-400 hover:underline"
+                  >
+                    Reset
+                  </button>
+                </div>
+
+                {/* Health Filter */}
+                <div>
+                  <span className="text-zinc-500 text-[10px] block mb-1">Health Status</span>
+                  <select
+                    value={healthFilter}
+                    onChange={(e) => setHealthFilter(e.target.value as any)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded p-1.5 text-zinc-200 text-xs"
+                  >
+                    <option value="all">All Health States</option>
+                    <option value="HEALTHY">Healthy Only</option>
+                    <option value="WARNING">Warning Only</option>
+                    <option value="CRITICAL">Critical Only</option>
+                  </select>
+                </div>
+
+                {/* Domain Filter */}
+                <div>
+                  <span className="text-zinc-500 text-[10px] block mb-1">Architectural Domain</span>
+                  <select
+                    value={domainFilter}
+                    onChange={(e) => setDomainFilter(e.target.value as any)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded p-1.5 text-zinc-200 text-xs"
+                  >
+                    <option value="all">All Domains</option>
+                    <option value="compute">Compute Only</option>
+                    <option value="workloads">Workloads Only</option>
+                    <option value="networking">Networking Only</option>
+                    <option value="storage">Storage Only</option>
+                    <option value="configuration">Configuration Only</option>
+                    <option value="security">Security Only</option>
+                    <option value="scheduling">Scheduling Only</option>
+                  </select>
+                </div>
+
+                {/* Incident Only Toggle */}
+                <label className="flex items-center gap-2 text-zinc-300 text-[11px] cursor-pointer pt-1 border-t border-zinc-900">
+                  <input
+                    type="checkbox"
+                    checked={incidentsOnly}
+                    onChange={(e) => setIncidentsOnly(e.target.checked)}
+                    className="rounded bg-zinc-900 border-zinc-700 text-sky-500 focus:ring-0 cursor-pointer"
+                  />
+                  <span>Only Resources with Incidents</span>
+                </label>
+              </div>
+            )}
+          </div>
+
+          {/* Refresh button */}
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              disabled={isLoading}
+              title="Poll latest cluster telemetry"
+              className="p-1.5 px-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 rounded-lg transition cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-sky-400' : ''}`} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ==========================================
+          2. CENTRAL WORKSPACE: CANVAS & INSPECTOR
+          ========================================== */}
+      <div className="relative flex-1 flex overflow-hidden w-full h-full">
+        {/* Central Canvas Viewport */}
+        <div className="flex-1 h-full relative">
+          <TopologyCanvas
+            graphData={graphData}
+            selectedNodeId={selectedNodeId}
+            onSelectNode={handleSelectNode}
+            onToggleExpand={handleToggleExpand}
+            showMiniMap={showMiniMap}
+            onToggleMiniMap={() => setShowMiniMap(!showMiniMap)}
+            onOpenDetailsModal={handleOpenDetailsModal}
+          />
         </div>
 
-        {/* Telemetry Status Strip */}
-        <div className="mt-5 pt-4 border-t border-zinc-800/80 grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-zinc-950/80 p-3 rounded-lg border border-zinc-800/80">
-            <div className="text-[10px] font-mono uppercase text-zinc-500">Fleet Objects</div>
-            <div className="text-base font-bold text-zinc-100 mt-0.5">
-              {telemetry.totalResourceCount}
-            </div>
-            <div className="text-[10px] text-zinc-400 mt-0.5">Verified across 8 domains</div>
-          </div>
+        {/* Right-Side Resource Inspector Drawer */}
+        {selectedNode && (
+          <TopologyInspectorDrawer
+            node={selectedNode}
+            onClose={() => setSelectedNodeId(null)}
+            onOpenDetailsModal={handleOpenDetailsModal}
+            onSelectResourceById={(id) => setSelectedNodeId(id)}
+            onSelectIncident={(inc) => {
+              if (onSelectIncident) onSelectIncident(inc.id);
+            }}
+            onOpenLogs={(res) => {
+              if (onOpenLogs) onOpenLogs(res.clusterId, res.namespace || 'default', res.name);
+            }}
+            onOpenAiExplain={() => setShowExplainModal(true)}
+          />
+        )}
+      </div>
 
-          <div className="bg-zinc-950/80 p-3 rounded-lg border border-zinc-800/80">
-            <div className="text-[10px] font-mono uppercase text-zinc-500">Fleet Health</div>
-            <div className="text-base font-bold text-emerald-400 mt-0.5 flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span>
-                {clusterFilteredResources.filter((r) => r.health === 'HEALTHY').length} Healthy
+      {/* ==========================================
+          3. BOTTOM OPERATIONAL STATUS BAR
+          ========================================== */}
+      <div className="p-3 border-t border-zinc-800/90 bg-zinc-950/90 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 text-xs font-mono shrink-0">
+        {/* Left: Active Incidents banner */}
+        <div className="flex items-center gap-2 min-w-0">
+          {activeClusterIncidents.length > 0 ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-950/40 border border-rose-900/60 text-rose-300 min-w-0">
+              <AlertOctagon className="w-3.5 h-3.5 text-rose-400 shrink-0 animate-pulse" />
+              <span className="font-bold shrink-0">
+                Active Incidents ({activeClusterIncidents.length})
               </span>
+              <span className="text-zinc-500 hidden sm:inline">|</span>
+              <span className="text-zinc-300 truncate hidden sm:inline">
+                {activeClusterIncidents[0].title} — {activeClusterIncidents[0].resourceName}
+              </span>
+              <button
+                onClick={() => {
+                  const first = activeClusterIncidents[0];
+                  if (first) {
+                    // Focus affected resource in canvas
+                    const matchingNode = graphData.nodes.find(
+                      (n) => n.name === first.resourceName || n.resource?.name === first.resourceName
+                    );
+                    if (matchingNode) {
+                      setSelectedNodeId(matchingNode.id);
+                    } else if (onSelectIncident) {
+                      onSelectIncident(first.id);
+                    }
+                  }
+                }}
+                className="text-sky-400 hover:text-sky-300 text-[11px] font-bold underline ml-1 shrink-0 cursor-pointer"
+              >
+                Focus →
+              </button>
             </div>
-            <div className="text-[10px] text-zinc-400 mt-0.5">
-              {clusterFilteredResources.filter((r) => r.health === 'WARNING' || r.health === 'CRITICAL').length} degraded
+          ) : (
+            <div className="flex items-center gap-1.5 text-emerald-400 px-3 py-1.5 rounded-lg bg-emerald-950/20 border border-emerald-900/40">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Zero active incidents detected in current cluster</span>
             </div>
+          )}
+        </div>
+
+        {/* Right: Cluster Health metric badges */}
+        <div className="flex items-center gap-2 flex-wrap ml-auto">
+          {/* Cluster Health */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800">
+            <span className="text-zinc-500 text-[11px]">Cluster Health:</span>
+            <span
+              className={`font-bold flex items-center gap-1 ${
+                telemetry.totalIncidentCount > 0 ? 'text-rose-400' : 'text-emerald-400'
+              }`}
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  telemetry.totalIncidentCount > 0 ? 'bg-rose-500' : 'bg-emerald-400'
+                }`}
+              />
+              {telemetry.totalIncidentCount > 0 ? 'Degraded' : 'Healthy'}
+            </span>
           </div>
 
-          <div className="bg-zinc-950/80 p-3 rounded-lg border border-zinc-800/80">
-            <div className="text-[10px] font-mono uppercase text-zinc-500">Active Incidents</div>
-            <div className="text-base font-bold text-zinc-100 mt-0.5 flex items-center gap-1.5">
-              {incidents.length > 0 ? (
-                <span className="text-red-400 flex items-center gap-1">
-                  <AlertOctagon className="w-4 h-4" /> {incidents.length} Active
-                </span>
-              ) : (
-                <span className="text-zinc-400">0 Active</span>
-              )}
-            </div>
-            <div className="text-[10px] text-zinc-400 mt-0.5">Automated detection active</div>
+          {/* Nodes */}
+          <div className="px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px]">
+            <span className="text-zinc-500">Nodes: </span>
+            <span className="text-zinc-200 font-semibold">
+              {readyNodesCount}/{nodeCount}
+            </span>
           </div>
 
-          <div className="bg-zinc-950/80 p-3 rounded-lg border border-zinc-800/80">
-            <div className="text-[10px] font-mono uppercase text-zinc-500">Telemetry Ingress</div>
-            <div className="text-base font-bold text-zinc-100 mt-0.5 font-mono">
-              {telemetry.ageSeconds !== null ? `${telemetry.ageSeconds}s ago` : 'Syncing'}
-            </div>
-            <div className="text-[10px] text-zinc-400 mt-0.5">SkyOps Agent stream</div>
+          {/* Pods */}
+          <div className="px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px]">
+            <span className="text-zinc-500">Pods: </span>
+            <span
+              className={`font-semibold ${
+                readyPodsCount < podCount ? 'text-amber-400' : 'text-zinc-200'
+              }`}
+            >
+              {readyPodsCount}/{podCount}
+            </span>
+          </div>
+
+          {/* Services */}
+          <div className="px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px]">
+            <span className="text-zinc-500">Services: </span>
+            <span className="text-zinc-200 font-semibold">{serviceCount}</span>
+          </div>
+
+          {/* PVCs */}
+          <div className="px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px]">
+            <span className="text-zinc-500">PVCs: </span>
+            <span className="text-zinc-200 font-semibold">
+              {pvcCount > 0 ? `${boundPvcCount}/${pvcCount}` : 'None'}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* LEVEL 1 VS LEVEL 2 VIEW SWITCHER */}
-      {activeDomainId ? (
-        /* LEVEL 2: SPECIFIC DOMAIN DEEP DIVE */
-        <ArchitectureDomainView
-          domainId={activeDomainId}
-          telemetry={telemetry}
-          clusters={clusters}
-          selectedClusterId={selectedClusterId}
-          selectedNamespace={selectedNamespace}
-          onBack={() => setActiveDomainId(null)}
-          onSelectResource={(res) => setActiveResource(res)}
-          onSelectIncident={onSelectIncident}
-          onOpenLogs={onOpenLogs}
-        />
-      ) : (
-        /* LEVEL 1: OVERVIEW ARCHITECTURE VIEW */
-        <div className="space-y-6">
-          {viewLayout === 'graph' ? (
-            /* Interactive Central Cluster Architecture Graph */
-            <div className="space-y-6">
-              <ClusterArchitectureGraph
-                cluster={activeCluster}
-                telemetry={telemetry}
-                onSelectDomain={(id) => setActiveDomainId(id)}
-              />
+      {/* ==========================================
+          4. MODALS (DETAIL MODALS + AI EXPLANATION)
+          ========================================== */}
+      {/* AI Explanation Modal */}
+      <ArchitectureExplanationModal
+        isOpen={showExplainModal}
+        onClose={() => setShowExplainModal(false)}
+        cluster={activeCluster}
+        resources={clusterFilteredResources}
+        telemetry={telemetry}
+        incidents={activeClusterIncidents}
+        selectedNode={selectedNode}
+        onSelectResource={handleOpenDetailsModal}
+      />
 
-              {/* Quick Summary Grid Below Graph */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {domainKeys.map((key) => (
-                  <ArchitectureDomainCard
-                    key={key}
-                    domain={telemetry.domains[key]}
-                    onSelectDomain={(id) => setActiveDomainId(id)}
-                  />
-                ))}
-              </div>
-            </div>
-          ) : (
-            /* Domain Cards Grid Mode */
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {domainKeys.map((key) => (
-                <ArchitectureDomainCard
-                  key={key}
-                  domain={telemetry.domains[key]}
-                  onSelectDomain={(id) => setActiveDomainId(id)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* DETAIL MODAL DRILL-DOWN CONTINUITY */}
+      {/* Detail Modals for Seamless Continuity */}
       {activeResource && (
         <>
           {activeResource.kind === 'Node' && (
@@ -347,7 +558,7 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
               clusterResources={clusterFilteredResources}
               incidents={incidents}
               onClose={handleCloseModal}
-              onSelectPod={handleSelectResourceInModal}
+              onSelectPod={handleOpenDetailsModal}
             />
           )}
 
@@ -357,11 +568,15 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
               clusterResources={clusterFilteredResources}
               incidents={incidents}
               onClose={handleCloseModal}
-              onSelectNode={handleSelectResourceInModal}
-              onSelectWorkload={handleSelectResourceInModal}
-              onSelectService={handleSelectResourceInModal}
-              onSelectIncident={onSelectIncident}
-              onOpenLogs={onOpenLogs}
+              onSelectNode={handleOpenDetailsModal}
+              onSelectWorkload={handleOpenDetailsModal}
+              onSelectService={handleOpenDetailsModal}
+              onSelectIncident={(incId) => {
+                if (onSelectIncident) onSelectIncident(incId);
+              }}
+              onOpenLogs={(pod) => {
+                if (onOpenLogs) onOpenLogs(pod.clusterId, pod.namespace || 'default', pod.name);
+              }}
             />
           )}
 
@@ -371,7 +586,7 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
               clusterResources={clusterFilteredResources}
               incidents={incidents}
               onClose={handleCloseModal}
-              onSelectPod={handleSelectResourceInModal}
+              onSelectPod={handleOpenDetailsModal}
             />
           )}
 
@@ -381,9 +596,11 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
               clusterResources={clusterFilteredResources}
               incidents={incidents}
               onClose={handleCloseModal}
-              onSelectPod={handleSelectResourceInModal}
-              onSelectResource={handleSelectResourceInModal}
-              onSelectIncident={onSelectIncident}
+              onSelectPod={handleOpenDetailsModal}
+              onSelectResource={handleOpenDetailsModal}
+              onSelectIncident={(incId) => {
+                if (onSelectIncident) onSelectIncident(incId);
+              }}
             />
           )}
 
@@ -394,8 +611,10 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
                 clusterResources={clusterFilteredResources}
                 incidents={incidents}
                 onClose={handleCloseModal}
-                onSelectResource={handleSelectResourceInModal}
-                onSelectIncident={onSelectIncident}
+                onSelectResource={handleOpenDetailsModal}
+                onSelectIncident={(inc) => {
+                  if (onSelectIncident) onSelectIncident(inc.id);
+                }}
               />
             )}
         </>

@@ -61,7 +61,12 @@ async function fetchGooglePublicCerts(): Promise<{ [key: string]: string }> {
 export async function verifyFirebaseIdToken(rawToken: string, projectId: string): Promise<AuthenticatedUser> {
   // Demo credentials are never valid in production and require explicit local opt-in.
   if (rawToken.startsWith('sky_demo_') || rawToken.startsWith('demo_')) {
-    if (isProduction || !config.SKYOPS_ALLOW_DEMO_AUTH) {
+    const allowDemo =
+      process.env.SKYOPS_ALLOW_DEMO_AUTH !== undefined
+        ? (process.env.SKYOPS_ALLOW_DEMO_AUTH === 'true' || process.env.SKYOPS_ALLOW_DEMO_AUTH === '1')
+        : (!isProduction && Boolean(config.SKYOPS_ALLOW_DEMO_AUTH));
+
+    if (isProduction || !allowDemo) {
       throw new Error('Demo authentication is disabled');
     }
     const isSkyPrefix = rawToken.startsWith('sky_demo_');

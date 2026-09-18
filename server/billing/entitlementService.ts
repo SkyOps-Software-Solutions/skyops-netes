@@ -18,7 +18,7 @@ export class EntitlementService {
    * Get active subscription for organization
    */
   public getSubscription(orgId: string): Subscription {
-    return billingService.getSubscription(orgId);
+    return billingService.getSubscription(orgId) as unknown as Subscription;
   }
 
   /**
@@ -260,7 +260,7 @@ export class EntitlementService {
         actorName: 'Entitlement Quota Engine',
         actorType: 'SYSTEM',
         action: 'plan_limit_reached',
-        resourceType: 'QUOTA',
+        resourceType: 'SUBSCRIPTION',
         resourceId: resource,
         result: 'FAILURE',
         details: { resource, current, limit, plan }

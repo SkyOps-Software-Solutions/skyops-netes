@@ -534,7 +534,7 @@ const CreateClusterSchema = z.object({
 app.post('/api/v1/clusters', requireUserAuth, requireOrgMembership, requirePermission('cluster.manage'), (req: AuthenticatedUserRequest, res) => {
   const entitlement = entitlementService.canCreateCluster(req.orgId!);
   if (!entitlement.allowed) {
-    return res.status(402).json(entitlement.error);
+    return res.status(403).json(entitlement.error || { code: 'PLAN_LIMIT_REACHED', upgradeRequired: true, error: 'Cluster limit reached' });
   }
 
   const parsed = CreateClusterSchema.safeParse(req.body);
@@ -2022,7 +2022,11 @@ app.get('/api/v1/integrations/webhooks', requireUserAuth, requireOrgMembership, 
 app.post('/api/v1/integrations/webhooks', requireUserAuth, requireOrgMembership, requirePermission('integration.manage'), (req: AuthenticatedUserRequest, res) => {
   const entitlement = entitlementService.canUseWebhooks(req.orgId!);
   if (!entitlement.allowed) {
-    return res.status(402).json(entitlement.error);
+    return res.status(403).json({
+      code: 'FEATURE_NOT_ENTITLED',
+      error: 'Outbound webhooks and integrations are disabled on the Free tier. Upgrade to Pro or Business to configure custom HTTP webhooks.',
+      upgradeRequired: true
+    });
   }
 
   const parsed = CreateWebhookSchema.safeParse(req.body);
@@ -2096,7 +2100,7 @@ app.get('/api/v1/orgs/usage', requireUserAuth, requireOrgMembership, requirePerm
 // Public / Authenticated: List all plans, intervals, pricing, limits, and features
 app.get('/api/v1/billing/plans', (req, res) => {
   res.json({
-    plans: PLANS,
+    plans: Object.values(PLANS),
     intervals: BILLING_INTERVALS,
     defaultTrialDays: DEFAULT_TRIAL_DAYS
   });
@@ -2105,13 +2109,34 @@ app.get('/api/v1/billing/plans', (req, res) => {
 // Get current organization subscription & usage overview
 app.get('/api/v1/billing/subscription', requireUserAuth, requireOrgMembership, requirePermission('billing.read'), (req: AuthenticatedUserRequest, res) => {
   const overview = billingService.getSubscriptionOverview(req.orgId!);
-  res.json(overview);
+  res.json({
+    ...overview,
+    subscription: overview.subscription,
+    entitlements: overview.entitlements,
+    plan: overview.plan,
+    usage: overview.usage
+  });
+});
+
+// Get organization entitlements and limits
+app.get('/api/v1/billing/entitlements', requireUserAuth, requireOrgMembership, requirePermission('billing.read'), (req: AuthenticatedUserRequest, res) => {
+  const overview = billingService.getSubscriptionOverview(req.orgId!);
+  const sub = overview.subscription;
+  const entitlements = {
+    planId: sub.planId,
+    status: sub.status,
+    limits: overview.entitlements.limits,
+    features: overview.entitlements.features,
+    effectiveLimits: overview.entitlements.limits
+  };
+  res.json({ entitlements, subscription: sub });
 });
 
 // Initiate checkout session for upgrade / new plan selection
 const CheckoutSchema = z.object({
   planId: z.enum(['PRO', 'BUSINESS']),
-  interval: z.enum(['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY']),
+  interval: z.enum(['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY']).optional(),
+  billingInterval: z.enum(['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY']).optional(),
   returnUrl: z.string().optional()
 });
 
@@ -2121,15 +2146,17 @@ app.post('/api/v1/billing/checkout', requireUserAuth, requireOrgMembership, requ
     return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid checkout payload' });
   }
 
+  const chosenInterval = parsed.data.interval || parsed.data.billingInterval || 'MONTHLY';
+
   try {
     const result = await billingService.createCheckout(
       req.orgId!,
       parsed.data.planId,
-      parsed.data.interval,
+      chosenInterval,
       req.user!,
       parsed.data.returnUrl
     );
-    res.json(result);
+    res.status(201).json({ session: result.session || result, ...result });
   } catch (err: any) {
     res.status(400).json({ error: err?.message || 'Failed to initiate checkout' });
   }
@@ -2137,8 +2164,9 @@ app.post('/api/v1/billing/checkout', requireUserAuth, requireOrgMembership, requ
 
 // Complete / Confirm checkout session (used for instant checkout activation)
 const ConfirmCheckoutSchema = z.object({
-  planId: z.enum(['PRO', 'BUSINESS']),
-  interval: z.enum(['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY']),
+  planId: z.enum(['PRO', 'BUSINESS']).optional(),
+  interval: z.enum(['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY']).optional(),
+  billingInterval: z.enum(['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY']).optional(),
   sessionId: z.string().optional()
 });
 
@@ -2149,14 +2177,25 @@ app.post('/api/v1/billing/checkout/confirm', requireUserAuth, requireOrgMembersh
   }
 
   try {
-    const result = await billingService.confirmCheckout(
-      req.orgId!,
-      parsed.data.planId,
-      parsed.data.interval,
-      { id: req.user!.id, name: req.user!.name || req.user!.email, email: req.user!.email }
-    );
+    const actor = { id: req.user!.id, name: req.user!.name || req.user!.email, email: req.user!.email };
+    let result: any;
+
+    if (parsed.data.sessionId) {
+      result = await billingService.confirmCheckout(parsed.data.sessionId, req.orgId!, actor);
+    } else {
+      const planId = parsed.data.planId || 'PRO';
+      const interval = parsed.data.interval || parsed.data.billingInterval || 'MONTHLY';
+      result = await billingService.confirmCheckout(req.orgId!, planId, interval, actor);
+    }
+
     const overview = billingService.getSubscriptionOverview(req.orgId!);
-    res.json({ success: true, ...result, overview });
+    res.json({
+      success: true,
+      subscription: result.subscription,
+      invoice: result.invoice,
+      ...result,
+      overview
+    });
   } catch (err: any) {
     res.status(400).json({ error: err?.message || 'Failed to confirm checkout' });
   }

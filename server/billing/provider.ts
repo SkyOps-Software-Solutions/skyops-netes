@@ -21,6 +21,7 @@ export interface CheckoutSessionParams {
 }
 
 export interface CheckoutSessionResult {
+  id?: string;
   sessionId: string;
   checkoutUrl: string;
   provider: string;
@@ -94,6 +95,7 @@ export class MockBillingProvider implements BillingProvider {
     const checkoutUrl = `/billing/checkout?session_id=${sessionId}&org_id=${params.orgId}&plan=${params.planId}&interval=${params.billingInterval}`;
 
     return {
+      id: sessionId,
       sessionId,
       checkoutUrl,
       provider: 'mock',

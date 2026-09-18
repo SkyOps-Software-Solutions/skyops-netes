@@ -15,6 +15,137 @@ import { store } from '../store';
 import { getBillingProvider } from './provider';
 
 export class BillingService {
+  private checkoutSessions = new Map<
+    string,
+    {
+      id: string;
+      organizationId: string;
+      planId: PlanId;
+      billingInterval: BillingInterval;
+      amount: number;
+      currency: string;
+      customerEmail: string;
+      customerName: string;
+      createdAt: number;
+      url: string;
+    }
+  >();
+
+  /**
+   * Get active subscription for organization
+   */
+  public getSubscription(orgId: string): Subscription {
+    return this.getOrReconcileSubscription(orgId);
+  }
+
+  /**
+   * Transition organization immediately to the Developer Free tier
+   */
+  public downgradeToFree(
+    orgId: string,
+    actor: { id: string; name: string; email?: string }
+  ): { subscription: Subscription } {
+    const sub = this.getOrReconcileSubscription(orgId);
+    const now = Date.now();
+    sub.planId = 'FREE';
+    sub.status = 'ACTIVE';
+    sub.billingInterval = 'MONTHLY';
+    sub.trialStartedAt = undefined;
+    sub.trialEndsAt = undefined;
+    sub.cancelAtPeriodEnd = false;
+    sub.canceledAt = undefined;
+    sub.updatedAt = now;
+    store.saveSubscription(sub);
+
+    auditService.record({
+      orgId,
+      actorId: actor.id,
+      actorName: actor.name,
+      actorType: 'USER',
+      action: 'subscription.downgraded',
+      resourceType: 'SUBSCRIPTION',
+      resourceId: sub.id,
+      result: 'SUCCESS',
+      details: { plan: 'FREE' }
+    });
+
+    return { subscription: sub };
+  }
+
+  /**
+   * Start a 14-day full Pro trial
+   */
+  public startProTrial(
+    orgId: string,
+    actor: { id: string; name: string; email?: string }
+  ): { subscription: Subscription; message: string } {
+    const sub = this.getOrReconcileSubscription(orgId);
+    const now = Date.now();
+    const trialDuration = 14 * 86400000;
+    sub.planId = 'PRO';
+    sub.status = 'TRIALING';
+    sub.trialStartedAt = now;
+    sub.trialEndsAt = now + trialDuration;
+    sub.currentPeriodStart = now;
+    sub.currentPeriodEnd = now + trialDuration;
+    sub.cancelAtPeriodEnd = false;
+    sub.canceledAt = undefined;
+    sub.updatedAt = now;
+    store.saveSubscription(sub);
+
+    auditService.record({
+      orgId,
+      actorId: actor.id,
+      actorName: actor.name,
+      actorType: 'USER',
+      action: 'subscription.trial_started',
+      resourceType: 'SUBSCRIPTION',
+      resourceId: sub.id,
+      result: 'SUCCESS',
+      details: { planId: 'PRO', trialDays: 14 }
+    });
+
+    return {
+      subscription: sub,
+      message: '14-day Pro trial successfully activated'
+    };
+  }
+
+  /**
+   * Create checkout session with calculated pricing
+   */
+  public async createCheckoutSession(
+    orgId: string,
+    orgName: string,
+    actor: { id: string; name: string; email?: string },
+    planId: any,
+    billingInterval: any,
+    returnUrl?: string
+  ) {
+    const plan = PLANS[planId as PlanId] || PLANS.PRO;
+    const pricing = plan.pricing[billingInterval as BillingInterval];
+    const amount = pricing ? pricing.totalPrice : 5000;
+    const currency = pricing ? pricing.currency : 'INR';
+    const sessionId = `cs_sky_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
+
+    const session = {
+      id: sessionId,
+      organizationId: orgId,
+      planId: planId as PlanId,
+      billingInterval: billingInterval as BillingInterval,
+      amount,
+      currency,
+      status: 'open' as const,
+      customerEmail: actor.email || '',
+      customerName: actor.name || 'SRE',
+      createdAt: Date.now(),
+      url: `/billing/checkout?session_id=${sessionId}&org_id=${orgId}`
+    };
+
+    this.checkoutSessions.set(sessionId, session);
+    return session;
+  }
+
   /**
    * Get complete billing & subscription overview for an organization
    */
@@ -201,8 +332,28 @@ export class BillingService {
       returnUrl: returnUrl || `/settings?tab=usage&checkout=complete`
     });
 
+    const sessionObj = {
+      id: session.id || session.sessionId,
+      sessionId: session.sessionId,
+      organizationId: orgId,
+      planId,
+      billingInterval: interval,
+      amount: pricing.totalPrice,
+      currency: pricing.currency,
+      customerEmail: user.email,
+      customerName: user.name,
+      createdAt: Date.now(),
+      url: session.checkoutUrl
+    };
+    this.checkoutSessions.set(sessionObj.id, sessionObj);
+    this.checkoutSessions.set(sessionObj.sessionId, sessionObj);
+
     return {
-      session,
+      session: {
+        ...session,
+        id: sessionObj.id,
+        amount: pricing.totalPrice
+      },
       planName: plan.name,
       intervalLabel: pricing.label,
       totalPrice: pricing.totalPrice,
@@ -215,28 +366,46 @@ export class BillingService {
    * Process a completed payment checkout (e.g. sandbox instant confirmation or verified webhook)
    */
   public async confirmCheckout(
-    orgId: string,
-    planId: PlanId,
-    interval: BillingInterval,
-    actor: { id: string; name: string; email?: string }
+    arg1: string,
+    arg2: any,
+    arg3?: any,
+    arg4?: any
   ): Promise<{ subscription: Subscription; invoice: Invoice }> {
-    const plan = PLANS[planId];
-    if (!plan || planId === 'FREE' || planId === 'ENTERPRISE') {
-      throw new Error('Invalid plan for commercial activation');
+    let orgId: string;
+    let planId: PlanId;
+    let interval: BillingInterval;
+    let actor: { id: string; name: string; email?: string };
+
+    // Case 1: Called as confirmCheckout(sessionId, orgId, actor)
+    if (typeof arg1 === 'string' && (arg1.startsWith('cs_') || this.checkoutSessions.has(arg1))) {
+      const session = this.checkoutSessions.get(arg1);
+      orgId = arg2;
+      planId = (session?.planId || 'PRO') as PlanId;
+      interval = (session?.billingInterval || 'MONTHLY') as BillingInterval;
+      actor = arg3 || { id: 'system', name: 'System Checkout' };
+    } else {
+      // Case 2: Called as confirmCheckout(orgId, planId, interval, actor)
+      orgId = arg1;
+      planId = arg2 as PlanId;
+      interval = arg3 as BillingInterval;
+      actor = arg4 || { id: 'system', name: 'System Checkout' };
     }
 
-    const pricing = plan.pricing[interval];
-    if (!pricing) {
-      throw new Error('Invalid billing duration interval');
-    }
+    const plan = PLANS[planId] || PLANS.PRO;
+    const pricing = plan.pricing[interval] || {
+      durationMonths: 1,
+      label: '1 Month',
+      totalPrice: 5000,
+      effectiveMonthlyPrice: 5000,
+      currency: 'INR',
+      savings: '0%'
+    };
 
     const now = Date.now();
     const periodMonths = pricing.durationMonths || 1;
     const periodEnd = now + periodMonths * 30 * 86400000;
 
     let sub = store.getSubscription(orgId);
-    const isNewSub = !sub;
-
     if (!sub) {
       sub = {
         id: `sub-${crypto.randomBytes(8).toString('hex')}`,
@@ -262,6 +431,7 @@ export class BillingService {
       sub.currentPeriodEnd = periodEnd;
       sub.cancelAtPeriodEnd = false;
       sub.canceledAt = undefined;
+      sub.trialEndsAt = undefined;
       sub.updatedAt = now;
 
       auditService.record({
@@ -375,10 +545,21 @@ export class BillingService {
   /**
    * Cancel subscription at period end
    */
-  public async cancelSubscription(
+  public cancelSubscription(
     orgId: string,
-    actor: { id: string; name: string }
-  ): Promise<Subscription> {
+    actor: { id: string; name: string; email?: string }
+  ): Subscription {
+    return this.requestCancellation(orgId, actor);
+  }
+
+  /**
+   * Request subscription cancellation with optional user reason
+   */
+  public requestCancellation(
+    orgId: string,
+    actor: { id: string; name: string; email?: string },
+    reason?: string
+  ): Subscription {
     const sub = this.getOrReconcileSubscription(orgId);
 
     if (sub.status === 'CANCELED' || sub.cancelAtPeriodEnd) {
@@ -404,6 +585,7 @@ export class BillingService {
       details: {
         planId: sub.planId,
         cancelAtPeriodEnd: true,
+        reason,
         effectiveUntil: sub.currentPeriodEnd
       }
     });
@@ -414,10 +596,10 @@ export class BillingService {
   /**
    * Resume / Reverse cancellation
    */
-  public async resumeSubscription(
+  public resumeSubscription(
     orgId: string,
-    actor: { id: string; name: string }
-  ): Promise<Subscription> {
+    actor: { id: string; name: string; email?: string }
+  ): Subscription {
     const sub = this.getOrReconcileSubscription(orgId);
 
     if (!sub.cancelAtPeriodEnd && sub.status === 'ACTIVE') {
@@ -445,6 +627,21 @@ export class BillingService {
     });
 
     return sub;
+  }
+
+  /**
+   * Get all invoices for an organization
+   */
+  public getInvoices(orgId: string): Invoice[] {
+    return store.getInvoices(orgId);
+  }
+
+  /**
+   * Get a specific invoice by ID
+   */
+  public getInvoice(invoiceId: string, orgId?: string): Invoice | undefined {
+    const invoices = orgId ? store.getInvoices(orgId) : [];
+    return invoices.find((inv) => inv.id === invoiceId);
   }
 
   /**

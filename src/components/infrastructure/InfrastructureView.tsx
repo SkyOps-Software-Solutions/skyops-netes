@@ -20,12 +20,14 @@ import {
   Server,
   Shield,
   Trash2,
+  Workflow,
   Zap
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { Cluster, Incident, KubernetesResource } from '../../types/index';
 import { ClusterStatusBadge } from '../common/Badges';
 import { ServicesView } from '../services/ServicesView';
+import { ArchitectureView } from '../architecture/ArchitectureView';
 
 interface InfrastructureViewProps {
   clusters: Cluster[];
@@ -38,7 +40,7 @@ interface InfrastructureViewProps {
   onOpenLogs?: (clusterId: string, namespace: string, podName: string) => void;
 }
 
-type InfraSubTab = 'clusters' | 'nodes' | 'workloads' | 'pods' | 'services';
+type InfraSubTab = 'architecture' | 'clusters' | 'nodes' | 'workloads' | 'pods' | 'services';
 
 export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
   clusters = [],
@@ -52,6 +54,7 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
 }) => {
   const [subTab, setSubTab] = useState<InfraSubTab>('clusters');
   const [resources, setResources] = useState<KubernetesResource[]>([]);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loadingResources, setLoadingResources] = useState(false);
   const [selectedClusterFilter, setSelectedClusterFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -60,8 +63,12 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
   const fetchResources = async () => {
     try {
       setLoadingResources(true);
-      const data = await api.getAllResources();
-      setResources(Array.isArray(data) ? data : []);
+      const [resData, incData] = await Promise.all([
+        api.getAllResources().catch(() => []),
+        api.getIncidents().catch(() => [])
+      ]);
+      setResources(Array.isArray(resData) ? resData : []);
+      setIncidents(Array.isArray(incData) ? incData : []);
     } catch (err) {
       console.warn('InfrastructureView resource fetch notice:', err);
     } finally {
@@ -180,6 +187,17 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
         {/* Sub-tabs */}
         <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-lg border border-zinc-800 overflow-x-auto">
           <button
+            onClick={() => setSubTab('architecture')}
+            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              subTab === 'architecture'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Workflow className="w-3.5 h-3.5 text-sky-400" />
+            Architecture
+          </button>
+          <button
             onClick={() => setSubTab('clusters')}
             className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               subTab === 'clusters'
@@ -237,51 +255,70 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
         </div>
 
         {/* Global Cluster & Search Filter */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          {safeClusters.length > 1 && (
-            <select
-              value={selectedClusterFilter}
-              onChange={(e) => setSelectedClusterFilter(e.target.value)}
-              className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-sky-500"
-            >
-              <option value="all">All Clusters ({safeClusters.length})</option>
-              {safeClusters.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          )}
+        {subTab !== 'architecture' && (
+          <div className="flex flex-wrap items-center gap-2.5">
+            {safeClusters.length > 1 && (
+              <select
+                value={selectedClusterFilter}
+                onChange={(e) => setSelectedClusterFilter(e.target.value)}
+                className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-sky-500"
+              >
+                <option value="all">All Clusters ({safeClusters.length})</option>
+                {safeClusters.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
 
-          {namespaces.length > 0 && subTab !== 'clusters' && subTab !== 'nodes' && (
-            <select
-              value={selectedNamespaceFilter}
-              onChange={(e) => setSelectedNamespaceFilter(e.target.value)}
-              className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-sky-500"
-            >
-              <option value="all">All Namespaces</option>
-              {namespaces.map((ns) => (
-                <option key={ns} value={ns}>
-                  {ns}
-                </option>
-              ))}
-            </select>
-          )}
+            {namespaces.length > 0 && subTab !== 'clusters' && subTab !== 'nodes' && (
+              <select
+                value={selectedNamespaceFilter}
+                onChange={(e) => setSelectedNamespaceFilter(e.target.value)}
+                className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-sky-500"
+              >
+                <option value="all">All Namespaces</option>
+                {namespaces.map((ns) => (
+                  <option key={ns} value={ns}>
+                    {ns}
+                  </option>
+                ))}
+              </select>
+            )}
 
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-2.5" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search resource..."
-              className="bg-zinc-950 border border-zinc-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-zinc-300 placeholder-zinc-500 focus:outline-none focus:border-sky-500 w-44 sm:w-56"
-            />
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-2.5" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search resource..."
+                className="bg-zinc-950 border border-zinc-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-zinc-300 placeholder-zinc-500 focus:outline-none focus:border-sky-500 w-44 sm:w-56"
+              />
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Main Tab Content */}
+      {subTab === 'architecture' && (
+        <ArchitectureView
+          resources={safeResources}
+          clusters={safeClusters}
+          incidents={incidents}
+          selectedClusterId={selectedClusterFilter}
+          onSelectCluster={(cid) => setSelectedClusterFilter(cid)}
+          onSelectIncident={onSelectIncident}
+          onOpenLogs={onOpenLogs}
+          onRefresh={() => {
+            onRefresh();
+            fetchResources();
+          }}
+          isLoading={loading || loadingResources}
+        />
+      )}
+
       {subTab === 'clusters' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {safeClusters.length === 0 ? (

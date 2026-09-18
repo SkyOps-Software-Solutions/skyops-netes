@@ -510,8 +510,8 @@ export const ServiceDetailModal: React.FC<ServiceDetailModalProps> = ({
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-zinc-200 mb-2">Service Relationship Graph</h3>
               <ResourceRelationshipTree
-                target={service}
-                allResources={clusterResources}
+                primaryResource={service}
+                allClusterResources={clusterResources}
                 onSelectResource={onSelectResource}
               />
             </div>

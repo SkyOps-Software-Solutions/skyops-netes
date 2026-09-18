@@ -319,6 +319,8 @@ export interface Cluster {
   orgId: string;
   name: string;
   description?: string;
+  environment?: string;
+  region?: string;
   status: ClusterStatus;
   agentStatus: AgentStatus;
   connectionState?: ConnectionState;
@@ -335,6 +337,7 @@ export interface Cluster {
   lastHeartbeatAt?: number;
   lastSeenAt?: number;
   createdAt: number;
+  updatedAt?: number;
   connectedAt?: number;
   agentToken?: string;
   installKey?: string;

@@ -357,6 +357,9 @@ export class IncidentNotificationService {
   }
 
   private loadLogs(): void {
+    if (process.env.NODE_ENV === 'production') {
+      return;
+    }
     try {
       if (fs.existsSync(this.storagePath)) {
         const raw = fs.readFileSync(this.storagePath, 'utf8');
@@ -371,16 +374,14 @@ export class IncidentNotificationService {
         }
       }
     } catch (err: any) {
-      if (process.env.NODE_ENV === 'production') {
-        throw new Error(
-          `[IncidentNotificationService] Fatal: Corrupted or unreadable notification logs file in production at "${this.storagePath}". Refusing to start clean: ${err?.message || err}`
-        );
-      }
       // Non-fatal in dev/test, will initialize clean in-memory log
     }
   }
 
   private persistLogs(): void {
+    if (process.env.NODE_ENV === 'production') {
+      return;
+    }
     try {
       const data = {
         deliveries: this.deliveryHistory.slice(0, 200),

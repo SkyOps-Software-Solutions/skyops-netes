@@ -535,7 +535,11 @@ const CreateClusterSchema = z.object({
 app.post('/api/v1/clusters', requireUserAuth, requireOrgMembership, requirePermission('cluster.manage'), (req: AuthenticatedUserRequest, res) => {
   const entitlement = entitlementService.canCreateCluster(req.orgId!);
   if (!entitlement.allowed) {
-    return res.status(403).json(entitlement.error || { code: 'PLAN_LIMIT_REACHED', upgradeRequired: true, error: 'Cluster limit reached' });
+    return res.status(403).json({
+      code: entitlement.code || 'PLAN_LIMIT_REACHED',
+      upgradeRequired: entitlement.upgradeRequired ?? true,
+      error: entitlement.error || 'Cluster limit reached'
+    });
   }
 
   const parsed = CreateClusterSchema.safeParse(req.body);
@@ -2531,6 +2535,7 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 // ==========================================
 async function startServer() {
   verifyProductionPersistence();
+  await store.initPersistence();
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -2554,5 +2559,6 @@ async function startServer() {
 if (process.env.NODE_ENV !== 'test') {
   startServer().catch((err) => {
     console.error('Fatal Server Startup Error:', err);
+    process.exit(1);
   });
 }

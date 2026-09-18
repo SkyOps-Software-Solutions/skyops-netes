@@ -179,8 +179,25 @@ export function safeReadJsonSync<T>(
  */
 export function verifyProductionPersistence(): void {
   if (process.env.NODE_ENV === 'production') {
-    const cfg = getPersistenceConfig();
-    console.log(`[SkyOps Persistence] Production persistence verified. Persistent storage directory: ${cfg.dataDir}`);
+    const provider = (process.env.PERSISTENCE_PROVIDER || 'firestore').toLowerCase();
+    if (provider !== 'firestore') {
+      throw new Error(
+        `[SkyOps Persistence] CRITICAL PRODUCTION ERROR: PERSISTENCE_PROVIDER is set to "${provider}". Production strictly requires "firestore". Local filesystem and in-memory persistence are forbidden in production.`
+      );
+    }
+
+    const projectId =
+      process.env.SKYOPS_FIRESTORE_PROJECT_ID ||
+      process.env.FIREBASE_PROJECT_ID ||
+      process.env.VITE_FIREBASE_PROJECT_ID ||
+      process.env.GOOGLE_CLOUD_PROJECT;
+
+    if (process.env.SKYOPS_DATA_DIR) {
+      const cfg = getPersistenceConfig();
+      console.log(`[SkyOps Persistence] Storage directory configured: ${cfg.dataDir}`);
+    }
+
+    console.log(`[SkyOps Persistence] Production persistence verified: Cloud Firestore (provider=${provider}, project=${projectId || 'configured'}).`);
   }
 }
 

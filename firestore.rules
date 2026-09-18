@@ -7,6 +7,10 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /system_health/{docId} {
+      allow read, write: if true;
+    }
+
     // Global Primitives
     function isSignedIn() {
       return request.auth != null;

@@ -10,9 +10,11 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "NODE_ENV=test tsx --test 'server/**/*.test.ts' 'server/*.test.ts' 'src/**/*.test.ts'"
+    "test": "NODE_ENV=test tsx --test 'server/**/*.test.ts' 'server/*.test.ts' 'src/**/*.test.ts'",
+    "migrate:json-to-firestore": "tsx scripts/migrate-json-to-firestore.ts"
   },
   "dependencies": {
+    "@google-cloud/firestore": "^9.2.0",
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
     "@types/js-yaml": "^4.0.9",

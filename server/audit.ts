@@ -1,6 +1,7 @@
 import { AuditEvent, AuditQueryFilters, PaginatedResult } from './repositories/types';
 import fs from 'fs';
 import { getPersistenceConfig, safeWriteJsonSync } from './persistence';
+import { getPersistenceStore } from './persistence/index';
 
 class AuditService {
   private events: AuditEvent[] = [];
@@ -15,6 +16,10 @@ class AuditService {
   }
 
   private loadEvents(): void {
+    if (process.env.NODE_ENV === 'production') {
+      // Production uses Cloud Firestore; local JSON is disabled
+      return;
+    }
     try {
       if (fs.existsSync(this.dataFilePath)) {
         const raw = fs.readFileSync(this.dataFilePath, 'utf-8');
@@ -24,17 +29,16 @@ class AuditService {
         }
       }
     } catch (err: any) {
-      if (process.env.NODE_ENV === 'production') {
-        throw new Error(
-          `[AuditService] Fatal: Corrupted or unreadable audit events file in production at "${this.dataFilePath}". Refusing to start clean: ${err?.message || err}`
-        );
-      }
       console.warn('[AuditService] Notice reading audit file:', err);
       this.events = [];
     }
   }
 
   private saveEvents(): void {
+    if (process.env.NODE_ENV === 'production' || getPersistenceStore().providerName === 'firestore') {
+      // No local JSON in production
+      return;
+    }
     try {
       safeWriteJsonSync(this.dataFilePath, this.events);
     } catch (err) {
@@ -55,6 +59,15 @@ class AuditService {
 
     this.events.push(fullEvent);
     this.saveEvents();
+
+    try {
+      getPersistenceStore().recordAuditEvent(fullEvent).catch((err) => {
+        console.error('[AuditService] Failed to asynchronously persist audit event:', err?.message || err);
+      });
+    } catch (e: any) {
+      console.error('[AuditService] Error invoking persistence store:', e?.message || e);
+    }
+
     return fullEvent;
   }
 

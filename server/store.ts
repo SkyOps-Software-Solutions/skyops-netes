@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { getPersistenceStore, IPersistenceStore } from './persistence/index';
 import {
   AgentStatus,
   Cluster,
@@ -129,8 +130,12 @@ export class DataStore {
   private incidentCounter = 1001;
   private storagePath = getPersistenceConfig().storeFile;
   private saveTimeout: NodeJS.Timeout | null = null;
+  private persistence: IPersistenceStore = getPersistenceStore();
 
-  constructor() {
+  constructor(persistenceStore?: IPersistenceStore) {
+    if (persistenceStore) {
+      this.persistence = persistenceStore;
+    }
     this.loadSnapshot();
     if (this.orgs.size === 0 && process.env.NODE_ENV !== 'production') {
       this.seedDevFixtures();
@@ -142,7 +147,68 @@ export class DataStore {
     return this.storagePath;
   }
 
+  public getPersistence(): IPersistenceStore {
+    return this.persistence;
+  }
+
+  public setPersistence(persistenceStore: IPersistenceStore): void {
+    this.persistence = persistenceStore;
+  }
+
+  public async initPersistence(): Promise<void> {
+    await this.persistence.init();
+
+    if (process.env.NODE_ENV === 'production' || this.persistence.providerName === 'firestore') {
+      try {
+        console.log('[DataStore] Hydrating cache from authoritative persistence provider (Firestore)...');
+        const [orgs, users, clusters, incidents] = await Promise.all([
+          this.persistence.listOrganizations(),
+          this.persistence.listUsers(),
+          this.persistence.listClusters(),
+          this.persistence.listIncidents()
+        ]);
+
+        for (const org of orgs) {
+          this.orgs.set(org.id, org);
+          const members = await this.persistence.getOrgMembers(org.id);
+          if (members && members.length > 0) {
+            this.members.set(org.id, members);
+          }
+          const sub = await this.persistence.getSubscription(org.id);
+          if (sub) {
+            this.subscriptions.set(org.id, sub);
+          }
+        }
+
+        for (const user of users) {
+          this.users.set(user.id, user);
+        }
+
+        for (const cluster of clusters) {
+          this.clusters.set(cluster.id, cluster);
+        }
+
+        for (const inc of incidents) {
+          this.incidents.set(inc.id, inc);
+        }
+
+        console.log(
+          `[DataStore] Successfully hydrated from Cloud Firestore: ${this.orgs.size} orgs, ${this.users.size} users, ${this.clusters.size} clusters, ${this.incidents.size} incidents.`
+        );
+      } catch (err: any) {
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error(`[DataStore] Fatal error hydrating state from Cloud Firestore: ${err?.message || err}`);
+        }
+        console.warn('[DataStore] Non-fatal hydration notice in non-prod:', err?.message || err);
+      }
+    }
+  }
+
   private loadSnapshot() {
+    if (this.persistence.providerName === 'firestore') {
+      // Production uses Cloud Firestore as authoritative storage; local JSON snapshot is disabled
+      return;
+    }
     try {
       if (fs.existsSync(this.storagePath)) {
         const raw = fs.readFileSync(this.storagePath, 'utf8');
@@ -207,11 +273,6 @@ export class DataStore {
             this.aiAnalyses.delete(id);
           }
         }
-        if (process.env.NODE_ENV === 'production') {
-          console.log(`[DataStore] Loaded production persistence from ${this.storagePath} (${this.orgs.size} orgs, ${this.clusters.size} clusters, ${this.incidents.size} incidents)`);
-        }
-      } else if (process.env.NODE_ENV === 'production') {
-        console.log(`[DataStore] Initializing fresh production persistence store at verified path: ${this.storagePath}`);
       }
     } catch (err: any) {
       if (process.env.NODE_ENV === 'production') {
@@ -224,6 +285,11 @@ export class DataStore {
   }
 
   public saveSnapshot() {
+    if (process.env.NODE_ENV === 'production' || this.persistence.providerName === 'firestore') {
+      // In production, data persistence is handled authoritatively by Cloud Firestore.
+      // Disposable local disk files are not written.
+      return;
+    }
     if (this.saveTimeout) clearTimeout(this.saveTimeout);
     this.saveTimeout = setTimeout(() => {
       try {
@@ -263,6 +329,9 @@ export class DataStore {
   }
 
   public saveSnapshotSync() {
+    if (process.env.NODE_ENV === 'production' || this.persistence.providerName === 'firestore') {
+      return;
+    }
     try {
       if (this.saveTimeout) clearTimeout(this.saveTimeout);
       const data = {

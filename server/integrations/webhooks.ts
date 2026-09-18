@@ -4,6 +4,7 @@ import path from 'path';
 import { WebhookConfig, WebhookDeliveryRecord, WebhookEventType } from '../repositories/types';
 import { jobQueue } from '../jobs/jobQueue';
 import { getPersistenceConfig, safeWriteJsonSync } from '../persistence';
+import { getPersistenceStore } from '../persistence/index';
 
 export function validateWebhookUrl(rawUrl: string): { valid: boolean; error?: string } {
   try {
@@ -56,6 +57,10 @@ class WebhookService {
   }
 
   private loadWebhooks(): void {
+    if (process.env.NODE_ENV === 'production') {
+      // Production uses Cloud Firestore; local JSON is disabled
+      return;
+    }
     try {
       if (fs.existsSync(this.dataFilePath)) {
         const raw = fs.readFileSync(this.dataFilePath, 'utf-8');
@@ -70,16 +75,15 @@ class WebhookService {
         }
       }
     } catch (err: any) {
-      if (process.env.NODE_ENV === 'production') {
-        throw new Error(
-          `[WebhookService] Fatal: Failed to read webhooks file in production at "${this.dataFilePath}": ${err?.message || err}`
-        );
-      }
       console.warn('[WebhookService] Notice loading webhooks:', err);
     }
   }
 
   private saveWebhooks(): void {
+    if (process.env.NODE_ENV === 'production' || getPersistenceStore().providerName === 'firestore') {
+      // No local JSON in production
+      return;
+    }
     try {
       const data = {
         webhooks: Array.from(this.webhooks.values()),
@@ -140,6 +144,9 @@ class WebhookService {
 
     this.webhooks.set(id, wh);
     this.saveWebhooks();
+    getPersistenceStore().saveWebhook(wh).catch((err) => {
+      console.error('[WebhookService] Failed to persist webhook to store:', err?.message || err);
+    });
     return wh;
   }
 
@@ -167,6 +174,9 @@ class WebhookService {
 
     this.webhooks.set(id, wh);
     this.saveWebhooks();
+    getPersistenceStore().saveWebhook(wh).catch((err) => {
+      console.error('[WebhookService] Failed to persist updated webhook to store:', err?.message || err);
+    });
     return wh;
   }
 
@@ -175,6 +185,9 @@ class WebhookService {
     if (!wh) return false;
     this.webhooks.delete(id);
     this.saveWebhooks();
+    getPersistenceStore().deleteWebhook(id, orgId).catch((err) => {
+      console.error('[WebhookService] Failed to persist webhook deletion:', err?.message || err);
+    });
     return true;
   }
 
@@ -262,6 +275,10 @@ class WebhookService {
     wh.lastDeliveredAt = record.timestamp;
     wh.lastDeliveryStatus = record.success ? 'SUCCESS' : 'FAILURE';
     this.saveWebhooks();
+
+    getPersistenceStore().recordWebhookDelivery(record).catch((err) => {
+      console.error('[WebhookService] Failed to persist delivery record to store:', err?.message || err);
+    });
 
     if (!record.success) {
       throw new Error(`Webhook delivery to ${wh.url} failed: ${record.error}`);

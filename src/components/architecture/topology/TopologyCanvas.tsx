@@ -10,11 +10,14 @@ import {
   Eye,
   FileCode,
   Globe,
+  GripHorizontal,
   HardDrive,
   Layers,
+  Map,
   Maximize2,
   Minimize2,
   Minus,
+  Move,
   Network,
   Plus,
   RefreshCw,
@@ -22,6 +25,7 @@ import {
   Search,
   Server,
   Shield,
+  X,
   Zap
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -62,6 +66,183 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Movable Floating Overlays: Relationship Types Legend & Cluster Mini-Map
+  const [legendPos, setLegendPos] = useState<{ x: number; y: number } | null>(null);
+  const [miniMapPos, setMiniMapPos] = useState<{ x: number; y: number } | null>(null);
+  const [isLegendCollapsed, setIsLegendCollapsed] = useState(false);
+  const [isLegendVisible, setIsLegendVisible] = useState(true);
+  const [isMiniMapCollapsed, setIsMiniMapCollapsed] = useState(false);
+
+  const legendRef = useRef<HTMLDivElement>(null);
+  const miniMapRef = useRef<HTMLDivElement>(null);
+
+  const activeOverlayDragRef = useRef<{
+    target: 'legend' | 'minimap';
+    startMouseX: number;
+    startMouseY: number;
+    initialElemX: number;
+    initialElemY: number;
+  } | null>(null);
+  const [isDraggingOverlay, setIsDraggingOverlay] = useState<'legend' | 'minimap' | null>(null);
+
+  // Drag handlers for movable overlays
+  const handleStartDragOverlay = (
+    e: React.MouseEvent | React.TouchEvent,
+    target: 'legend' | 'minimap'
+  ) => {
+    e.stopPropagation();
+    // Do not initiate drag if user clicked an inner button
+    if ((e.target as HTMLElement).closest('button')) {
+      return;
+    }
+
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+    const containerElem = containerRef.current;
+    const targetElem = target === 'legend' ? legendRef.current : miniMapRef.current;
+    if (!containerElem || !targetElem) return;
+
+    const containerRect = containerElem.getBoundingClientRect();
+    const targetRect = targetElem.getBoundingClientRect();
+
+    const currentX = targetRect.left - containerRect.left;
+    const currentY = targetRect.top - containerRect.top;
+
+    activeOverlayDragRef.current = {
+      target,
+      startMouseX: clientX,
+      startMouseY: clientY,
+      initialElemX: currentX,
+      initialElemY: currentY
+    };
+    setIsDraggingOverlay(target);
+  };
+
+  // Dragging event listeners on window to handle fast movements and release safely
+  useEffect(() => {
+    if (!isDraggingOverlay) return;
+
+    const handleMouseMove = (e: MouseEvent | TouchEvent) => {
+      const active = activeOverlayDragRef.current;
+      if (!active || !containerRef.current) return;
+
+      const clientX = 'touches' in e ? (e as TouchEvent).touches[0].clientX : (e as MouseEvent).clientX;
+      const clientY = 'touches' in e ? (e as TouchEvent).touches[0].clientY : (e as MouseEvent).clientY;
+
+      const deltaX = clientX - active.startMouseX;
+      const deltaY = clientY - active.startMouseY;
+
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const targetElem = active.target === 'legend' ? legendRef.current : miniMapRef.current;
+      const elemWidth = targetElem?.offsetWidth || (active.target === 'legend' ? 180 : 190);
+      const elemHeight = targetElem?.offsetHeight || (active.target === 'legend' ? 140 : 130);
+
+      // Clamp within container boundaries so overlays are never pushed off-screen or hidden
+      const newX = Math.max(10, Math.min(active.initialElemX + deltaX, containerRect.width - elemWidth - 10));
+      const newY = Math.max(10, Math.min(active.initialElemY + deltaY, containerRect.height - elemHeight - 10));
+
+      if (active.target === 'legend') {
+        setLegendPos({ x: newX, y: newY });
+      } else {
+        setMiniMapPos({ x: newX, y: newY });
+      }
+    };
+
+    const handleMouseUp = () => {
+      activeOverlayDragRef.current = null;
+      setIsDraggingOverlay(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove, { passive: false });
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('touchmove', handleMouseMove, { passive: false });
+    window.addEventListener('touchend', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleMouseMove);
+      window.removeEventListener('touchend', handleMouseUp);
+    };
+  }, [isDraggingOverlay]);
+
+  // Window resize bounds recalculation to prevent floating overlays getting pushed out of view
+  useEffect(() => {
+    const handleResize = () => {
+      if (!containerRef.current) return;
+      const containerRect = containerRef.current.getBoundingClientRect();
+
+      setLegendPos((prev) => {
+        if (!prev) return null;
+        const elemWidth = legendRef.current?.offsetWidth || 180;
+        const elemHeight = legendRef.current?.offsetHeight || 140;
+        return {
+          x: Math.max(10, Math.min(prev.x, containerRect.width - elemWidth - 10)),
+          y: Math.max(10, Math.min(prev.y, containerRect.height - elemHeight - 10))
+        };
+      });
+
+      setMiniMapPos((prev) => {
+        if (!prev) return null;
+        const elemWidth = miniMapRef.current?.offsetWidth || 190;
+        const elemHeight = miniMapRef.current?.offsetHeight || 130;
+        return {
+          x: Math.max(10, Math.min(prev.x, containerRect.width - elemWidth - 10)),
+          y: Math.max(10, Math.min(prev.y, containerRect.height - elemHeight - 10))
+        };
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Mini-map click to pan canvas viewport
+  const handleMiniMapClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    if (!containerRef.current || graphData.bounds.width === 0 || graphData.bounds.height === 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickRatioX = (e.clientX - rect.left) / rect.width;
+    const clickRatioY = (e.clientY - rect.top) / rect.height;
+
+    const targetCanvasX = clickRatioX * graphData.bounds.width;
+    const targetCanvasY = clickRatioY * graphData.bounds.height;
+
+    const containerRect = containerRef.current.getBoundingClientRect();
+    setTransform((prev) => ({
+      ...prev,
+      x: containerRect.width / 2 - targetCanvasX * prev.scale,
+      y: containerRect.height / 2 - targetCanvasY * prev.scale
+    }));
+  };
+
+  // Mini-map dynamic viewport box
+  const miniMapViewport = useMemo(() => {
+    if (!containerRef.current || graphData.bounds.width === 0 || graphData.bounds.height === 0) {
+      return { left: '10%', top: '10%', width: '40%', height: '40%' };
+    }
+    const containerW = containerRef.current.clientWidth || 800;
+    const containerH = containerRef.current.clientHeight || 600;
+
+    const visibleW = containerW / transform.scale;
+    const visibleH = containerH / transform.scale;
+    const visibleX = -transform.x / transform.scale;
+    const visibleY = -transform.y / transform.scale;
+
+    const leftPct = Math.max(0, Math.min(100, (visibleX / graphData.bounds.width) * 100));
+    const topPct = Math.max(0, Math.min(100, (visibleY / graphData.bounds.height) * 100));
+    const widthPct = Math.max(8, Math.min(100 - leftPct, (visibleW / graphData.bounds.width) * 100));
+    const heightPct = Math.max(8, Math.min(100 - topPct, (visibleH / graphData.bounds.height) * 100));
+
+    return {
+      left: `${leftPct}%`,
+      top: `${topPct}%`,
+      width: `${widthPct}%`,
+      height: `${heightPct}%`
+    };
+  }, [transform, graphData.bounds]);
 
   // Focus Mode set of active node IDs
   const focusedNodeIds = useMemo(() => {
@@ -364,7 +545,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onKeyDown={handleKeyDown}
-      className="relative w-full h-full min-h-[640px] bg-[#090a0f] overflow-hidden select-none cursor-grab active:cursor-grabbing border border-zinc-800/80 rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-500/30"
+      className="relative w-full h-full min-h-[380px] bg-[#090a0f] overflow-hidden select-none cursor-grab active:cursor-grabbing border border-zinc-800/80 rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-500/30"
       style={{
         backgroundImage: `radial-gradient(#27272a 0.75px, transparent 0.75px)`,
         backgroundSize: '24px 24px'
@@ -401,16 +582,28 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         >
           <Maximize2 className="w-3.5 h-3.5" />
         </button>
+        <div className="w-px h-4 bg-zinc-800 mx-0.5" />
+        <button
+          onClick={() => setIsLegendVisible(!isLegendVisible)}
+          title={isLegendVisible ? "Hide relationship legend" : "Show relationship legend"}
+          className={`p-1.5 rounded transition cursor-pointer ${
+            isLegendVisible
+              ? 'text-sky-400 bg-sky-500/20'
+              : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80'
+          }`}
+        >
+          <Layers className="w-3.5 h-3.5" />
+        </button>
         <button
           onClick={onToggleMiniMap}
-          title="Toggle Mini Map"
+          title={showMiniMap ? "Hide cluster mini map" : "Show cluster mini map"}
           className={`p-1.5 rounded transition cursor-pointer ${
             showMiniMap
               ? 'text-sky-400 bg-sky-500/20'
               : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80'
           }`}
         >
-          <RotateCcw className="w-3.5 h-3.5" />
+          <Map className="w-3.5 h-3.5" />
         </button>
       </div>
 
@@ -667,74 +860,205 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         </div>
       </div>
 
-      {/* Floating Topology Legend (Bottom-Left) */}
-      <div className="absolute bottom-4 left-4 z-20 bg-zinc-950/90 backdrop-blur-md border border-zinc-800/80 p-2.5 rounded-lg shadow-xl font-mono text-[10px] text-zinc-400 space-y-1.5 pointer-events-auto">
-        <div className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold mb-1">
-          Relationship Types
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-0.5 bg-zinc-600 rounded" />
-          <span>Ownership</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-0.5 border-t border-dashed border-sky-500" />
-          <span className="text-sky-400">Traffic Flow</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-0.5 border-t border-dashed border-emerald-500" />
-          <span className="text-emerald-400">Uses / Bound</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-0.5 border-t border-dashed border-amber-500" />
-          <span className="text-amber-400">Depends On</span>
-        </div>
-      </div>
+      {/* Movable Floating Topology Legend */}
+      {isLegendVisible && (
+        <div
+          ref={legendRef}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          style={
+            legendPos
+              ? { left: `${legendPos.x}px`, top: `${legendPos.y}px` }
+              : { left: '16px', bottom: '20px' }
+          }
+          className={`absolute z-30 bg-zinc-950/95 backdrop-blur-md border border-zinc-800/90 rounded-lg shadow-2xl font-mono text-[10px] text-zinc-400 pointer-events-auto transition-shadow ${
+            isDraggingOverlay === 'legend' ? 'ring-2 ring-sky-500/50 shadow-sky-500/20 cursor-grabbing select-none' : ''
+          }`}
+        >
+          {/* Draggable Header */}
+          <div
+            onMouseDown={(e) => handleStartDragOverlay(e, 'legend')}
+            onTouchStart={(e) => handleStartDragOverlay(e, 'legend')}
+            title="Drag anywhere to reposition"
+            className="flex items-center justify-between gap-2 px-2.5 py-1.5 border-b border-zinc-800/80 bg-zinc-900/50 hover:bg-zinc-900/80 rounded-t-lg cursor-grab active:cursor-grabbing select-none"
+          >
+            <div className="flex items-center gap-1.5 text-zinc-400 font-semibold">
+              <GripHorizontal className="w-3.5 h-3.5 text-zinc-500" />
+              <span className="text-[9px] uppercase tracking-wider text-zinc-300 font-bold">
+                Relationships
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              {legendPos && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLegendPos(null);
+                  }}
+                  title="Reset to default corner"
+                  className="p-0.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition cursor-pointer"
+                >
+                  <RotateCcw className="w-2.5 h-2.5" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsLegendCollapsed(!isLegendCollapsed);
+                }}
+                title={isLegendCollapsed ? 'Expand legend' : 'Collapse legend'}
+                className="p-0.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition cursor-pointer"
+              >
+                {isLegendCollapsed ? (
+                  <ChevronDown className="w-3 h-3" />
+                ) : (
+                  <ChevronUp className="w-3 h-3" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsLegendVisible(false);
+                }}
+                title="Hide legend"
+                className="p-0.5 text-zinc-500 hover:text-rose-400 hover:bg-zinc-800 rounded transition cursor-pointer"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
 
-      {/* Floating Cluster Mini-Map (Bottom-Right) */}
+          {/* Legend Items */}
+          {!isLegendCollapsed && (
+            <div className="p-2.5 space-y-1.5">
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-0.5 bg-zinc-600 rounded" />
+                <span>Ownership</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-0.5 border-t border-dashed border-sky-500" />
+                <span className="text-sky-400">Traffic Flow</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-0.5 border-t border-dashed border-emerald-500" />
+                <span className="text-emerald-400">Uses / Bound</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-0.5 border-t border-dashed border-amber-500" />
+                <span className="text-amber-400">Depends On</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Movable Floating Cluster Mini-Map */}
       {showMiniMap && (
-        <div className="absolute bottom-4 right-4 z-20 w-44 h-32 bg-zinc-950/95 backdrop-blur-md border border-zinc-800 rounded-lg p-2 shadow-2xl overflow-hidden pointer-events-auto flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[9px] font-mono text-zinc-500 font-semibold mb-1">
-            <span>Cluster mini map</span>
-            <button
-              onClick={onToggleMiniMap}
-              className="text-zinc-500 hover:text-zinc-300 cursor-pointer"
-            >
-              ✕
-            </button>
+        <div
+          ref={miniMapRef}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          style={
+            miniMapPos
+              ? { left: `${miniMapPos.x}px`, top: `${miniMapPos.y}px` }
+              : { right: '16px', bottom: '20px' }
+          }
+          className={`absolute z-30 w-48 bg-zinc-950/95 backdrop-blur-md border border-zinc-800 rounded-lg shadow-2xl overflow-hidden pointer-events-auto transition-shadow flex flex-col ${
+            isDraggingOverlay === 'minimap' ? 'ring-2 ring-sky-500/50 shadow-sky-500/20 cursor-grabbing select-none' : ''
+          }`}
+        >
+          {/* Draggable Header */}
+          <div
+            onMouseDown={(e) => handleStartDragOverlay(e, 'minimap')}
+            onTouchStart={(e) => handleStartDragOverlay(e, 'minimap')}
+            title="Drag anywhere to reposition"
+            className="flex items-center justify-between gap-2 px-2.5 py-1.5 border-b border-zinc-800/80 bg-zinc-900/50 hover:bg-zinc-900/80 rounded-t-lg cursor-grab active:cursor-grabbing select-none"
+          >
+            <div className="flex items-center gap-1.5 text-zinc-400 font-mono text-[9px] font-semibold">
+              <GripHorizontal className="w-3.5 h-3.5 text-zinc-500" />
+              <span className="text-zinc-300">Cluster mini map</span>
+            </div>
+            <div className="flex items-center gap-1">
+              {miniMapPos && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMiniMapPos(null);
+                  }}
+                  title="Reset to default corner"
+                  className="p-0.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition cursor-pointer"
+                >
+                  <RotateCcw className="w-2.5 h-2.5" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsMiniMapCollapsed(!isMiniMapCollapsed);
+                }}
+                title={isMiniMapCollapsed ? 'Expand mini map' : 'Collapse mini map'}
+                className="p-0.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition cursor-pointer"
+              >
+                {isMiniMapCollapsed ? (
+                  <ChevronDown className="w-3 h-3" />
+                ) : (
+                  <ChevronUp className="w-3 h-3" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleMiniMap();
+                }}
+                title="Close mini map"
+                className="p-0.5 text-zinc-500 hover:text-rose-400 hover:bg-zinc-800 rounded transition cursor-pointer"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
           </div>
 
           {/* Canvas representation thumbnail */}
-          <div className="relative w-full h-24 bg-zinc-900/60 rounded border border-zinc-800/60 overflow-hidden">
-            {graphData.nodes.map((n) => {
-              const miniX = (n.x / graphData.bounds.width) * 100;
-              const miniY = (n.y / graphData.bounds.height) * 100;
-              const dotColor =
-                n.health === 'CRITICAL'
-                  ? 'bg-rose-500'
-                  : n.health === 'WARNING'
-                  ? 'bg-amber-400'
-                  : 'bg-emerald-400';
+          {!isMiniMapCollapsed && (
+            <div className="p-2">
+              <div
+                onClick={handleMiniMapClick}
+                title="Click anywhere on map to pan canvas"
+                className="relative w-full h-24 bg-zinc-900/60 rounded border border-zinc-800/60 overflow-hidden cursor-crosshair"
+              >
+                {graphData.nodes.map((n) => {
+                  const miniX = (n.x / graphData.bounds.width) * 100;
+                  const miniY = (n.y / graphData.bounds.height) * 100;
+                  const dotColor =
+                    n.health === 'CRITICAL'
+                      ? 'bg-rose-500'
+                      : n.health === 'WARNING'
+                      ? 'bg-amber-400'
+                      : 'bg-emerald-400';
 
-              return (
+                  return (
+                    <div
+                      key={`mini-${n.id}`}
+                      style={{ left: `${Math.min(miniX, 90)}%`, top: `${Math.min(miniY, 85)}%` }}
+                      className={`absolute w-1.5 h-1 rounded-sm ${dotColor}`}
+                    />
+                  );
+                })}
+
+                {/* Viewport Box */}
                 <div
-                  key={`mini-${n.id}`}
-                  style={{ left: `${Math.min(miniX, 90)}%`, top: `${Math.min(miniY, 85)}%` }}
-                  className={`absolute w-1.5 h-1 rounded-sm ${dotColor}`}
+                  className="absolute border border-sky-400/80 bg-sky-500/15 rounded pointer-events-none transition-all duration-75"
+                  style={miniMapViewport}
                 />
-              );
-            })}
-
-            {/* Viewport Box */}
-            <div
-              className="absolute border border-sky-400/80 bg-sky-500/10 rounded pointer-events-none"
-              style={{
-                left: '10%',
-                top: '10%',
-                width: '60%',
-                height: '60%'
-              }}
-            />
-          </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

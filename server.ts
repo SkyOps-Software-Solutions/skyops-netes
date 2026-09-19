@@ -29,6 +29,7 @@ import { store } from './server/store';
 import { incidentNotificationService } from './server/notifications/notificationService';
 import { verifyProductionPersistence } from './server/persistence';
 import { skyOpsAIService } from './server/ai/service';
+import { explainArchitectureWithAI } from './server/ai/architectureAI';
 import { SkyOpsIntelligenceEngine } from './server/engine/intelligence';
 import { AGENT_DEFAULT_NAMESPACE, AGENT_VERSION } from './src/config/version';
 import { KubernetesResource } from './src/types/index';
@@ -1617,6 +1618,21 @@ app.post('/api/v1/incidents/:id/ai-analysis', requireUserAuth, requireOrgMembers
   } catch (err: any) {
     console.error(`[SkyOps API] Force AI analysis error for ${req.params.id}:`, err);
     res.status(500).json({ error: err?.message || 'Failed to trigger AI analysis' });
+  }
+});
+
+// --- Architecture AI Explanation Endpoint ---
+app.post('/api/v1/architecture/explain', async (req: Request, res: Response) => {
+  try {
+    const payload = req.body;
+    if (!payload || !payload.targetName) {
+      return res.status(400).json({ error: 'targetName is required' });
+    }
+    const explanation = await explainArchitectureWithAI(payload);
+    res.json({ explanation });
+  } catch (err: any) {
+    console.error('[SkyOps API] Architecture explain error:', err);
+    res.status(500).json({ error: err?.message || 'Failed to generate architecture explanation' });
   }
 });
 

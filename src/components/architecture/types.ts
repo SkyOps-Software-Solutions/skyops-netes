@@ -97,3 +97,101 @@ export interface ArchitectureTelemetryState {
 }
 
 export type ArchitectureViewMode = 'overview' | 'domain';
+
+export interface ArchitectureExplainRequest {
+  clusterId?: string;
+  clusterName?: string;
+  targetType: 'cluster' | 'domain' | 'resource';
+  targetId: string;
+  targetName: string;
+  targetKind: string;
+  namespace?: string;
+  domainId?: string;
+  resourceSpec?: any;
+  resourceStatus?: any;
+  metrics?: {
+    cpu?: string;
+    memory?: string;
+    isAvailable?: boolean;
+  };
+  replicas?: {
+    ready?: number;
+    desired?: number;
+  };
+  health?: 'HEALTHY' | 'WARNING' | 'CRITICAL';
+  statusText?: string;
+  incidents?: Array<{
+    id: string;
+    title: string;
+    severity: string;
+    incidentType: string;
+    firstSeenAt: number;
+    occurrenceCount: number;
+  }>;
+  relatedResources?: Array<{
+    kind: string;
+    name: string;
+    namespace?: string;
+    relation: string;
+  }>;
+  backingPods?: Array<{
+    name: string;
+    status: string;
+    health?: string;
+    restarts?: number;
+  }>;
+  clusterSummary?: {
+    totalNodes: number;
+    totalWorkloads: number;
+    totalPods: number;
+    totalServices: number;
+    totalIngresses: number;
+    totalPvcs: number;
+    activeIncidentsCount: number;
+  };
+  userPrompt?: string;
+}
+
+export interface ArchitectureAIExplanation {
+  title: string;
+  targetType: 'cluster' | 'domain' | 'resource';
+  targetName: string;
+  targetKind: string;
+  summary: string;
+  operationalStatus: {
+    health: 'HEALTHY' | 'WARNING' | 'CRITICAL';
+    headline: string;
+    details: string;
+  };
+  architectureAndRole: {
+    overview: string;
+    keyResponsibilities: string[];
+    networkTrafficPath?: string;
+    storageAndState?: string;
+  };
+  resilienceAndPerformance: {
+    highAvailabilityVerdict: string;
+    replicaAssessment?: string;
+    resourceAllocationVerdict?: string;
+    bottlenecksOrRisks: string[];
+  };
+  securityPosture: {
+    verdict: string;
+    recommendations: string[];
+  };
+  activeIssuesAndDiagnostics: {
+    hasIssues: boolean;
+    incidentSummary?: string;
+    rootCauseHypothesis?: string;
+  };
+  recommendedCommands: Array<{
+    command: string;
+    description: string;
+    category: 'inspect' | 'logs' | 'remediate' | 'metrics';
+  }>;
+  bestPracticeTips: string[];
+  customAnswer?: string;
+  aiModel: string;
+  isAiGenerated: boolean;
+  generatedAt: number;
+}

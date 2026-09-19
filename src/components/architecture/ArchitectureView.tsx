@@ -188,7 +188,7 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
   }, [incidents, activeCluster]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)] min-h-[700px] w-full bg-zinc-950 text-zinc-100 rounded-2xl border border-zinc-800/90 shadow-2xl overflow-hidden font-sans">
+    <div className="flex flex-col h-[calc(100vh-140px)] min-h-[580px] w-full bg-zinc-950 text-zinc-100 rounded-2xl border border-zinc-800/90 shadow-2xl overflow-hidden font-sans">
       {/* ==========================================
           1. HEADER TOOLBAR
           ========================================== */}
@@ -386,6 +386,17 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
             )}
           </div>
 
+          {/* Explain with AI header button */}
+          <button
+            id="architecture-explain-ai-btn"
+            onClick={() => setShowExplainModal(true)}
+            className="p-1.5 px-2.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/35 text-xs font-mono font-semibold text-sky-300 flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+            title="Explain cluster architecture with AI"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-sky-400" />
+            <span className="hidden sm:inline">Explain with AI</span>
+          </button>
+
           {/* Refresh button */}
           {onRefresh && (
             <button
@@ -403,9 +414,9 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
       {/* ==========================================
           2. CENTRAL WORKSPACE: CANVAS & INSPECTOR
           ========================================== */}
-      <div className="relative flex-1 flex overflow-hidden w-full h-full">
+      <div className="relative flex-1 flex overflow-hidden w-full h-full min-h-0">
         {/* Central Canvas Viewport */}
-        <div className="flex-1 h-full relative">
+        <div className="flex-1 h-full relative min-h-0">
           <TopologyCanvas
             graphData={graphData}
             selectedNodeId={selectedNodeId}
@@ -430,7 +441,12 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
             onOpenLogs={(res) => {
               if (onOpenLogs) onOpenLogs(res.clusterId, res.namespace || 'default', res.name);
             }}
-            onOpenAiExplain={() => setShowExplainModal(true)}
+            onOpenAiExplain={(node) => {
+              if (node?.id) {
+                setSelectedNodeId(node.id);
+              }
+              setShowExplainModal(true);
+            }}
           />
         )}
       </div>

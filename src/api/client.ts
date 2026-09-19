@@ -725,6 +725,13 @@ class ApiClient {
     );
   }
 
+  async explainArchitecture(payload: any): Promise<{ explanation: any }> {
+    return this.request<{ explanation: any }>('/api/v1/architecture/explain', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
   async updateIncident(
     id: string,
     updates: {

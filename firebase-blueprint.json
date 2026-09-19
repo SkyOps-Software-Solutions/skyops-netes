@@ -207,10 +207,16 @@
         "orgId": { "type": "string" },
         "actorId": { "type": "string" },
         "actorName": { "type": "string" },
+        "actorType": { "type": "string" },
         "action": { "type": "string" },
         "resourceType": { "type": "string" },
         "resourceId": { "type": "string" },
         "result": { "type": "string" },
+        "hash": { "type": "string" },
+        "prevHash": { "type": "string" },
+        "details": { "type": "object" },
+        "correlationId": { "type": "string" },
+        "ipAddress": { "type": "string" },
         "timestamp": { "type": "number" }
       },
       "required": ["id", "orgId", "actorId", "action", "resourceType", "resourceId", "result", "timestamp"]

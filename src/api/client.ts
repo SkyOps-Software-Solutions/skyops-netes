@@ -826,9 +826,11 @@ class ApiClient {
     page?: number;
     limit?: number;
     actorId?: string;
+    actorType?: string;
     action?: string;
     resourceType?: string;
     resourceId?: string;
+    result?: string;
     search?: string;
     fromTimestamp?: number;
     toTimestamp?: number;
@@ -849,6 +851,29 @@ class ApiClient {
     }
     const qStr = query.toString() ? `?${query.toString()}` : '';
     return this.request(`/api/v1/audit${qStr}`);
+  }
+
+  async getAuditStats(): Promise<{
+    total: number;
+    actorCounts: Record<string, number>;
+    actionCategories: Record<string, number>;
+    lastEventTime: number | null;
+    autonomousCount: number;
+    securityCount: number;
+    verified: boolean;
+  }> {
+    return this.request('/api/v1/audit/stats');
+  }
+
+  async verifyAuditIntegrity(): Promise<{
+    verified: boolean;
+    totalChecked: number;
+    tampered: boolean;
+    tamperedCount: number;
+    latestHash: string;
+    details: string;
+  }> {
+    return this.request('/api/v1/audit/integrity');
   }
 
   // --- Integrations & Webhooks ---

@@ -26,10 +26,18 @@ export interface LogNavigationIntent {
   name: string;
 }
 
+export interface SelectedPodIdentity {
+  clusterId: string;
+  namespace: string;
+  name: string;
+  uid?: string;
+  container?: string;
+}
+
 export interface ObservabilityHubViewProps {
   clusters: Cluster[];
   initialClusterId?: string;
-  initialPod?: { namespace: string; name: string };
+  initialPod?: { namespace?: string; name: string };
   logIntent?: LogNavigationIntent | null;
   onClearLogIntent?: () => void;
   onRefresh?: () => void;
@@ -64,13 +72,29 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
   const [clusterEvents, setClusterEvents] = useState<K8sEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
 
-  // Pod Logs state
-  const [selectedNamespace, setSelectedNamespace] = useState<string>(
-    logIntent?.namespace || initialPod?.namespace || 'default'
-  );
-  const [selectedPodName, setSelectedPodName] = useState<string>(
-    logIntent?.name || initialPod?.name || ''
-  );
+  // Canonical selected pod model
+  const [selectedPod, setSelectedPod] = useState<SelectedPodIdentity | null>(() => {
+    const podName = logIntent?.name || initialPod?.name;
+    if (!podName) return null;
+    const clusterId =
+      logIntent?.clusterId ||
+      (initialClusterId && clusters.some((c) => c.id === initialClusterId) ? initialClusterId : clusters[0]?.id) ||
+      '';
+    const ns = logIntent?.namespace ?? initialPod?.namespace ?? '';
+    return {
+      clusterId,
+      namespace: ns,
+      name: podName
+    };
+  });
+
+  // Namespace filter state: 'all' or specific namespace
+  const [selectedNamespace, setSelectedNamespace] = useState<string>(() => {
+    if (logIntent?.namespace) return logIntent.namespace;
+    if (initialPod?.namespace) return initialPod.namespace;
+    return 'all';
+  });
+
   const [podSearchFilter, setPodSearchFilter] = useState<string>('');
 
   // Track handled intent ID to guarantee one-shot consumption
@@ -87,15 +111,22 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
   useEffect(() => {
     if (logIntent && logIntent.requestId && logIntent.requestId !== lastHandledIntentId.current) {
       lastHandledIntentId.current = logIntent.requestId;
+      const targetClusterId = logIntent.clusterId || selectedClusterId;
       if (logIntent.clusterId) {
         setSelectedClusterId(logIntent.clusterId);
       }
-      setSelectedNamespace(logIntent.namespace || 'default');
-      setSelectedPodName(logIntent.name);
+      if (logIntent.namespace) {
+        setSelectedNamespace(logIntent.namespace);
+      }
+      setSelectedPod({
+        clusterId: targetClusterId,
+        namespace: logIntent.namespace || '',
+        name: logIntent.name
+      });
       setActiveTab('logs');
       onClearLogIntent?.();
     }
-  }, [logIntent, onClearLogIntent]);
+  }, [logIntent, onClearLogIntent, selectedClusterId]);
 
   const selectedCluster = useMemo(() => {
     return clusters.find((c) => c.id === selectedClusterId) || clusters[0] || null;
@@ -158,10 +189,25 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
       const matchNs = selectedNamespace === 'all' || p.namespace === selectedNamespace;
       const matchSearch =
         !podSearchFilter ||
-        p.name.toLowerCase().includes(podSearchFilter.toLowerCase());
+        p.name.toLowerCase().includes(podSearchFilter.toLowerCase()) ||
+        p.namespace.toLowerCase().includes(podSearchFilter.toLowerCase());
       return matchNs && matchSearch;
     });
   }, [podResources, selectedNamespace, podSearchFilter]);
+
+  // Canonical active pod resource lookup (kind === 'Pod' AND namespace AND name)
+  const activePodResource = useMemo(() => {
+    if (!selectedPod) return null;
+    return (
+      podResources.find(
+        (p) =>
+          p.kind === 'Pod' &&
+          p.namespace === selectedPod.namespace &&
+          p.name === selectedPod.name &&
+          (selectedPod.uid ? p.uid === selectedPod.uid : true)
+      ) || null
+    );
+  }, [podResources, selectedPod]);
 
   // NOTE: Per Phase 4, we DO NOT auto-select the first pod when the user opens the logs tab.
   // Pods are only preselected when explicitly requested via a navigation intent.
@@ -210,7 +256,7 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
                   value={selectedCluster?.id || ''}
                   onChange={(e) => {
                     setSelectedClusterId(e.target.value);
-                    setSelectedPodName('');
+                    setSelectedPod(null);
                   }}
                   className="bg-transparent text-xs font-mono text-zinc-200 outline-none cursor-pointer pr-2"
                 >
@@ -326,8 +372,13 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
                       aria-label="Filter Namespace"
                       value={selectedNamespace}
                       onChange={(e) => {
-                        setSelectedNamespace(e.target.value);
-                        setSelectedPodName('');
+                        const newNs = e.target.value;
+                        setSelectedNamespace(newNs);
+                        // If user switched to a specific namespace and selected pod does not belong to it:
+                        // clear selected pod and require a new selection!
+                        if (selectedPod && newNs !== 'all' && selectedPod.namespace !== newNs) {
+                          setSelectedPod(null);
+                        }
                       }}
                       className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 outline-none cursor-pointer font-mono"
                     >
@@ -358,19 +409,51 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
                     <span>Target Pod:</span>
                     <select
                       aria-label="Select Target Pod"
-                      value={selectedPodName}
+                      value={selectedPod ? `${selectedPod.namespace}/${selectedPod.name}` : ''}
                       onChange={(e) => {
-                        const pod = podResources.find((p) => p.name === e.target.value);
-                        setSelectedPodName(e.target.value);
-                        if (pod?.namespace) {
-                          setSelectedNamespace(pod.namespace);
+                        const compositeVal = e.target.value;
+                        if (!compositeVal) {
+                          setSelectedPod(null);
+                          return;
+                        }
+                        const slashIdx = compositeVal.indexOf('/');
+                        if (slashIdx === -1) {
+                          setSelectedPod(null);
+                          return;
+                        }
+                        const targetNs = compositeVal.slice(0, slashIdx);
+                        const targetName = compositeVal.slice(slashIdx + 1);
+                        const matched = podResources.find(
+                          (p) => p.kind === 'Pod' && p.namespace === targetNs && p.name === targetName
+                        );
+                        setSelectedPod({
+                          clusterId: selectedCluster.id,
+                          namespace: targetNs,
+                          name: targetName,
+                          uid: matched?.uid,
+                          container: matched?.containers?.[0]?.name
+                        });
+                        if (selectedNamespace !== 'all' && selectedNamespace !== targetNs) {
+                          setSelectedNamespace(targetNs);
                         }
                       }}
                       className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 outline-none cursor-pointer font-mono max-w-xs"
                     >
                       <option value="">Select a Pod to stream logs...</option>
+                      {/* Ensure explicitly selected pod is represented even if filtered out */}
+                      {selectedPod &&
+                        !filteredPods.some(
+                          (p) => p.namespace === selectedPod.namespace && p.name === selectedPod.name
+                        ) && (
+                          <option
+                            key={`${selectedPod.namespace}/${selectedPod.name}`}
+                            value={`${selectedPod.namespace}/${selectedPod.name}`}
+                          >
+                            {selectedPod.namespace}/{selectedPod.name}
+                          </option>
+                        )}
                       {filteredPods.map((p) => (
-                        <option key={`${p.namespace}/${p.name}`} value={p.name}>
+                        <option key={`${p.namespace}/${p.name}`} value={`${p.namespace}/${p.name}`}>
                           {p.namespace}/{p.name}
                         </option>
                       ))}
@@ -379,17 +462,15 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
                 </div>
 
                 {/* Embedded PodLogsViewer */}
-                {selectedPodName ? (
+                {selectedPod ? (
                   <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-950">
                     <PodLogsViewer
-                      clusterId={selectedCluster.id}
-                      namespace={
-                        podResources.find((p) => p.name === selectedPodName)?.namespace ||
-                        selectedNamespace === 'all'
-                          ? 'default'
-                          : selectedNamespace
-                      }
-                      podName={selectedPodName}
+                      key={`${selectedPod.clusterId}:${selectedPod.namespace}:${selectedPod.name}`}
+                      clusterId={selectedPod.clusterId}
+                      namespace={selectedPod.namespace}
+                      podName={selectedPod.name}
+                      containers={activePodResource?.containers}
+                      initialContainer={selectedPod.container || activePodResource?.containers?.[0]?.name}
                       isEmbedded={true}
                     />
                   </div>

@@ -439,7 +439,7 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
               if (onSelectIncident) onSelectIncident(inc.id);
             }}
             onOpenLogs={(res) => {
-              if (onOpenLogs) onOpenLogs(res.clusterId, res.namespace || 'default', res.name);
+              if (onOpenLogs) onOpenLogs(res.clusterId, res.namespace, res.name);
             }}
             onOpenAiExplain={(node) => {
               if (node?.id) {
@@ -591,7 +591,7 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
                 if (onSelectIncident) onSelectIncident(incId);
               }}
               onOpenLogs={(pod) => {
-                if (onOpenLogs) onOpenLogs(pod.clusterId, pod.namespace || 'default', pod.name);
+                if (onOpenLogs) onOpenLogs(pod.clusterId, pod.namespace, pod.name);
               }}
             />
           )}

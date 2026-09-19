@@ -1,5 +1,31 @@
 import { Role, IncidentStatus, IncidentSeverity } from '../../src/types/index';
 
+export type AuditActorType =
+  | 'HUMAN'
+  | 'USER'
+  | 'SYSTEM'
+  | 'AGENT'
+  | 'AI'
+  | 'WEBHOOK'
+  | 'AUTOMATION'
+  | 'AUTONOMOUS_POLICY';
+
+export type AuditResourceType =
+  | 'CLUSTER'
+  | 'INCIDENT'
+  | 'REMEDIATION'
+  | 'POLICY'
+  | 'ORGANIZATION'
+  | 'TEAM'
+  | 'INTEGRATION'
+  | 'AUTH'
+  | 'SUPPORT_TICKET'
+  | 'SUBSCRIPTION'
+  | 'INVOICE'
+  | 'AI'
+  | 'SETTINGS'
+  | string;
+
 /**
  * Immutable Enterprise Audit Event Record
  */
@@ -9,19 +35,22 @@ export interface AuditEvent {
   orgId: string;
   actorId: string;
   actorName: string;
-  actorType: 'USER' | 'AGENT' | 'SYSTEM' | 'AUTONOMOUS_POLICY';
+  actorType: AuditActorType;
   action: string;
-  resourceType: 'CLUSTER' | 'INCIDENT' | 'REMEDIATION' | 'POLICY' | 'ORGANIZATION' | 'TEAM' | 'INTEGRATION' | 'AUTH' | 'SUPPORT_TICKET' | 'SUBSCRIPTION' | 'INVOICE';
+  resourceType: AuditResourceType;
   resourceId: string;
   result: 'SUCCESS' | 'FAILURE';
   details?: Record<string, unknown>;
   correlationId?: string;
   ipAddress?: string;
+  hash: string;
+  prevHash?: string;
 }
 
 export interface AuditQueryFilters {
   orgId: string;
   actorId?: string;
+  actorType?: string;
   action?: string;
   resourceType?: string;
   resourceId?: string;

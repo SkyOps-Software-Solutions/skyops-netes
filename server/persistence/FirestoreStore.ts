@@ -908,21 +908,42 @@ export class FirestoreStore implements IPersistenceStore {
   public async queryAuditEvents(filters: AuditQueryFilters): Promise<PaginatedResult<AuditEvent>> {
     if (!this.connected) return this.fallbackStore.queryAuditEvents(filters);
     try {
-      let query: Query<DocumentData> = this.firestore
+      const snap = await this.firestore
         .collection('auditEvents')
-        .where('orgId', '==', filters.orgId);
+        .where('orgId', '==', filters.orgId)
+        .get();
 
-      if (filters.actorId) query = query.where('actorId', '==', filters.actorId);
-      if (filters.action) query = query.where('action', '==', filters.action);
-      if (filters.resourceType) query = query.where('resourceType', '==', filters.resourceType);
-      if (filters.resourceId) query = query.where('resourceId', '==', filters.resourceId);
-      if (filters.result) query = query.where('result', '==', filters.result);
-
-      const snap = await query.get();
       let list = snap.docs.map((d) => d.data() as AuditEvent);
 
+      if (filters.actorId) list = list.filter((e) => e.actorId === filters.actorId);
+      if (filters.actorType) {
+        const targetType = filters.actorType.toUpperCase();
+        list = list.filter((e) => {
+          const itemType = (e.actorType || '').toUpperCase();
+          if (targetType === 'USER' || targetType === 'HUMAN') {
+            return itemType === 'USER' || itemType === 'HUMAN';
+          }
+          return itemType === targetType;
+        });
+      }
+      if (filters.action) list = list.filter((e) => e.action.toLowerCase() === filters.action?.toLowerCase());
+      if (filters.resourceType) list = list.filter((e) => e.resourceType.toUpperCase() === filters.resourceType?.toUpperCase());
+      if (filters.resourceId) list = list.filter((e) => e.resourceId === filters.resourceId);
+      if (filters.result) list = list.filter((e) => e.result === filters.result);
       if (filters.fromTimestamp) list = list.filter((e) => e.timestamp >= filters.fromTimestamp!);
       if (filters.toTimestamp) list = list.filter((e) => e.timestamp <= filters.toTimestamp!);
+      if (filters.search) {
+        const q = filters.search.toLowerCase();
+        list = list.filter(
+          (e) =>
+            (e.action && e.action.toLowerCase().includes(q)) ||
+            (e.actorName && e.actorName.toLowerCase().includes(q)) ||
+            (e.actorId && e.actorId.toLowerCase().includes(q)) ||
+            (e.resourceId && e.resourceId.toLowerCase().includes(q)) ||
+            (e.resourceType && e.resourceType.toLowerCase().includes(q)) ||
+            (e.details && JSON.stringify(e.details).toLowerCase().includes(q))
+        );
+      }
 
       list.sort((a, b) => b.timestamp - a.timestamp);
 
@@ -935,6 +956,7 @@ export class FirestoreStore implements IPersistenceStore {
 
       return { items, total, page, totalPages, limit };
     } catch (err: any) {
+      console.warn('[FirestoreStore] queryAuditEvents error, using fallback:', err?.message || err);
       return this.fallbackStore.queryAuditEvents(filters);
     }
   }

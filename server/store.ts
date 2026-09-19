@@ -2319,6 +2319,22 @@ export class DataStore {
 
     this.policies.set(key, updated);
     this.saveSnapshot();
+
+    auditService.record({
+      orgId,
+      actorId: userActor?.id || 'system',
+      actorName: userActor?.name || 'System Operator',
+      actorType: userActor ? 'HUMAN' : 'SYSTEM',
+      action: 'policy.updated',
+      resourceType: 'POLICY',
+      resourceId: key,
+      result: 'SUCCESS',
+      details: {
+        remediationMode: updated.remediationMode,
+        clusterId: clusterId || null
+      }
+    });
+
     return updated;
   }
 

@@ -65,13 +65,41 @@ export const PodLogsViewer: React.FC<PodLogsViewerProps> = ({
 
   // Sync initial container if containers change
   useEffect(() => {
-    if (!selectedContainer && containers.length > 0) {
-      setSelectedContainer(containers[0].name);
+    if (containers.length > 0) {
+      if (!selectedContainer || !containers.some((c) => c.name === selectedContainer)) {
+        const preferred =
+          initialContainer && containers.some((c) => c.name === initialContainer)
+            ? initialContainer
+            : containers[0].name;
+        setSelectedContainer(preferred);
+      }
     }
-  }, [containers, selectedContainer]);
+  }, [containers, initialContainer, selectedContainer]);
 
   const fetchLogs = async (isBackground = false) => {
-    if (!clusterId || !namespace || !podName) return;
+    if (!clusterId || !podName) return;
+
+    if (!namespace || namespace.trim() === '') {
+      setError('Pod namespace is unavailable.');
+      setLoading(false);
+      setLogData({
+        clusterId,
+        namespace: '',
+        podName,
+        container: selectedContainer || '',
+        totalLines: 0,
+        lines: [],
+        statusCategory: 'POD_NOT_FOUND',
+        unavailableReason: 'Pod namespace is unavailable.',
+        timestamps: false,
+        previous: false,
+        rawText: '',
+        source: 'none',
+        retrievedAt: Date.now()
+      });
+      return;
+    }
+
     try {
       if (!isBackground) setLoading(true);
       setError(null);
@@ -374,7 +402,9 @@ export const PodLogsViewer: React.FC<PodLogsViewerProps> = ({
         {loading && !logData && (
           <div className="h-full flex flex-col items-center justify-center space-y-3 text-zinc-400">
             <RefreshCw className="w-6 h-6 text-sky-400 animate-spin" />
-            <div className="text-xs">Streaming logs for {podName} / {selectedContainer}...</div>
+            <div className="text-xs">
+              Streaming logs for {namespace ? `${namespace}/` : ''}{podName} / {selectedContainer || 'default'}...
+            </div>
           </div>
         )}
 
@@ -435,7 +465,7 @@ export const PodLogsViewer: React.FC<PodLogsViewerProps> = ({
               <>
                 <div className="text-sm font-semibold text-amber-400">Pod Not Found</div>
                 <div className="max-w-md text-xs text-zinc-400 font-mono bg-zinc-900/90 p-3 rounded-lg border border-zinc-800">
-                  {logData.unavailableReason || `Pod ${namespace}/${podName} was not found in cluster resources.`}
+                  {logData.unavailableReason || (namespace ? `Pod "${namespace}/${podName}" was not found in cluster resources. It may have been evicted or deleted.` : 'Pod namespace is unavailable.')}
                 </div>
               </>
             ) : logData?.statusCategory === 'CONTAINER_NOT_FOUND' ? (
@@ -551,7 +581,7 @@ export const PodLogsViewer: React.FC<PodLogsViewerProps> = ({
       <div className="bg-zinc-900/80 border-t border-zinc-800 px-4 py-1.5 flex items-center justify-between text-[11px] text-zinc-500">
         <div className="flex items-center gap-3">
           <span>
-            Namespace: <strong className="text-zinc-300">{namespace}</strong>
+            Namespace: <strong className="text-zinc-300">{namespace || 'Unavailable'}</strong>
           </span>
           <span>•</span>
           <span>

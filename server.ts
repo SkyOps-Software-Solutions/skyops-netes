@@ -1376,6 +1376,29 @@ app.post('/api/v1/agent/actions/:actionId/result', requireAgentAuth, (req: Authe
     return res.status(404).json({ error: 'Action not found or is not deliverable' });
   }
 
+  const cluster = store.getClusterByIdInternal(req.clusterId!);
+  if (cluster) {
+    auditService.record({
+      orgId: cluster.orgId,
+      actorId: req.clusterId!,
+      actorName: `Agent (${cluster.name})`,
+      actorType: 'AGENT',
+      action: 'remediation.executed',
+      resourceType: 'REMEDIATION',
+      resourceId: action.id,
+      result: parsed.data.success ? 'SUCCESS' : 'FAILURE',
+      details: {
+        incidentId: action.incidentId,
+        clusterId: req.clusterId,
+        clusterName: cluster.name,
+        targetNamespace: action.targetNamespace,
+        targetResourceName: action.targetResourceName,
+        success: parsed.data.success,
+        message: parsed.data.message
+      }
+    });
+  }
+
   res.json({ status: 'ACK', success: true, action });
 });
 
@@ -1614,6 +1637,25 @@ app.post('/api/v1/incidents/:id/ai-analysis', requireUserAuth, requireOrgMembers
       allResources: clusterResources
     });
     store.saveAIAnalysis(incident.id, analysis);
+
+    auditService.record({
+      orgId: req.orgId!,
+      actorId: 'skyops-ai-engine',
+      actorName: 'SkyOps Gemini AI',
+      actorType: 'AI',
+      action: 'ai.root_cause_diagnosed',
+      resourceType: 'INCIDENT',
+      resourceId: incident.id,
+      result: 'SUCCESS',
+      details: {
+        incidentId: incident.id,
+        clusterId: incident.clusterId,
+        confidence: analysis.confidence,
+        risk: analysis.riskLevel,
+        rootCauseSummary: analysis.rootCause ? analysis.rootCause.substring(0, 150) : undefined
+      }
+    });
+
     res.json({ analysis, remediation: analysis.structuredRemediation, intelligence: analysis.intelligence });
   } catch (err: any) {
     console.error(`[SkyOps API] Force AI analysis error for ${req.params.id}:`, err);
@@ -1686,6 +1728,24 @@ app.post(
         parsed.data
       );
 
+      auditService.record({
+        orgId: req.orgId!,
+        actorId: req.user!.id,
+        actorName: req.user!.name,
+        actorType: 'HUMAN',
+        action: 'remediation.approved',
+        resourceType: 'REMEDIATION',
+        resourceId: remediation.id,
+        result: 'SUCCESS',
+        details: {
+          incidentId: req.params.id,
+          clusterId: remediation.clusterId,
+          clusterName: remediation.clusterName,
+          actionType: remediation.actionType,
+          parameters: remediation.parameters
+        }
+      });
+
       res.json({
         success: true,
         message: `Remediation approved and dispatched for execution on cluster ${remediation.clusterName}`,
@@ -1721,6 +1781,22 @@ app.post(
         parsed.data.reason
       );
 
+      auditService.record({
+        orgId: req.orgId!,
+        actorId: req.user!.id,
+        actorName: req.user!.name,
+        actorType: 'HUMAN',
+        action: 'remediation.rejected',
+        resourceType: 'REMEDIATION',
+        resourceId: remediation.id,
+        result: 'SUCCESS',
+        details: {
+          incidentId: req.params.id,
+          clusterId: remediation.clusterId,
+          reason: parsed.data.reason
+        }
+      });
+
       res.json({
         success: true,
         message: 'Remediation proposal declined',
@@ -1755,6 +1831,22 @@ app.post(
         { id: req.user!.id, name: req.user!.name, email: req.user!.email },
         parsed.data.reason
       );
+
+      auditService.record({
+        orgId: req.orgId!,
+        actorId: req.user!.id,
+        actorName: req.user!.name,
+        actorType: 'HUMAN',
+        action: 'remediation.rollback',
+        resourceType: 'REMEDIATION',
+        resourceId: remediation.id,
+        result: 'SUCCESS',
+        details: {
+          incidentId: req.params.id,
+          clusterId: remediation.clusterId,
+          reason: parsed.data.reason
+        }
+      });
 
       res.json({
         success: true,
@@ -1985,25 +2077,29 @@ app.get('/api/v1/overview', requireUserAuth, requireOrgMembership, (req: Authent
 });
 
 // --- Audit Center Endpoints ---
-app.get('/api/v1/audit', requireUserAuth, requireOrgMembership, requirePermission('audit.read'), (req: AuthenticatedUserRequest, res) => {
+app.get('/api/v1/audit', requireUserAuth, requireOrgMembership, requirePermission('audit.read'), async (req: AuthenticatedUserRequest, res) => {
   const page = parseInt(req.query.page as string, 10) || 1;
   const limit = parseInt(req.query.limit as string, 10) || 25;
   const actorId = typeof req.query.actorId === 'string' ? req.query.actorId : undefined;
+  const actorType = typeof req.query.actorType === 'string' ? req.query.actorType : undefined;
   const action = typeof req.query.action === 'string' ? req.query.action : undefined;
   const resourceType = typeof req.query.resourceType === 'string' ? req.query.resourceType : undefined;
   const resourceId = typeof req.query.resourceId === 'string' ? req.query.resourceId : undefined;
+  const resultFilter = typeof req.query.result === 'string' ? (req.query.result.toUpperCase() as 'SUCCESS' | 'FAILURE') : undefined;
   const search = typeof req.query.search === 'string' ? req.query.search : undefined;
   const fromTimestamp = req.query.fromTimestamp ? parseInt(req.query.fromTimestamp as string, 10) : undefined;
   const toTimestamp = req.query.toTimestamp ? parseInt(req.query.toTimestamp as string, 10) : undefined;
 
-  const result = auditService.query({
+  const result = await auditService.queryAsync({
     orgId: req.orgId!,
     page,
     limit,
     actorId,
+    actorType,
     action,
     resourceType,
     resourceId,
+    result: resultFilter,
     search,
     fromTimestamp,
     toTimestamp
@@ -2012,13 +2108,57 @@ app.get('/api/v1/audit', requireUserAuth, requireOrgMembership, requirePermissio
   res.json(result);
 });
 
-app.get('/api/v1/audit/export', requireUserAuth, requireOrgMembership, requirePermission('audit.read'), (req: AuthenticatedUserRequest, res) => {
+app.get('/api/v1/audit/stats', requireUserAuth, requireOrgMembership, requirePermission('audit.read'), async (req: AuthenticatedUserRequest, res) => {
+  try {
+    const stats = await auditService.getStats(req.orgId!);
+    res.json(stats);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to calculate audit stats' });
+  }
+});
+
+app.get('/api/v1/audit/integrity', requireUserAuth, requireOrgMembership, requirePermission('audit.read'), async (req: AuthenticatedUserRequest, res) => {
+  try {
+    const verification = await auditService.verifyIntegrity(req.orgId!);
+    res.json(verification);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to verify audit ledger integrity' });
+  }
+});
+
+app.get('/api/v1/audit/verify', requireUserAuth, requireOrgMembership, requirePermission('audit.read'), async (req: AuthenticatedUserRequest, res) => {
+  try {
+    const verification = await auditService.verifyIntegrity(req.orgId!);
+    res.json(verification);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to verify audit ledger integrity' });
+  }
+});
+
+app.get('/api/v1/audit/export', requireUserAuth, requireOrgMembership, requirePermission('audit.read'), async (req: AuthenticatedUserRequest, res) => {
   const format = req.query.format === 'csv' ? 'csv' : 'json';
   const actorId = typeof req.query.actorId === 'string' ? req.query.actorId : undefined;
+  const actorType = typeof req.query.actorType === 'string' ? req.query.actorType : undefined;
   const action = typeof req.query.action === 'string' ? req.query.action : undefined;
   const resourceType = typeof req.query.resourceType === 'string' ? req.query.resourceType : undefined;
+  const resourceId = typeof req.query.resourceId === 'string' ? req.query.resourceId : undefined;
+  const resultFilter = typeof req.query.result === 'string' ? (req.query.result.toUpperCase() as 'SUCCESS' | 'FAILURE') : undefined;
+  const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+  const fromTimestamp = req.query.fromTimestamp ? parseInt(req.query.fromTimestamp as string, 10) : undefined;
+  const toTimestamp = req.query.toTimestamp ? parseInt(req.query.toTimestamp as string, 10) : undefined;
 
-  const filters = { orgId: req.orgId!, actorId, action, resourceType };
+  const filters = {
+    orgId: req.orgId!,
+    actorId,
+    actorType,
+    action,
+    resourceType,
+    resourceId,
+    result: resultFilter,
+    search,
+    fromTimestamp,
+    toTimestamp
+  };
 
   if (format === 'csv') {
     const csv = auditService.exportCsv(filters);
@@ -2027,10 +2167,10 @@ app.get('/api/v1/audit/export', requireUserAuth, requireOrgMembership, requirePe
     return res.send(csv);
   }
 
-  const result = auditService.query({ ...filters, page: 1, limit: 10000 });
+  const items = auditService.exportJson(filters);
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Content-Disposition', `attachment; filename="skyops_audit_${req.orgId}_${Date.now()}.json"`);
-  res.json(result.items);
+  res.json(items);
 });
 
 // --- Webhooks & Integrations Endpoints ---

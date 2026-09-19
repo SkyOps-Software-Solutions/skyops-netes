@@ -414,12 +414,34 @@ export class InMemoryStore implements IPersistenceStore {
   public async queryAuditEvents(filters: AuditQueryFilters): Promise<PaginatedResult<AuditEvent>> {
     let list = this.auditEvents.filter((e) => e.orgId === filters.orgId);
     if (filters.actorId) list = list.filter((e) => e.actorId === filters.actorId);
+    if (filters.actorType) {
+      const targetType = filters.actorType.toUpperCase();
+      list = list.filter((e) => {
+        const itemType = (e.actorType || '').toUpperCase();
+        if (targetType === 'USER' || targetType === 'HUMAN') {
+          return itemType === 'USER' || itemType === 'HUMAN';
+        }
+        return itemType === targetType;
+      });
+    }
     if (filters.action) list = list.filter((e) => e.action.toLowerCase() === filters.action?.toLowerCase());
     if (filters.resourceType) list = list.filter((e) => e.resourceType.toUpperCase() === filters.resourceType?.toUpperCase());
     if (filters.resourceId) list = list.filter((e) => e.resourceId === filters.resourceId);
     if (filters.result) list = list.filter((e) => e.result === filters.result);
     if (filters.fromTimestamp) list = list.filter((e) => e.timestamp >= filters.fromTimestamp!);
     if (filters.toTimestamp) list = list.filter((e) => e.timestamp <= filters.toTimestamp!);
+    if (filters.search) {
+      const q = filters.search.toLowerCase();
+      list = list.filter(
+        (e) =>
+          (e.action && e.action.toLowerCase().includes(q)) ||
+          (e.actorName && e.actorName.toLowerCase().includes(q)) ||
+          (e.actorId && e.actorId.toLowerCase().includes(q)) ||
+          (e.resourceId && e.resourceId.toLowerCase().includes(q)) ||
+          (e.resourceType && e.resourceType.toLowerCase().includes(q)) ||
+          (e.details && JSON.stringify(e.details).toLowerCase().includes(q))
+      );
+    }
 
     // Newest first
     list.sort((a, b) => b.timestamp - a.timestamp);

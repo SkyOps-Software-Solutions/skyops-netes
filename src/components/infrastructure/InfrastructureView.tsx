@@ -635,7 +635,7 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
                           {onOpenLogs && (
                             <button
                               onClick={() =>
-                                onOpenLogs(pod.clusterId, pod.namespace || 'default', pod.name)
+                                onOpenLogs(pod.clusterId, pod.namespace, pod.name)
                               }
                               className="text-sky-400 hover:text-sky-300 text-xs font-medium cursor-pointer"
                             >

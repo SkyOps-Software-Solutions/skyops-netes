@@ -38,6 +38,12 @@ service cloud.firestore {
       allow update: if isOwner(userId) && isValidUserDoc(request.resource.data, userId);
       allow delete: if false;
     }
+
+    // Audit Ledger: strictly immutable; direct client write forbidden
+    match /auditEvents/{eventId} {
+      allow read: if isSignedIn() && resource.data.orgId != null;
+      allow write: if false; // All audit entries must be recorded server-side
+    }
   }
 }
 

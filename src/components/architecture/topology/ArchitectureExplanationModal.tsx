@@ -445,7 +445,7 @@ export const ArchitectureExplanationModal: React.FC<ArchitectureExplanationModal
                 )}
               </div>
               <h2 className="text-base sm:text-lg font-bold text-zinc-100 truncate mt-1">
-                {targetInfo.name}
+                AI Architecture Insight: {targetInfo.name}
               </h2>
               <p className="text-xs text-zinc-400 font-mono mt-0.5 truncate">
                 {targetInfo.namespace ? `Namespace: ${targetInfo.namespace}` : 'Scope: Cluster-wide'}

@@ -10,7 +10,7 @@ import {
   Server,
   Terminal
 } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client';
 import { Cluster, K8sEvent, KubernetesResource } from '../../types/index';
 import { ClusterObservabilityView } from '../clusters/ClusterObservabilityView';
@@ -19,10 +19,19 @@ import { PodLogsViewer } from '../logs/PodLogsViewer';
 import { ClusterStatusBadge } from '../common/Badges';
 import { EmptyState } from '../common/UI';
 
+export interface LogNavigationIntent {
+  requestId: string;
+  clusterId?: string;
+  namespace: string;
+  name: string;
+}
+
 export interface ObservabilityHubViewProps {
   clusters: Cluster[];
   initialClusterId?: string;
   initialPod?: { namespace: string; name: string };
+  logIntent?: LogNavigationIntent | null;
+  onClearLogIntent?: () => void;
   onRefresh?: () => void;
 }
 
@@ -32,9 +41,14 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
   clusters = [],
   initialClusterId,
   initialPod,
+  logIntent,
+  onClearLogIntent,
   onRefresh
 }) => {
   const [selectedClusterId, setSelectedClusterId] = useState<string>(() => {
+    if (logIntent?.clusterId && clusters.some((c) => c.id === logIntent.clusterId)) {
+      return logIntent.clusterId;
+    }
     if (initialClusterId && clusters.some((c) => c.id === initialClusterId)) {
       return initialClusterId;
     }
@@ -42,7 +56,7 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
   });
 
   const [activeTab, setActiveTab] = useState<ObservabilityTab>(() => {
-    return initialPod ? 'logs' : 'metrics';
+    return logIntent || initialPod ? 'logs' : 'metrics';
   });
 
   const [clusterResources, setClusterResources] = useState<KubernetesResource[]>([]);
@@ -52,12 +66,15 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
 
   // Pod Logs state
   const [selectedNamespace, setSelectedNamespace] = useState<string>(
-    initialPod?.namespace || 'default'
+    logIntent?.namespace || initialPod?.namespace || 'default'
   );
   const [selectedPodName, setSelectedPodName] = useState<string>(
-    initialPod?.name || ''
+    logIntent?.name || initialPod?.name || ''
   );
   const [podSearchFilter, setPodSearchFilter] = useState<string>('');
+
+  // Track handled intent ID to guarantee one-shot consumption
+  const lastHandledIntentId = useRef<string | null>(null);
 
   // Keep selectedClusterId synced if clusters list updates and none selected
   useEffect(() => {
@@ -66,17 +83,19 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
     }
   }, [clusters, selectedClusterId]);
 
-  // Sync if initialPod or initialClusterId changes externally
+  // Robust ONE-SHOT navigation intent contract
   useEffect(() => {
-    if (initialClusterId) {
-      setSelectedClusterId(initialClusterId);
-    }
-    if (initialPod) {
-      setSelectedNamespace(initialPod.namespace);
-      setSelectedPodName(initialPod.name);
+    if (logIntent && logIntent.requestId && logIntent.requestId !== lastHandledIntentId.current) {
+      lastHandledIntentId.current = logIntent.requestId;
+      if (logIntent.clusterId) {
+        setSelectedClusterId(logIntent.clusterId);
+      }
+      setSelectedNamespace(logIntent.namespace || 'default');
+      setSelectedPodName(logIntent.name);
       setActiveTab('logs');
+      onClearLogIntent?.();
     }
-  }, [initialClusterId, initialPod]);
+  }, [logIntent, onClearLogIntent]);
 
   const selectedCluster = useMemo(() => {
     return clusters.find((c) => c.id === selectedClusterId) || clusters[0] || null;
@@ -144,15 +163,8 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
     });
   }, [podResources, selectedNamespace, podSearchFilter]);
 
-  // If no pod selected or current selection invalid, auto-select first available
-  useEffect(() => {
-    if (activeTab === 'logs' && !selectedPodName && filteredPods.length > 0) {
-      setSelectedPodName(filteredPods[0].name);
-      if (filteredPods[0].namespace) {
-        setSelectedNamespace(filteredPods[0].namespace);
-      }
-    }
-  }, [activeTab, selectedPodName, filteredPods]);
+  // NOTE: Per Phase 4, we DO NOT auto-select the first pod when the user opens the logs tab.
+  // Pods are only preselected when explicitly requested via a navigation intent.
 
   if (!clusters.length) {
     return (
@@ -356,15 +368,12 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
                       }}
                       className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 outline-none cursor-pointer font-mono max-w-xs"
                     >
-                      {filteredPods.length === 0 ? (
-                        <option value="">No matching pods</option>
-                      ) : (
-                        filteredPods.map((p) => (
-                          <option key={`${p.namespace}/${p.name}`} value={p.name}>
-                            {p.namespace}/{p.name}
-                          </option>
-                        ))
-                      )}
+                      <option value="">Select a Pod to stream logs...</option>
+                      {filteredPods.map((p) => (
+                        <option key={`${p.namespace}/${p.name}`} value={p.name}>
+                          {p.namespace}/{p.name}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -387,8 +396,8 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
                 ) : (
                   <EmptyState
                     icon={<Terminal className="w-8 h-8 text-zinc-500" />}
-                    title="No Pod Selected"
-                    description="Select a pod from the selector above to stream live standard output and diagnostic logs."
+                    title="Select a Pod to stream logs."
+                    description="Choose a pod from the target pod selector above to stream real-time standard output and diagnostic logs."
                   />
                 )}
               </div>

@@ -16,7 +16,8 @@ export function getResourceKey(r: { clusterId?: string; kind?: string; namespace
 export function buildArchitectureTelemetry(
   resources: KubernetesResource[],
   clusters: Cluster[] = [],
-  incidents: Incident[] = []
+  incidents: Incident[] = [],
+  lastPolledAt?: number
 ): ArchitectureTelemetryState {
   const safeResources = Array.isArray(resources) ? resources.filter((r): r is KubernetesResource => !!r && typeof r === 'object') : [];
   const safeClusters = Array.isArray(clusters) ? clusters.filter(Boolean) : [];
@@ -46,6 +47,9 @@ export function buildArchitectureTelemetry(
   for (const c of safeClusters) {
     if (c.lastHeartbeatAt && c.lastHeartbeatAt > latestTs) latestTs = c.lastHeartbeatAt;
     if (c.updatedAt && c.updatedAt > latestTs) latestTs = c.updatedAt;
+  }
+  if (lastPolledAt && lastPolledAt > latestTs) {
+    latestTs = lastPolledAt;
   }
 
   const now = Date.now();

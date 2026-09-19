@@ -12,7 +12,7 @@ import { IncidentsView } from '../incidents/IncidentsView';
 import { OverviewView } from '../overview/OverviewView';
 import { InfrastructureView } from '../infrastructure/InfrastructureView';
 import { ServicesView } from '../services/ServicesView';
-import { ObservabilityHubView } from '../observability/ObservabilityHubView';
+import { LogNavigationIntent, ObservabilityHubView } from '../observability/ObservabilityHubView';
 import { SettingsView } from '../settings/SettingsView';
 import { AuditView } from '../audit/AuditView';
 import { NavigationTab, Sidebar } from './Sidebar';
@@ -32,7 +32,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   const [activeTab, setActiveTab] = useState<NavigationTab>('overview');
   const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
-  const [targetLogPod, setTargetLogPod] = useState<{ clusterId: string; namespace: string; name: string } | null>(null);
+  const [pendingLogIntent, setPendingLogIntent] = useState<LogNavigationIntent | null>(null);
   const [isAddClusterOpen, setIsAddClusterOpen] = useState(initialOpenAddCluster);
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
   const [selectedDocTopic, setSelectedDocTopic] = useState<DocTopic>('quickstart');
@@ -144,7 +144,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   useEffect(() => {
     setSelectedClusterId(null);
     setSelectedIncidentId(null);
-    setTargetLogPod(null);
+    setPendingLogIntent(null);
     setClusters([]);
     setIncidents([]);
     setMetrics(null);
@@ -161,7 +161,12 @@ export const AppShell: React.FC<AppShellProps> = ({
   };
 
   const handleOpenLogs = (clusterId: string, namespace: string, podName: string) => {
-    setTargetLogPod({ clusterId, namespace, name: podName });
+    setPendingLogIntent({
+      requestId: `req-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      clusterId,
+      namespace,
+      name: podName
+    });
     setActiveTab('observability');
   };
 
@@ -200,6 +205,10 @@ export const AppShell: React.FC<AppShellProps> = ({
     setActiveTab(tab);
     setSelectedClusterId(null);
     handleClearIncident();
+    // Clear any pending log navigation when navigating away from observability
+    if (tab !== 'observability') {
+      setPendingLogIntent(null);
+    }
   };
 
   // Direct navigation support on initial mount and browser back/forward
@@ -378,10 +387,8 @@ export const AppShell: React.FC<AppShellProps> = ({
           {activeTab === 'observability' && (
             <ObservabilityHubView
               clusters={clusters}
-              initialClusterId={targetLogPod?.clusterId}
-              initialPod={
-                targetLogPod ? { namespace: targetLogPod.namespace, name: targetLogPod.name } : undefined
-              }
+              logIntent={pendingLogIntent}
+              onClearLogIntent={() => setPendingLogIntent(null)}
               onRefresh={handleManualRefresh}
             />
           )}

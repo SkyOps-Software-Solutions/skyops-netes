@@ -5,7 +5,8 @@ import {
   TopologyFilterState,
   TopologyGraphData,
   TopologyNode,
-  TopologyRelationshipType
+  TopologyRelationshipType,
+  TopologyViewMode
 } from './types';
 
 interface BuilderOptions {
@@ -14,6 +15,7 @@ interface BuilderOptions {
   incidents: Incident[];
   filters: TopologyFilterState;
   expandedNodeIds: Set<string>;
+  viewMode?: TopologyViewMode;
 }
 
 // Helper to create consistent unique resource keys
@@ -21,7 +23,17 @@ export function getResourceKey(r: { clusterId?: string; kind?: string; namespace
   return `${r.clusterId || '*'}/${r.kind || '*'}/${r.namespace || '*'}/${r.name || '*'}`;
 }
 
-export function buildTopologyGraph({
+export function buildTopologyGraph(options: BuilderOptions): TopologyGraphData {
+  if (options.viewMode === 'grouped_namespace') {
+    return buildNamespaceGroupedGraph(options);
+  }
+  if (options.viewMode === 'grouped_domain') {
+    return buildDomainGroupedGraph(options);
+  }
+  return buildStandardTopologyGraph(options);
+}
+
+function buildStandardTopologyGraph({
   resources,
   cluster,
   incidents,
@@ -124,7 +136,7 @@ export function buildTopologyGraph({
   const allRoleBindings = getByKinds(['RoleBinding', 'ClusterRoleBinding']);
   const allHPAs = getByKinds(['HorizontalPodAutoscaler', 'VerticalPodAutoscaler']);
 
-  // Helper to map workload to its child pods
+  // Helper to map workload to its child pods (Phase 18: strict ownerReferences first)
   const getWorkloadPods = (workload: KubernetesResource): KubernetesResource[] => {
     return allPods.filter((p) => {
       if (p.namespace !== workload.namespace) return false;
@@ -141,7 +153,13 @@ export function buildTopologyGraph({
             const rs = allReplicaSets.find(
               (r) => r.namespace === workload.namespace && (o.uid ? r.uid === o.uid : r.name === o.name)
             );
-            if (rs?.ownerReferences?.some((ro) => ro.kind === 'Deployment' && ro.name === workload.name)) {
+            if (
+              rs?.ownerReferences?.some(
+                (ro) =>
+                  ro.kind === 'Deployment' &&
+                  (ro.uid && workload.uid ? ro.uid === workload.uid : ro.name === workload.name)
+              )
+            ) {
               return true;
             }
             if (o.name && o.name.startsWith(`${workload.name}-`)) {
@@ -149,10 +167,15 @@ export function buildTopologyGraph({
             }
           }
         }
+        // If ownerReferences are present on this Pod but did not match this workload, do not fall back to loose prefix matching
+        return false;
       }
 
-      // 2. Standard Kubernetes name prefix bounded fallback
-      return p.name.startsWith(`${workload.name}-`);
+      // 2. Strict bounded fallback ONLY when ownerReferences are completely absent
+      const prefix = `${workload.name}-`;
+      if (!p.name.startsWith(prefix)) return false;
+      const suffix = p.name.slice(prefix.length);
+      return /^[a-z0-9]+(-[a-z0-9]+)*$/i.test(suffix);
     });
   };
 
@@ -860,19 +883,20 @@ export function buildTopologyGraph({
     });
   }
 
-  // SCHEDULING DOMAIN (x: 770)
+  // SCHEDULING DOMAIN (x: 720)
   if (isDomainVisible('scheduling')) {
+    const schedTaintsCount = allNodes.filter((n) => ((n.specSummary?.taints as any[]) || []).length > 0).length;
     const schedGroupNode: TopologyNode = {
       id: 'domain-scheduling',
       type: 'domain_group',
       kind: 'Scheduling',
       name: 'Scheduling',
-      health: allHPAs.some((h) => h.health === 'CRITICAL') ? 'CRITICAL' : 'HEALTHY',
-      statusText: `${allHPAs.length} HPA / Autoscalers`,
-      badgeText: `${allNodes.filter((n) => (n.specSummary?.taints as any[])?.length > 0).length} Nodes with Taints`,
+      health: 'HEALTHY',
+      statusText: `${schedTaintsCount} Nodes with Taints`,
+      badgeText: 'Affinity & Tolerations',
       incidents: [],
       domainId: 'scheduling',
-      x: 770,
+      x: 720,
       y: bottomTierY,
       width: 250,
       height: 80
@@ -887,7 +911,90 @@ export function buildTopologyGraph({
     });
   }
 
-  // Calculate bounding box
+  // SCALING DOMAIN (x: 1000)
+  if (isDomainVisible('scaling')) {
+    const scaleHealth = allHPAs.some((h) => h.health === 'CRITICAL')
+      ? 'CRITICAL'
+      : allHPAs.some((h) => h.health === 'WARNING')
+      ? 'WARNING'
+      : 'HEALTHY';
+    const scalingGroupNode: TopologyNode = {
+      id: 'domain-scaling',
+      type: 'domain_group',
+      kind: 'Scaling',
+      name: 'Scaling',
+      health: allHPAs.length > 0 ? scaleHealth : 'UNKNOWN',
+      statusText: allHPAs.length > 0 ? `${allHPAs.length} HPA / Autoscalers` : 'No HPA configured',
+      badgeText: allHPAs.length > 0 ? `${allHPAs.filter((h) => h.health === 'HEALTHY').length} Active` : undefined,
+      incidents: [],
+      domainId: 'scaling',
+      x: 1000,
+      y: bottomTierY,
+      width: 250,
+      height: 80
+    };
+    nodes.push(scalingGroupNode);
+    renderedNodeIds.add(scalingGroupNode.id);
+    edges.push({
+      id: `edge-cluster-scaling`,
+      source: clusterRootNode.id,
+      target: scalingGroupNode.id,
+      type: 'ownership'
+    });
+
+    let scalingOffsetY = bottomTierY + 95;
+    allHPAs.slice(0, 4).forEach((hpa) => {
+      const hpaNode: TopologyNode = {
+        id: `hpa-${hpa.id}`,
+        type: 'resource',
+        kind: 'HorizontalPodAutoscaler',
+        name: hpa.name,
+        namespace: hpa.namespace,
+        clusterId: hpa.clusterId,
+        resource: hpa,
+        health: hpa.health || 'HEALTHY',
+        statusText: (hpa.specSummary?.targetRef as string) || 'Autoscaler',
+        badgeText: 'HPA',
+        incidents: getResourceIncidents(hpa),
+        domainId: 'scaling',
+        x: 1000,
+        y: scalingOffsetY,
+        width: 250,
+        height: 66
+      };
+      nodes.push(hpaNode);
+      renderedNodeIds.add(hpaNode.id);
+      edges.push({
+        id: `edge-scaling-hpa-${hpa.id}`,
+        source: scalingGroupNode.id,
+        target: hpaNode.id,
+        type: 'ownership'
+      });
+
+      // Target deployment/workload edge
+      const targetWorkload =
+        renderedWorkloadMap.get(hpa.name) ||
+        Array.from(renderedWorkloadMap.values()).find(
+          (w) => w.name.includes(hpa.name) || hpa.name.includes(w.name)
+        );
+      if (targetWorkload) {
+        edges.push({
+          id: `edge-hpa-scale-${hpa.id}-${targetWorkload.id}`,
+          source: hpaNode.id,
+          target: targetWorkload.id,
+          type: 'depends_on',
+          label: 'Scales'
+        });
+      }
+      scalingOffsetY += 78;
+    });
+  }
+
+  return finalizeGraphData(nodes, edges);
+}
+
+// Calculate bounding box and adjacency indices
+export function finalizeGraphData(nodes: TopologyNode[], edges: TopologyEdge[]): TopologyGraphData {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -942,4 +1049,398 @@ export function buildTopologyGraph({
     outgoingEdges,
     incomingEdges
   };
+}
+
+function buildNamespaceGroupedGraph({
+  resources,
+  cluster,
+  incidents,
+  filters
+}: BuilderOptions): TopologyGraphData {
+  const safeResources = Array.isArray(resources)
+    ? resources.filter((r): r is KubernetesResource => !!r && typeof r === 'object')
+    : [];
+  const safeIncidents = Array.isArray(incidents) ? incidents.filter(Boolean) : [];
+
+  const incidentsByResource = new Map<string, Incident[]>();
+  for (const inc of safeIncidents) {
+    const key = `${inc.clusterId}/${inc.resourceKind}/${inc.namespace || ''}/${inc.resourceName}`;
+    const list = incidentsByResource.get(key) || [];
+    list.push(inc);
+    incidentsByResource.set(key, list);
+
+    const wildcard = `*/${inc.resourceKind}/${inc.namespace || ''}/${inc.resourceName}`;
+    const wlist = incidentsByResource.get(wildcard) || [];
+    wlist.push(inc);
+    incidentsByResource.set(wildcard, wlist);
+  }
+
+  const getResourceIncidents = (r: KubernetesResource): Incident[] => {
+    const specific = incidentsByResource.get(`${r.clusterId}/${r.kind}/${r.namespace || ''}/${r.name}`);
+    if (specific && specific.length > 0) return specific;
+    const wildcard = incidentsByResource.get(`*/${r.kind}/${r.namespace || ''}/${r.name}`);
+    return wildcard || [];
+  };
+
+  const matchesFilter = (r: KubernetesResource): boolean => {
+    if (filters.namespace !== 'all' && r.namespace && r.namespace !== filters.namespace) {
+      return false;
+    }
+    if (filters.health !== 'all' && r.health !== filters.health) {
+      return false;
+    }
+    if (filters.incidentsOnly) {
+      const incs = getResourceIncidents(r);
+      if (incs.length === 0) return false;
+    }
+    if (filters.search.trim()) {
+      const query = filters.search.toLowerCase().trim();
+      const matchName = r.name.toLowerCase().includes(query);
+      const matchKind = r.kind.toLowerCase().includes(query);
+      const matchNs = r.namespace ? r.namespace.toLowerCase().includes(query) : false;
+      if (!matchName && !matchKind && !matchNs) return false;
+    }
+    return true;
+  };
+
+  const filteredResources = safeResources.filter(matchesFilter);
+  const clusterId = cluster?.id || 'cluster-root';
+  const clusterName = cluster?.name || 'Kubernetes Cluster';
+  const nodes: TopologyNode[] = [];
+  const edges: TopologyEdge[] = [];
+
+  // Cluster Root Node
+  const clusterHealth = filteredResources.some((r) => r.health === 'CRITICAL')
+    ? 'CRITICAL'
+    : filteredResources.some((r) => r.health === 'WARNING')
+    ? 'WARNING'
+    : 'HEALTHY';
+
+  // Group resources by namespace
+  const namespaceMap = new Map<string, KubernetesResource[]>();
+  for (const r of filteredResources) {
+    const ns = r.namespace || 'cluster-scoped';
+    const list = namespaceMap.get(ns) || [];
+    list.push(r);
+    namespaceMap.set(ns, list);
+  }
+
+  const sortedNamespaces = Array.from(namespaceMap.keys()).sort((a, b) => {
+    if (a === 'default') return -1;
+    if (b === 'default') return 1;
+    if (a === 'cluster-scoped') return 1;
+    if (b === 'cluster-scoped') return -1;
+    return a.localeCompare(b);
+  });
+
+  const columnWidth = 320;
+  const columnGap = 40;
+  const totalWidth = Math.max(1200, sortedNamespaces.length * (columnWidth + columnGap) + 120);
+
+  const clusterRootNode: TopologyNode = {
+    id: `cluster-${clusterId}`,
+    type: 'cluster',
+    kind: 'Cluster',
+    name: clusterName,
+    clusterId: cluster?.id,
+    cluster: cluster || undefined,
+    health: clusterHealth,
+    statusText: clusterHealth === 'HEALTHY' ? 'Healthy' : 'Issues Detected',
+    badgeText: `${filteredResources.length} Total Resources  ${sortedNamespaces.length} Namespaces`,
+    incidents: safeIncidents.filter((i) => !cluster?.id || i.clusterId === cluster.id),
+    domainId: 'cluster',
+    x: Math.max(200, totalWidth / 2 - 140),
+    y: 40,
+    width: 280,
+    height: 90
+  };
+  nodes.push(clusterRootNode);
+
+  const renderedWorkloads = new Map<string, TopologyNode>();
+  const renderedServices = new Map<string, TopologyNode>();
+  const renderedPods = new Map<string, TopologyNode>();
+
+  sortedNamespaces.forEach((ns, colIdx) => {
+    const colX = 60 + colIdx * (columnWidth + columnGap);
+    const nsResources = namespaceMap.get(ns) || [];
+    const nsHealth = nsResources.some((r) => r.health === 'CRITICAL')
+      ? 'CRITICAL'
+      : nsResources.some((r) => r.health === 'WARNING')
+      ? 'WARNING'
+      : 'HEALTHY';
+
+    const nsGroupNode: TopologyNode = {
+      id: `ns-group-${ns}`,
+      type: 'domain_group',
+      kind: 'Namespace',
+      name: ns === 'cluster-scoped' ? 'Cluster Scoped' : `Namespace: ${ns}`,
+      namespace: ns === 'cluster-scoped' ? undefined : ns,
+      health: nsHealth,
+      statusText: `${nsResources.length} Resources`,
+      badgeText: nsHealth === 'HEALTHY' ? 'Healthy' : 'Attention',
+      incidents: [],
+      domainId: 'workloads',
+      x: colX,
+      y: 190,
+      width: columnWidth,
+      height: 75
+    };
+    nodes.push(nsGroupNode);
+
+    edges.push({
+      id: `edge-cluster-ns-${ns}`,
+      source: clusterRootNode.id,
+      target: nsGroupNode.id,
+      type: 'ownership'
+    });
+
+    let currentY = 285;
+    // Sort resources: Workloads -> Pods -> Services -> Storage -> Config
+    const priorityKinds: Record<string, number> = {
+      Deployment: 1,
+      StatefulSet: 2,
+      DaemonSet: 3,
+      Job: 4,
+      Pod: 5,
+      Service: 6,
+      Ingress: 7,
+      PersistentVolumeClaim: 8,
+      ConfigMap: 9,
+      Secret: 10
+    };
+
+    const sortedRes = [...nsResources].sort((a, b) => {
+      const pa = priorityKinds[a.kind] || 20;
+      const pb = priorityKinds[b.kind] || 20;
+      if (pa !== pb) return pa - pb;
+      return a.name.localeCompare(b.name);
+    });
+
+    sortedRes.slice(0, 14).forEach((r) => {
+      const rIncidents = getResourceIncidents(r);
+      const rNode: TopologyNode = {
+        id: `res-${r.id}`,
+        type: 'resource',
+        kind: r.kind,
+        name: r.name,
+        namespace: r.namespace,
+        clusterId: r.clusterId,
+        resource: r,
+        health: r.health || 'HEALTHY',
+        statusText: r.kind,
+        badgeText: rIncidents.length > 0 ? `${rIncidents.length} alert` : undefined,
+        incidents: rIncidents,
+        domainId: 'workloads',
+        x: colX,
+        y: currentY,
+        width: columnWidth,
+        height: 68
+      };
+      nodes.push(rNode);
+
+      edges.push({
+        id: `edge-ns-${ns}-res-${r.id}`,
+        source: nsGroupNode.id,
+        target: rNode.id,
+        type: 'ownership'
+      });
+
+      if (['Deployment', 'StatefulSet', 'DaemonSet'].includes(r.kind)) {
+        renderedWorkloads.set(`${r.namespace}/${r.name}`, rNode);
+      } else if (r.kind === 'Service') {
+        renderedServices.set(`${r.namespace}/${r.name}`, rNode);
+      } else if (r.kind === 'Pod') {
+        renderedPods.set(`${r.namespace}/${r.name}`, rNode);
+      }
+
+      currentY += 80;
+    });
+  });
+
+  // Inter-resource edges (traffic and workload ownership)
+  for (const [, podNode] of renderedPods.entries()) {
+    for (const [, wNode] of renderedWorkloads.entries()) {
+      if (podNode.namespace === wNode.namespace && podNode.name.startsWith(`${wNode.name}-`)) {
+        edges.push({
+          id: `edge-workload-pod-${wNode.id}-${podNode.id}`,
+          source: wNode.id,
+          target: podNode.id,
+          type: 'ownership'
+        });
+      }
+    }
+  }
+
+  return finalizeGraphData(nodes, edges);
+}
+
+function buildDomainGroupedGraph({
+  resources,
+  cluster,
+  incidents,
+  filters
+}: BuilderOptions): TopologyGraphData {
+  const safeResources = Array.isArray(resources)
+    ? resources.filter((r): r is KubernetesResource => !!r && typeof r === 'object')
+    : [];
+  const safeIncidents = Array.isArray(incidents) ? incidents.filter(Boolean) : [];
+
+  const incidentsByResource = new Map<string, Incident[]>();
+  for (const inc of safeIncidents) {
+    const key = `${inc.clusterId}/${inc.resourceKind}/${inc.namespace || ''}/${inc.resourceName}`;
+    const list = incidentsByResource.get(key) || [];
+    list.push(inc);
+    incidentsByResource.set(key, list);
+
+    const wildcard = `*/${inc.resourceKind}/${inc.namespace || ''}/${inc.resourceName}`;
+    const wlist = incidentsByResource.get(wildcard) || [];
+    wlist.push(inc);
+    incidentsByResource.set(wildcard, wlist);
+  }
+
+  const getResourceIncidents = (r: KubernetesResource): Incident[] => {
+    const specific = incidentsByResource.get(`${r.clusterId}/${r.kind}/${r.namespace || ''}/${r.name}`);
+    if (specific && specific.length > 0) return specific;
+    const wildcard = incidentsByResource.get(`*/${r.kind}/${r.namespace || ''}/${r.name}`);
+    return wildcard || [];
+  };
+
+  const matchesFilter = (r: KubernetesResource): boolean => {
+    if (filters.namespace !== 'all' && r.namespace && r.namespace !== filters.namespace) {
+      return false;
+    }
+    if (filters.health !== 'all' && r.health !== filters.health) {
+      return false;
+    }
+    if (filters.incidentsOnly) {
+      const incs = getResourceIncidents(r);
+      if (incs.length === 0) return false;
+    }
+    if (filters.search.trim()) {
+      const query = filters.search.toLowerCase().trim();
+      const matchName = r.name.toLowerCase().includes(query);
+      const matchKind = r.kind.toLowerCase().includes(query);
+      const matchNs = r.namespace ? r.namespace.toLowerCase().includes(query) : false;
+      if (!matchName && !matchKind && !matchNs) return false;
+    }
+    return true;
+  };
+
+  const filteredResources = safeResources.filter(matchesFilter);
+  const clusterId = cluster?.id || 'cluster-root';
+  const clusterName = cluster?.name || 'Kubernetes Cluster';
+  const nodes: TopologyNode[] = [];
+  const edges: TopologyEdge[] = [];
+
+  const clusterHealth = filteredResources.some((r) => r.health === 'CRITICAL')
+    ? 'CRITICAL'
+    : filteredResources.some((r) => r.health === 'WARNING')
+    ? 'WARNING'
+    : 'HEALTHY';
+
+  const clusterRootNode: TopologyNode = {
+    id: `cluster-${clusterId}`,
+    type: 'cluster',
+    kind: 'Cluster',
+    name: clusterName,
+    clusterId: cluster?.id,
+    cluster: cluster || undefined,
+    health: clusterHealth,
+    statusText: clusterHealth === 'HEALTHY' ? 'Healthy' : 'Issues Detected',
+    badgeText: `${filteredResources.length} Resources in 8 Domains`,
+    incidents: safeIncidents.filter((i) => !cluster?.id || i.clusterId === cluster.id),
+    domainId: 'cluster',
+    x: 520,
+    y: 40,
+    width: 280,
+    height: 90
+  };
+  nodes.push(clusterRootNode);
+
+  const domains: Array<{ id: ArchitectureDomainId; name: string; kinds: string[]; col: number; row: number }> = [
+    { id: 'compute', name: 'Compute', kinds: ['Node', 'Pod'], col: 0, row: 0 },
+    { id: 'workloads', name: 'Workloads', kinds: ['Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob', 'Rollout'], col: 1, row: 0 },
+    { id: 'networking', name: 'Networking', kinds: ['Service', 'Ingress', 'Gateway', 'EndpointSlice'], col: 2, row: 0 },
+    { id: 'storage', name: 'Storage', kinds: ['PersistentVolumeClaim', 'PersistentVolume', 'StorageClass'], col: 3, row: 0 },
+    { id: 'configuration', name: 'Configuration', kinds: ['ConfigMap', 'Secret', 'ServiceAccount'], col: 0, row: 1 },
+    { id: 'security', name: 'Security', kinds: ['Role', 'ClusterRole', 'RoleBinding', 'ClusterRoleBinding'], col: 1, row: 1 },
+    { id: 'scheduling', name: 'Scheduling', kinds: [], col: 2, row: 1 },
+    { id: 'scaling', name: 'Scaling', kinds: ['HorizontalPodAutoscaler', 'VerticalPodAutoscaler'], col: 3, row: 1 }
+  ];
+
+  const colWidth = 280;
+  const colGap = 40;
+  const startX = 60;
+
+  domains.forEach((dom) => {
+    if (filters.domain !== 'all' && filters.domain !== dom.id) return;
+
+    const domX = startX + dom.col * (colWidth + colGap);
+    const domBaseY = dom.row === 0 ? 190 : 620;
+    const domResources = filteredResources.filter((r) => dom.kinds.includes(r.kind));
+
+    const domHealth = domResources.some((r) => r.health === 'CRITICAL')
+      ? 'CRITICAL'
+      : domResources.some((r) => r.health === 'WARNING')
+      ? 'WARNING'
+      : 'HEALTHY';
+
+    const domGroupNode: TopologyNode = {
+      id: `domain-${dom.id}`,
+      type: 'domain_group',
+      kind: dom.name,
+      name: dom.name,
+      health: domResources.length > 0 ? domHealth : 'HEALTHY',
+      statusText: dom.id === 'scheduling' ? 'Kube-Scheduler' : `${domResources.length} Resources`,
+      badgeText: domResources.length > 0 ? `${domResources.length} Active` : 'None',
+      incidents: [],
+      domainId: dom.id,
+      x: domX,
+      y: domBaseY,
+      width: colWidth,
+      height: 75
+    };
+    nodes.push(domGroupNode);
+
+    edges.push({
+      id: `edge-cluster-dom-${dom.id}`,
+      source: clusterRootNode.id,
+      target: domGroupNode.id,
+      type: 'ownership'
+    });
+
+    let currentY = domBaseY + 95;
+    domResources.slice(0, 5).forEach((r) => {
+      const rIncidents = getResourceIncidents(r);
+      const rNode: TopologyNode = {
+        id: `res-${r.id}`,
+        type: 'resource',
+        kind: r.kind,
+        name: r.name,
+        namespace: r.namespace,
+        clusterId: r.clusterId,
+        resource: r,
+        health: r.health || 'HEALTHY',
+        statusText: r.kind,
+        incidents: rIncidents,
+        domainId: dom.id,
+        x: domX,
+        y: currentY,
+        width: colWidth,
+        height: 66
+      };
+      nodes.push(rNode);
+
+      edges.push({
+        id: `edge-dom-${dom.id}-res-${r.id}`,
+        source: domGroupNode.id,
+        target: rNode.id,
+        type: 'ownership'
+      });
+
+      currentY += 76;
+    });
+  });
+
+  return finalizeGraphData(nodes, edges);
 }

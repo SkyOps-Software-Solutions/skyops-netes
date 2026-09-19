@@ -51,6 +51,11 @@ export const TopologyInspectorDrawer: React.FC<TopologyInspectorDrawerProps> = (
   const [activeTab, setActiveTab] = useState<InspectorTab>('overview');
   const [showKubectlModal, setShowKubectlModal] = useState(false);
 
+  // Reset inspector tab to 'overview' whenever selected node changes (Phase 12)
+  React.useEffect(() => {
+    setActiveTab('overview');
+  }, [node?.id]);
+
   if (!node) return null;
 
   const resource = node.resource;
@@ -162,7 +167,7 @@ export const TopologyInspectorDrawer: React.FC<TopologyInspectorDrawerProps> = (
                 title="Generate a contextual explanation of this resource from live cluster telemetry"
               >
                 <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-                <span>Explain with AI</span>
+                <span>Explain this Resource with AI</span>
               </button>
             )}
 
@@ -379,10 +384,10 @@ export const TopologyInspectorDrawer: React.FC<TopologyInspectorDrawerProps> = (
               {resource && onOpenLogs && (
                 <button
                   onClick={() => onOpenLogs(resource)}
-                  className="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-zinc-950 font-bold text-xs inline-flex items-center gap-1.5 transition cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-zinc-950 font-bold text-xs inline-flex items-center gap-1.5 transition cursor-pointer shadow-sm"
                 >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Open Log Viewer</span>
+                  <Terminal className="w-3.5 h-3.5" />
+                  <span>Open in Live Pod Logs →</span>
                 </button>
               )}
             </div>

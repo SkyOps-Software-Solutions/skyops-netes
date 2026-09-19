@@ -1551,5 +1551,64 @@ export interface IntelligenceAnalysis {
   customerImpact?: string;
   whatRemainsUnknown?: string[];
   whatShouldHappenNext?: string[];
-}export * from './billing';
+}
+
+// --- Firebase Cloud Storage & Stored Artifacts Foundation ---
+
+export type StorageCategory =
+  | 'audit-exports'
+  | 'incident-artifacts'
+  | 'remediation-manifests'
+  | 'cluster-snapshots'
+  | 'ai-diagnostics'
+  | 'user-uploads';
+
+export type StoredArtifactLifecycleStatus = 'ACTIVE' | 'ARCHIVED' | 'EXPIRED' | 'DELETED';
+
+export interface StoredArtifactActor {
+  id: string;
+  email?: string;
+  name?: string;
+  actorType: 'HUMAN' | 'AGENT' | 'AI' | 'SYSTEM' | 'AUTOMATION';
+}
+
+export interface StoredArtifact {
+  id: string;
+  orgId: string;
+  category: StorageCategory;
+  storagePath: string;
+  storageBucket: string;
+  filename: string;
+  sizeBytes: number;
+  mimeType: string;
+  checksumSha256: string;
+  uploadedBy: StoredArtifactActor;
+  createdAt: number;
+  updatedAt: number;
+  expiresAt?: number;
+  lifecycleStatus: StoredArtifactLifecycleStatus;
+  tags?: string[];
+  metadata?: Record<string, string | number | boolean>;
+  downloadUrl?: string;
+}
+
+export interface StoredArtifactFilters {
+  category?: StorageCategory;
+  lifecycleStatus?: StoredArtifactLifecycleStatus;
+  search?: string;
+  fromTimestamp?: number;
+  toTimestamp?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export interface StorageUsageSummary {
+  orgId: string;
+  totalSizeBytes: number;
+  totalArtifactsCount: number;
+  categoryBreakdown: Record<StorageCategory, { sizeBytes: number; count: number }>;
+  lastUpdatedAt: number;
+}
+
+export * from './billing';
 

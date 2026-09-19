@@ -308,6 +308,40 @@
         "minSeverity": { "type": "string" }
       },
       "required": ["userId"]
+    },
+    "StoredArtifact": {
+      "title": "StoredArtifact",
+      "description": "Metadata and index reference for files and artifacts stored in Firebase Cloud Storage",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "orgId": { "type": "string" },
+        "category": {
+          "type": "string",
+          "enum": [
+            "audit-exports",
+            "incident-artifacts",
+            "remediation-manifests",
+            "cluster-snapshots",
+            "ai-diagnostics",
+            "user-uploads"
+          ]
+        },
+        "storagePath": { "type": "string" },
+        "storageBucket": { "type": "string" },
+        "filename": { "type": "string" },
+        "sizeBytes": { "type": "number" },
+        "mimeType": { "type": "string" },
+        "checksumSha256": { "type": "string" },
+        "lifecycleStatus": {
+          "type": "string",
+          "enum": ["ACTIVE", "ARCHIVED", "EXPIRED", "DELETED"]
+        },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "expiresAt": { "type": "number" }
+      },
+      "required": ["id", "orgId", "category", "storagePath", "storageBucket", "filename", "sizeBytes", "mimeType", "checksumSha256", "lifecycleStatus", "createdAt"]
     }
   },
   "firestore": {
@@ -332,7 +366,8 @@
     "/invoices/{invoiceId}": { "schema": "Invoice" },
     "/usage/{usageId}": { "schema": "Usage" },
     "/supportTickets/{ticketId}": { "schema": "SupportTicket" },
-    "/userNotificationSettings/{userId}": { "schema": "UserNotificationSettings" }
+    "/userNotificationSettings/{userId}": { "schema": "UserNotificationSettings" },
+    "/storedArtifacts/{artifactId}": { "schema": "StoredArtifact" }
   }
 }
 

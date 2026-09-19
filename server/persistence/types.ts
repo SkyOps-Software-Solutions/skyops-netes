@@ -16,7 +16,11 @@ import {
   User,
   UserNotificationSettings,
   Subscription,
-  Invoice
+  Invoice,
+  StoredArtifact,
+  StoredArtifactFilters,
+  StoredArtifactLifecycleStatus,
+  StorageUsageSummary
 } from '../../src/types/index';
 import {
   AuditEvent,
@@ -164,4 +168,12 @@ export interface IPersistenceStore {
   // --- Processed Webhook IDs (Idempotency) ---
   isWebhookProcessed(webhookId: string): Promise<boolean>;
   markWebhookProcessed(webhookId: string): Promise<void>;
+
+  // --- Stored Artifacts (Firebase Cloud Storage metadata & references) ---
+  saveStoredArtifact(artifact: StoredArtifact): Promise<StoredArtifact>;
+  getStoredArtifact(orgId: string, id: string): Promise<StoredArtifact | null>;
+  listStoredArtifacts(orgId: string, filters?: StoredArtifactFilters): Promise<PaginatedResult<StoredArtifact>>;
+  updateStoredArtifactStatus(orgId: string, id: string, status: StoredArtifactLifecycleStatus): Promise<StoredArtifact | null>;
+  deleteStoredArtifact(orgId: string, id: string): Promise<boolean>;
+  getStorageUsageSummary(orgId: string): Promise<StorageUsageSummary>;
 }

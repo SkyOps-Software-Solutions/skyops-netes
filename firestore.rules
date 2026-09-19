@@ -44,6 +44,12 @@ service cloud.firestore {
       allow read: if isSignedIn() && resource.data.orgId != null;
       allow write: if false; // All audit entries must be recorded server-side
     }
+
+    // Stored Artifacts metadata: tenant-scoped reads; server-authoritative writes
+    match /storedArtifacts/{artifactId} {
+      allow read: if isSignedIn() && resource.data.orgId != null;
+      allow write: if false; // All artifact records must be created and modified server-side
+    }
   }
 }
 

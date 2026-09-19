@@ -16,7 +16,11 @@ import {
   User,
   UserNotificationSettings,
   Subscription,
-  Invoice
+  Invoice,
+  StoredArtifact,
+  StoredArtifactFilters,
+  StoredArtifactLifecycleStatus,
+  StorageUsageSummary
 } from '../../src/types/index';
 import {
   AuditEvent,
@@ -1157,6 +1161,175 @@ export class FirestoreStore implements IPersistenceStore {
         .set({ processedAt: Date.now() }, { merge: true });
     } catch (err: any) {
       // Ignored
+    }
+  }
+
+  // --- Stored Artifacts ---
+  public async saveStoredArtifact(artifact: StoredArtifact): Promise<StoredArtifact> {
+    await this.fallbackStore.saveStoredArtifact(artifact);
+    if (!this.connected) return artifact;
+    try {
+      await this.firestore
+        .collection('storedArtifacts')
+        .doc(artifact.id)
+        .set(this.sanitize(artifact), { merge: true });
+      return artifact;
+    } catch (err: any) {
+      return artifact;
+    }
+  }
+
+  public async getStoredArtifact(orgId: string, id: string): Promise<StoredArtifact | null> {
+    if (!this.connected) return this.fallbackStore.getStoredArtifact(orgId, id);
+    try {
+      const snap = await this.firestore.collection('storedArtifacts').doc(id).get();
+      if (!snap.exists) return null;
+      const data = snap.data() as StoredArtifact;
+      if (data.orgId !== orgId) return null;
+      return data;
+    } catch (err: any) {
+      return this.fallbackStore.getStoredArtifact(orgId, id);
+    }
+  }
+
+  public async listStoredArtifacts(
+    orgId: string,
+    filters?: StoredArtifactFilters
+  ): Promise<PaginatedResult<StoredArtifact>> {
+    if (!this.connected) return this.fallbackStore.listStoredArtifacts(orgId, filters);
+    try {
+      let query: Query<DocumentData> = this.firestore
+        .collection('storedArtifacts')
+        .where('orgId', '==', orgId);
+
+      if (filters?.category) {
+        query = query.where('category', '==', filters.category);
+      }
+      if (filters?.lifecycleStatus) {
+        query = query.where('lifecycleStatus', '==', filters.lifecycleStatus);
+      }
+
+      const snap = await query.get();
+      let list = snap.docs.map((d) => d.data() as StoredArtifact);
+
+      if (filters?.fromTimestamp) {
+        list = list.filter((a) => a.createdAt >= filters.fromTimestamp!);
+      }
+      if (filters?.toTimestamp) {
+        list = list.filter((a) => a.createdAt <= filters.toTimestamp!);
+      }
+      if (filters?.search) {
+        const q = filters.search.toLowerCase();
+        list = list.filter(
+          (a) =>
+            a.filename.toLowerCase().includes(q) ||
+            a.storagePath.toLowerCase().includes(q) ||
+            (a.tags && a.tags.some((t) => t.toLowerCase().includes(q)))
+        );
+      }
+
+      list.sort((a, b) => b.createdAt - a.createdAt);
+
+      const total = list.length;
+      const offset = filters?.offset || 0;
+      const limit = filters?.limit || 50;
+      const items = list.slice(offset, offset + limit);
+
+      return {
+        items,
+        total,
+        page: Math.floor(offset / limit) + 1,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit)
+      };
+    } catch (err: any) {
+      return this.fallbackStore.listStoredArtifacts(orgId, filters);
+    }
+  }
+
+  public async updateStoredArtifactStatus(
+    orgId: string,
+    id: string,
+    status: StoredArtifactLifecycleStatus
+  ): Promise<StoredArtifact | null> {
+    await this.fallbackStore.updateStoredArtifactStatus(orgId, id, status);
+    if (!this.connected) return this.fallbackStore.getStoredArtifact(orgId, id);
+    try {
+      const docRef = this.firestore.collection('storedArtifacts').doc(id);
+      const snap = await docRef.get();
+      if (!snap.exists) return null;
+      const data = snap.data() as StoredArtifact;
+      if (data.orgId !== orgId) return null;
+
+      const updated: Partial<StoredArtifact> = {
+        lifecycleStatus: status,
+        updatedAt: Date.now()
+      };
+      await docRef.update(updated);
+      return { ...data, ...updated };
+    } catch (err: any) {
+      return this.fallbackStore.updateStoredArtifactStatus(orgId, id, status);
+    }
+  }
+
+  public async deleteStoredArtifact(orgId: string, id: string): Promise<boolean> {
+    await this.fallbackStore.deleteStoredArtifact(orgId, id);
+    if (!this.connected) return true;
+    try {
+      const docRef = this.firestore.collection('storedArtifacts').doc(id);
+      const snap = await docRef.get();
+      if (!snap.exists) return false;
+      const data = snap.data() as StoredArtifact;
+      if (data.orgId !== orgId) return false;
+      await docRef.delete();
+      return true;
+    } catch (err: any) {
+      return this.fallbackStore.deleteStoredArtifact(orgId, id);
+    }
+  }
+
+  public async getStorageUsageSummary(orgId: string): Promise<StorageUsageSummary> {
+    if (!this.connected) return this.fallbackStore.getStorageUsageSummary(orgId);
+    try {
+      const snap = await this.firestore
+        .collection('storedArtifacts')
+        .where('orgId', '==', orgId)
+        .get();
+
+      const artifacts = snap.docs
+        .map((d) => d.data() as StoredArtifact)
+        .filter((a) => a.lifecycleStatus !== 'DELETED');
+
+      const categoryBreakdown: any = {
+        'audit-exports': { sizeBytes: 0, count: 0 },
+        'incident-artifacts': { sizeBytes: 0, count: 0 },
+        'remediation-manifests': { sizeBytes: 0, count: 0 },
+        'cluster-snapshots': { sizeBytes: 0, count: 0 },
+        'ai-diagnostics': { sizeBytes: 0, count: 0 },
+        'user-uploads': { sizeBytes: 0, count: 0 }
+      };
+
+      let totalSizeBytes = 0;
+      let totalArtifactsCount = 0;
+
+      for (const art of artifacts) {
+        totalSizeBytes += art.sizeBytes;
+        totalArtifactsCount += 1;
+        if (categoryBreakdown[art.category]) {
+          categoryBreakdown[art.category].sizeBytes += art.sizeBytes;
+          categoryBreakdown[art.category].count += 1;
+        }
+      }
+
+      return {
+        orgId,
+        totalSizeBytes,
+        totalArtifactsCount,
+        categoryBreakdown,
+        lastUpdatedAt: Date.now()
+      };
+    } catch (err: any) {
+      return this.fallbackStore.getStorageUsageSummary(orgId);
     }
   }
 }

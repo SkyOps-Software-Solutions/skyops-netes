@@ -42,7 +42,9 @@ const ConfigSchema = z.object({
   SKYOPS_SMTP_PASS: z.string().optional(),
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
-  RAZORPAY_WEBHOOK_SECRET: z.string().optional()
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+  SKYOPS_STORAGE_BUCKET: z.string().optional(),
+  FIREBASE_STORAGE_BUCKET: z.string().optional()
 }).superRefine((values, ctx) => {
   if (values.NODE_ENV === 'production') {
     if (!values.FIREBASE_PROJECT_ID && !values.FIREBASE_TRUSTED_PROJECT_IDS) {
@@ -93,7 +95,9 @@ try {
     SKYOPS_SMTP_PORT: process.env.SKYOPS_SMTP_PORT,
     SKYOPS_SMTP_SECURE: process.env.SKYOPS_SMTP_SECURE,
     SKYOPS_SMTP_USER: process.env.SKYOPS_SMTP_USER,
-    SKYOPS_SMTP_PASS: process.env.SKYOPS_SMTP_PASS
+    SKYOPS_SMTP_PASS: process.env.SKYOPS_SMTP_PASS,
+    SKYOPS_STORAGE_BUCKET: process.env.SKYOPS_STORAGE_BUCKET,
+    FIREBASE_STORAGE_BUCKET: process.env.FIREBASE_STORAGE_BUCKET
   });
 } catch (err) {
   console.error('[SkyOps Configuration] Fatal Configuration Validation Error:', err);
@@ -121,3 +125,20 @@ export const config = parsedConfig;
 export const isProduction = config.NODE_ENV === 'production';
 export const isDevelopment = config.NODE_ENV === 'development';
 export const isTest = config.NODE_ENV === 'test';
+
+/**
+ * Resolves canonical Firebase Cloud Storage bucket name.
+ * Priority:
+ * 1. SKYOPS_STORAGE_BUCKET / FIREBASE_STORAGE_BUCKET env vars
+ * 2. VITE_FIREBASE_STORAGE_BUCKET
+ * 3. Canonical verified project bucket: skyops-a1143.firebasestorage.app
+ * Always strips any leading 'gs://' protocol scheme.
+ */
+export function resolveStorageBucket(): string {
+  const raw =
+    process.env.SKYOPS_STORAGE_BUCKET ||
+    process.env.FIREBASE_STORAGE_BUCKET ||
+    process.env.VITE_FIREBASE_STORAGE_BUCKET ||
+    'skyops-a1143.firebasestorage.app';
+  return raw.replace(/^gs:\/\//, '').trim();
+}

@@ -37,6 +37,7 @@ import { entitlementService } from './server/billing/entitlements';
 import { billingService } from './server/billing/billingService';
 import { getBillingConfig } from './server/billing/provider';
 import { PLANS, BILLING_INTERVALS, DEFAULT_TRIAL_DAYS } from './src/config/plans';
+import { storageRouter } from './server/storageRoutes';
 
 dotenv.config();
 
@@ -66,6 +67,7 @@ app.use((req, res, next) => {
 app.use(correlationIdMiddleware);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use(storageRouter);
 
 // --- Platform Health & Self-Observability Probes ---
 app.get('/health/live', (req, res) => {

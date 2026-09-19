@@ -15,7 +15,12 @@ import {
   User,
   UserNotificationSettings,
   Subscription,
-  Invoice
+  Invoice,
+  StoredArtifact,
+  StoredArtifactFilters,
+  StoredArtifactLifecycleStatus,
+  StorageUsageSummary,
+  StorageCategory
 } from '../../src/types/index';
 import {
   AuditEvent,
@@ -53,6 +58,7 @@ export class InMemoryStore implements IPersistenceStore {
   private invoices: Map<string, Invoice> = new Map(); // invoiceId -> Invoice
   private usage: Map<string, OrgUsageSummary> = new Map(); // `${orgId}_${period}` -> Summary
   private processedWebhookIds: Set<string> = new Set();
+  private storedArtifacts: Map<string, StoredArtifact> = new Map(); // artifactId -> StoredArtifact
 
   public async init(): Promise<void> {
     // In-memory initialized cleanly
@@ -544,5 +550,134 @@ export class InMemoryStore implements IPersistenceStore {
 
   public async markWebhookProcessed(webhookId: string): Promise<void> {
     this.processedWebhookIds.add(webhookId);
+  }
+
+  // --- Stored Artifacts ---
+  public async saveStoredArtifact(artifact: StoredArtifact): Promise<StoredArtifact> {
+    this.storedArtifacts.set(artifact.id, { ...artifact });
+    return artifact;
+  }
+
+  public async getStoredArtifact(orgId: string, id: string): Promise<StoredArtifact | null> {
+    const artifact = this.storedArtifacts.get(id);
+    if (!artifact || artifact.orgId !== orgId) {
+      return null;
+    }
+    return { ...artifact };
+  }
+
+  public async listStoredArtifacts(
+    orgId: string,
+    filters?: StoredArtifactFilters
+  ): Promise<PaginatedResult<StoredArtifact>> {
+    let list = Array.from(this.storedArtifacts.values()).filter((a) => a.orgId === orgId);
+
+    if (filters?.category) {
+      list = list.filter((a) => a.category === filters.category);
+    }
+    if (filters?.lifecycleStatus) {
+      list = list.filter((a) => a.lifecycleStatus === filters.lifecycleStatus);
+    }
+    if (filters?.fromTimestamp) {
+      list = list.filter((a) => a.createdAt >= filters.fromTimestamp!);
+    }
+    if (filters?.toTimestamp) {
+      list = list.filter((a) => a.createdAt <= filters.toTimestamp!);
+    }
+    if (filters?.search) {
+      const q = filters.search.toLowerCase();
+      list = list.filter(
+        (a) =>
+          a.filename.toLowerCase().includes(q) ||
+          a.storagePath.toLowerCase().includes(q) ||
+          (a.tags && a.tags.some((t) => t.toLowerCase().includes(q)))
+      );
+    }
+
+    // Newest first
+    list.sort((a, b) => b.createdAt - a.createdAt);
+
+    const total = list.length;
+    const offset = filters?.offset || 0;
+    const limit = filters?.limit || 50;
+    const items = list.slice(offset, offset + limit);
+
+    return {
+      items,
+      total,
+      page: Math.floor(offset / limit) + 1,
+      pageSize: limit,
+      totalPages: Math.ceil(total / limit)
+    };
+  }
+
+  public async updateStoredArtifactStatus(
+    orgId: string,
+    id: string,
+    status: StoredArtifactLifecycleStatus
+  ): Promise<StoredArtifact | null> {
+    const artifact = this.storedArtifacts.get(id);
+    if (!artifact || artifact.orgId !== orgId) {
+      return null;
+    }
+    const updated: StoredArtifact = {
+      ...artifact,
+      lifecycleStatus: status,
+      updatedAt: Date.now()
+    };
+    this.storedArtifacts.set(id, updated);
+    return updated;
+  }
+
+  public async deleteStoredArtifact(orgId: string, id: string): Promise<boolean> {
+    const artifact = this.storedArtifacts.get(id);
+    if (!artifact || artifact.orgId !== orgId) {
+      return false;
+    }
+    return this.storedArtifacts.delete(id);
+  }
+
+  public async getStorageUsageSummary(orgId: string): Promise<StorageUsageSummary> {
+    const artifacts = Array.from(this.storedArtifacts.values()).filter(
+      (a) => a.orgId === orgId && a.lifecycleStatus !== 'DELETED'
+    );
+
+    const categories: StorageCategory[] = [
+      'audit-exports',
+      'incident-artifacts',
+      'remediation-manifests',
+      'cluster-snapshots',
+      'ai-diagnostics',
+      'user-uploads'
+    ];
+
+    const categoryBreakdown: Record<StorageCategory, { sizeBytes: number; count: number }> = {
+      'audit-exports': { sizeBytes: 0, count: 0 },
+      'incident-artifacts': { sizeBytes: 0, count: 0 },
+      'remediation-manifests': { sizeBytes: 0, count: 0 },
+      'cluster-snapshots': { sizeBytes: 0, count: 0 },
+      'ai-diagnostics': { sizeBytes: 0, count: 0 },
+      'user-uploads': { sizeBytes: 0, count: 0 }
+    };
+
+    let totalSizeBytes = 0;
+    let totalArtifactsCount = 0;
+
+    for (const art of artifacts) {
+      totalSizeBytes += art.sizeBytes;
+      totalArtifactsCount += 1;
+      if (categoryBreakdown[art.category]) {
+        categoryBreakdown[art.category].sizeBytes += art.sizeBytes;
+        categoryBreakdown[art.category].count += 1;
+      }
+    }
+
+    return {
+      orgId,
+      totalSizeBytes,
+      totalArtifactsCount,
+      categoryBreakdown,
+      lastUpdatedAt: Date.now()
+    };
   }
 }

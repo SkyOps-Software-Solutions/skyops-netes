@@ -1624,9 +1624,15 @@ app.post('/api/v1/incidents/:id/ai-analysis', requireUserAuth, requireOrgMembers
 // --- Architecture AI Explanation Endpoint ---
 app.post('/api/v1/architecture/explain', async (req: Request, res: Response) => {
   try {
-    const payload = req.body;
-    if (!payload || !payload.targetName) {
-      return res.status(400).json({ error: 'targetName is required' });
+    const payload = req.body || {};
+    if (!payload.targetName) {
+      payload.targetName = payload.clusterName || 'Kubernetes Cluster';
+    }
+    if (!payload.targetType) {
+      payload.targetType = 'cluster';
+    }
+    if (!payload.targetKind) {
+      payload.targetKind = payload.targetType === 'cluster' ? 'Cluster' : 'Resource';
     }
     const explanation = await explainArchitectureWithAI(payload);
     res.json({ explanation });

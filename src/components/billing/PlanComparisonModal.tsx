@@ -14,22 +14,25 @@ import {
 import { BillingInterval, Plan, PlanId } from '../../types/index';
 import { PLANS_LIST, BILLING_INTERVALS, PLANS } from '../../config/plans';
 import { Button } from '../common/UI';
+import { api } from '../../api/client';
 
 interface PlanComparisonModalProps {
   isOpen: boolean;
   onClose: () => void;
-  currentPlanId: PlanId;
-  currentInterval: BillingInterval;
-  onSelectPlan: (planId: PlanId, interval: BillingInterval) => Promise<void>;
+  currentPlanId?: PlanId;
+  currentInterval?: BillingInterval;
+  onSelectPlan?: (planId: PlanId, interval: BillingInterval) => Promise<void>;
+  onPlanChanged?: () => void;
   loading?: boolean;
 }
 
 export const PlanComparisonModal: React.FC<PlanComparisonModalProps> = ({
   isOpen,
   onClose,
-  currentPlanId,
-  currentInterval,
+  currentPlanId = 'FREE',
+  currentInterval = 'MONTHLY',
   onSelectPlan,
+  onPlanChanged,
   loading = false
 }) => {
   const [selectedInterval, setSelectedInterval] = useState<BillingInterval>(currentInterval || 'MONTHLY');
@@ -54,7 +57,12 @@ export const PlanComparisonModal: React.FC<PlanComparisonModalProps> = ({
     if (!confirmPlan) return;
     try {
       setActionError(null);
-      await onSelectPlan(confirmPlan.id, selectedInterval);
+      if (onSelectPlan) {
+        await onSelectPlan(confirmPlan.id, selectedInterval);
+      } else {
+        await api.upgradePlan(confirmPlan.id, selectedInterval);
+        if (onPlanChanged) onPlanChanged();
+      }
       setConfirmPlan(null);
       onClose();
     } catch (err: any) {
@@ -64,7 +72,7 @@ export const PlanComparisonModal: React.FC<PlanComparisonModalProps> = ({
 
   const isUpgrade = (targetPlanId: PlanId): boolean => {
     const ranks: Record<PlanId, number> = { FREE: 0, PRO: 1, BUSINESS: 2, ENTERPRISE: 3 };
-    return ranks[targetPlanId] > ranks[currentPlanId];
+    return ranks[targetPlanId] > (ranks[currentPlanId] ?? 0);
   };
 
   return (

@@ -155,6 +155,22 @@ export const InvitationAcceptanceModal: React.FC = () => {
                 <div className="text-[11px] text-zinc-400">
                   Logged in as: <span className="text-zinc-200 font-semibold">{user.email}</span>
                 </div>
+
+                {user.email && invInfo.email && user.email.trim().toLowerCase() !== invInfo.email.trim().toLowerCase() && (
+                  <div className="p-3 bg-amber-950/40 border border-amber-800/80 rounded-lg text-amber-300 text-[11px] space-y-1">
+                    <div className="font-bold flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      Email Identity Mismatch
+                    </div>
+                    <div>
+                      You are signed in as <strong className="text-zinc-200">{user.email}</strong>, but this invitation was cryptographically issued to <strong className="text-zinc-200">{invInfo.email}</strong>.
+                    </div>
+                    <div className="text-amber-400/80 pt-1">
+                      Please sign in with the matching email address or request an invite to your current address.
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-2 pt-2 border-t border-zinc-800">
                   <Button variant="outline" size="sm" onClick={handleDismiss} disabled={accepting} className="w-full">
                     Decline
@@ -163,7 +179,7 @@ export const InvitationAcceptanceModal: React.FC = () => {
                     variant="primary"
                     size="sm"
                     onClick={handleAccept}
-                    disabled={accepting}
+                    disabled={accepting || (Boolean(user.email && invInfo.email && user.email.trim().toLowerCase() !== invInfo.email.trim().toLowerCase()))}
                     icon={<UserCheck className="w-3.5 h-3.5" />}
                     className="w-full"
                   >

@@ -224,20 +224,56 @@ export function requireOrgMembership(
     return next();
   }
 
-  const targetOrgId = requestedOrgId || userOrgs[0].id;
-  if (!userOrgs.some((o) => o.id === targetOrgId)) {
-    return res.status(403).json({ error: 'Forbidden: You do not have access to this organization' });
+  // Resolve target organization by id, slug, or name
+  let targetOrg = requestedOrgId
+    ? userOrgs.find(
+        (o) =>
+          o.id === requestedOrgId ||
+          (o.slug && o.slug.toLowerCase() === requestedOrgId.toLowerCase()) ||
+          (o.name && o.name.toLowerCase() === requestedOrgId.toLowerCase())
+      )
+    : userOrgs[0];
+
+  // For /api/v1/auth/session, if a stale or invalid org header was passed, fall back to user's first valid organization
+  const isSessionEndpoint =
+    req.path === '/api/v1/auth/session' ||
+    req.originalUrl?.includes('/api/v1/auth/session') ||
+    req.url?.includes('/api/v1/auth/session');
+  if (!targetOrg && isSessionEndpoint) {
+    targetOrg = userOrgs[0];
   }
 
+  if (!targetOrg) {
+    return res.status(403).json({
+      error: 'Forbidden: You do not have access to this organization',
+      code: 'ORG_ACCESS_DENIED',
+      requestedOrgId: requestedOrgId,
+      message: 'You are not an authorized member of this organization.'
+    });
+  }
+
+  const targetOrgId = targetOrg.id;
   const access = store.checkUserOrgAccess(req.user.id, targetOrgId, req.user.email);
   if (!access.hasAccess) {
     if (access.status === 'SUSPENDED') {
-      return res.status(403).json({ error: 'Forbidden: Your organization membership has been suspended' });
+      return res.status(403).json({
+        error: 'Forbidden: Your organization membership has been suspended',
+        code: 'MEMBERSHIP_SUSPENDED',
+        orgId: targetOrgId
+      });
     }
     if (access.status === 'REMOVED') {
-      return res.status(403).json({ error: 'Forbidden: Your organization membership has been revoked' });
+      return res.status(403).json({
+        error: 'Forbidden: Your organization membership has been revoked',
+        code: 'MEMBERSHIP_REVOKED',
+        orgId: targetOrgId
+      });
     }
-    return res.status(403).json({ error: 'Forbidden: You do not have access to this organization' });
+    return res.status(403).json({
+      error: 'Forbidden: You do not have access to this organization',
+      code: 'ORG_ACCESS_DENIED',
+      orgId: targetOrgId
+    });
   }
 
   req.orgId = targetOrgId;

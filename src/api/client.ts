@@ -191,7 +191,11 @@ class ApiClient {
 
     if (!res.ok) {
       const errMsg = data?.error || `API request failed with status ${res.status}`;
-      throw new Error(errMsg);
+      const err = new Error(errMsg) as any;
+      err.status = res.status;
+      err.code = data?.code;
+      err.data = data;
+      throw err;
     }
 
     return data as T;
@@ -205,7 +209,17 @@ class ApiClient {
     role: Role;
     members: OrgMember[];
   }> {
-    return this.request('/api/v1/auth/session', { method: 'POST' });
+    const session = await this.request<{
+      user: User;
+      currentOrg: Organization;
+      organizations: Organization[];
+      role: Role;
+      members: OrgMember[];
+    }>('/api/v1/auth/session', { method: 'POST' });
+    if (session?.currentOrg?.id) {
+      localStorage.setItem('skyops_active_org_id', session.currentOrg.id);
+    }
+    return session;
   }
 
   // --- Organizations ---

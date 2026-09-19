@@ -520,6 +520,32 @@ export class DataStore {
         if (org && !userOrgs.some((o) => o.id === org.id)) userOrgs.push(org);
       }
     }
+
+    // Ensure organizations owned by user are recognized
+    for (const org of this.orgs.values()) {
+      if (org.ownerUserId === userId && !userOrgs.some((o) => o.id === org.id)) {
+        userOrgs.push(org);
+        let orgMembers = this.members.get(org.id);
+        if (!orgMembers) {
+          orgMembers = [];
+          this.members.set(org.id, orgMembers);
+        }
+        if (!orgMembers.some((m) => m.userId === userId || (normalizedEmail && m.email?.toLowerCase() === normalizedEmail))) {
+          orgMembers.push({
+            userId,
+            orgId: org.id,
+            email: userEmail || `${userId}@skyops.internal`,
+            name: (userEmail || 'Owner').split('@')[0],
+            role: 'OWNER',
+            status: 'ACTIVE',
+            joinedAt: org.createdAt || Date.now(),
+            createdAt: org.createdAt || Date.now(),
+            updatedAt: Date.now()
+          });
+        }
+      }
+    }
+
     return userOrgs;
   }
 
@@ -710,7 +736,34 @@ export class DataStore {
     orgId: string,
     options?: { search?: string; role?: Role; status?: OrgMemberStatus }
   ): OrgMember[] {
-    let list = (this.members.get(orgId) || []).slice();
+    let resolvedOrgId = orgId;
+    if (!this.members.has(resolvedOrgId)) {
+      for (const [id, o] of this.orgs.entries()) {
+        if (o.slug === orgId || o.name.toLowerCase() === orgId.toLowerCase()) {
+          resolvedOrgId = id;
+          break;
+        }
+      }
+    }
+    let list = (this.members.get(resolvedOrgId) || []).slice();
+    if (list.length === 0) {
+      const org = this.orgs.get(resolvedOrgId);
+      if (org && org.ownerUserId) {
+        const ownerMember: OrgMember = {
+          userId: org.ownerUserId,
+          orgId: resolvedOrgId,
+          email: `${org.ownerUserId}@skyops.internal`,
+          name: org.name ? `${org.name} Owner` : 'Workspace Owner',
+          role: 'OWNER',
+          status: 'ACTIVE',
+          joinedAt: org.createdAt || Date.now(),
+          createdAt: org.createdAt || Date.now(),
+          updatedAt: Date.now()
+        };
+        list = [ownerMember];
+        this.members.set(resolvedOrgId, [ownerMember]);
+      }
+    }
     if (options?.status) {
       list = list.filter((m) => (m.status || 'ACTIVE') === options.status);
     } else {
@@ -733,12 +786,28 @@ export class DataStore {
     orgId: string,
     userEmail?: string
   ): { hasAccess: boolean; role?: Role; status?: OrgMemberStatus } {
-    const orgMembers = this.members.get(orgId) || [];
+    let resolvedOrgId = orgId;
+    let org = this.orgs.get(orgId);
+    if (!org) {
+      for (const [id, o] of this.orgs.entries()) {
+        if (o.slug === orgId || o.name.toLowerCase() === orgId.toLowerCase()) {
+          resolvedOrgId = id;
+          org = o;
+          break;
+        }
+      }
+    }
+    const orgMembers = this.members.get(resolvedOrgId) || [];
     const normalizedEmail = userEmail?.trim().toLowerCase();
     const member = orgMembers.find(
       (m) => m.userId === userId || (normalizedEmail && m.email && m.email.trim().toLowerCase() === normalizedEmail)
     );
-    if (!member) return { hasAccess: false };
+    if (!member) {
+      if (org && org.ownerUserId === userId) {
+        return { hasAccess: true, role: 'OWNER', status: 'ACTIVE' };
+      }
+      return { hasAccess: false };
+    }
     if (member.userId !== userId) {
       member.userId = userId;
     }
@@ -936,7 +1005,7 @@ export class DataStore {
       this.saveSnapshot();
       throw new Error('This invitation has expired');
     }
-    if (user.email !== inv.email) {
+    if (user.email.trim().toLowerCase() !== inv.email.trim().toLowerCase()) {
       throw new Error('Invitation email does not match the authenticated user');
     }
 

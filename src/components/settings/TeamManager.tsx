@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  Building2,
   CheckCircle2,
   Copy,
   Mail,
@@ -8,6 +9,7 @@ import {
   RefreshCw,
   Search,
   Shield,
+  ShieldAlert,
   Sparkles,
   Trash2,
   UserCheck,
@@ -32,13 +34,18 @@ const ROLE_DESCRIPTIONS: Record<Role, string> = {
 };
 
 export const TeamManager: React.FC = () => {
-  const { currentOrg, role: currentUserRole, user } = useAuth();
+  const { currentOrg, role: currentUserRole, user, organizations, switchOrganization } = useAuth();
   const isOwnerOrAdmin = currentUserRole === 'OWNER' || currentUserRole === 'ADMIN';
 
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [invitations, setInvitations] = useState<OrgInvitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<{
+    status: number;
+    code?: string;
+    message: string;
+  } | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // Filters
@@ -64,6 +71,7 @@ export const TeamManager: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
+      setAuthError(null);
       const [membersData, invitationsData] = await Promise.all([
         api.getOrgMembers(),
         isOwnerOrAdmin ? api.getOrgInvitations() : Promise.resolve([])
@@ -71,7 +79,22 @@ export const TeamManager: React.FC = () => {
       setMembers(membersData);
       setInvitations(invitationsData);
     } catch (err: any) {
-      setError(err.message || 'Failed to load team data');
+      const is403 =
+        err?.status === 403 ||
+        err?.code === 'ORG_ACCESS_DENIED' ||
+        err?.code === 'MEMBERSHIP_SUSPENDED' ||
+        err?.code === 'MEMBERSHIP_REVOKED' ||
+        /Forbidden|access to this organization|not authorized/i.test(err?.message || '');
+
+      if (is403) {
+        setAuthError({
+          status: err.status || 403,
+          code: err.code || 'ORG_ACCESS_DENIED',
+          message: err.message || 'You do not have access to view or manage team members in this organization.'
+        });
+      } else {
+        setError(err.message || 'Failed to load team data');
+      }
     } finally {
       setLoading(false);
     }
@@ -196,6 +219,101 @@ export const TeamManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Active Workspace Identity & RBAC Header */}
+      <div className="p-4 rounded-xl bg-zinc-900/40 border border-zinc-800/80 font-mono flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-sky-950/60 border border-sky-800/80 flex items-center justify-center text-sky-400 shrink-0">
+            <Building2 className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-zinc-100">{currentOrg?.name || 'Workspace'}</span>
+              <span className="px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-400 text-[10px]">
+                {currentOrg?.slug || currentOrg?.id || 'org'}
+              </span>
+            </div>
+            <div className="text-[11px] text-zinc-400 mt-0.5 flex items-center gap-2">
+              <span>Signed in as <strong className="text-zinc-300 font-semibold">{user?.email || 'User'}</strong></span>
+              <span className="text-zinc-600">•</span>
+              <span className="flex items-center gap-1">
+                <Shield className="w-3 h-3 text-sky-400" />
+                <span className="text-sky-300 font-semibold">{currentUserRole}</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 border-zinc-800/60 pt-3 md:pt-0">
+          <div className="flex items-center gap-4 text-xs text-zinc-400">
+            <div>
+              <span className="text-zinc-200 font-bold">{members.length}</span> active member{members.length === 1 ? '' : 's'}
+            </div>
+            {isOwnerOrAdmin && (
+              <div>
+                <span className="text-sky-400 font-bold">{invitations.filter((i) => i.status === 'PENDING').length}</span> pending invite{invitations.filter((i) => i.status === 'PENDING').length === 1 ? '' : 's'}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 403 Forbidden Authorization Notice */}
+      {authError && (
+        <div className="p-6 rounded-xl bg-amber-950/20 border border-amber-500/40 font-mono space-y-4">
+          <div className="flex items-start gap-3.5">
+            <div className="w-10 h-10 rounded-lg bg-amber-950/80 border border-amber-600/60 flex items-center justify-center shrink-0 text-amber-400">
+              <ShieldAlert className="w-5 h-5" />
+            </div>
+            <div className="space-y-1 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-700 text-[10px] font-bold">
+                  HTTP {authError.status} ACCESS RESTRICTED
+                </span>
+                <span className="text-zinc-500 text-xs">{authError.code || 'ORG_ACCESS_DENIED'}</span>
+              </div>
+              <h3 className="text-sm font-bold text-zinc-100">
+                Workspace Membership & Directory Access Denied
+              </h3>
+              <p className="text-xs text-zinc-300 leading-relaxed">
+                {authError.message}
+              </p>
+              <div className="pt-2 text-[11px] text-zinc-400 space-y-0.5">
+                <div>Your account: <span className="text-zinc-200 font-semibold">{user?.email}</span></div>
+                <div>Workspace requested: <span className="text-zinc-200 font-semibold">{currentOrg?.name || currentOrg?.id}</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-amber-900/40">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadData}
+              disabled={loading}
+              icon={<RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />}
+              className="text-xs font-mono"
+            >
+              Retry Access
+            </Button>
+
+            {organizations && organizations.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-zinc-400">Switch to authorized workspace:</span>
+                {organizations.map((org) => (
+                  <button
+                    key={org.id}
+                    onClick={() => switchOrganization(org.id)}
+                    className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-800 text-sky-400 border border-zinc-700 hover:border-sky-600 text-xs font-mono transition-colors cursor-pointer"
+                  >
+                    {org.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Toast notifications */}
       {successMsg && (
         <div className="p-3 bg-emerald-950/40 border border-emerald-800/80 rounded-lg text-emerald-300 text-xs font-mono flex items-center justify-between">
@@ -328,10 +446,49 @@ export const TeamManager: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/60 text-zinc-300">
-              {filteredMembers.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">
+                    <div className="flex items-center justify-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin text-sky-400" />
+                      <span>Loading team member directory...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : authError ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-amber-400/90 bg-amber-950/10">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <ShieldAlert className="w-6 h-6 text-amber-400" />
+                      <div className="font-semibold text-zinc-200">Directory Access Forbidden (HTTP 403)</div>
+                      <div className="text-xs text-zinc-400 max-w-md">
+                        You do not possess authorized membership for this organization.
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              ) : members.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-zinc-500">
-                    No matching members found in this organization.
+                    No active members found in this organization.
+                  </td>
+                </tr>
+              ) : filteredMembers.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">
+                    <div className="space-y-2">
+                      <div>No team members match "{searchQuery}" or selected role/status filters.</div>
+                      <button
+                        onClick={() => {
+                          setSearchQuery('');
+                          setRoleFilter('ALL');
+                          setStatusFilter('ALL');
+                        }}
+                        className="text-xs text-sky-400 hover:text-sky-300 underline cursor-pointer"
+                      >
+                        Clear filters and search
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ) : (

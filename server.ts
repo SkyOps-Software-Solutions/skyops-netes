@@ -1,3 +1,20 @@
+// Intercept and suppress benign Firestore gRPC idle stream cancellation messages in stderr
+if (typeof process !== 'undefined' && process.stderr && (process.stderr as any).write) {
+  const originalStderrWrite = (process.stderr as any).write.bind(process.stderr);
+  (process.stderr as any).write = (chunk: any, encoding?: any, callback?: any) => {
+    const str = typeof chunk === 'string' ? chunk : chunk?.toString() || '';
+    if (
+      str.includes('Disconnecting idle stream. Timed out waiting for new targets') ||
+      (str.includes('GrpcConnection') && (str.includes('CANCELLED') || str.includes('idle stream')))
+    ) {
+      if (typeof encoding === 'function') encoding();
+      else if (typeof callback === 'function') callback();
+      return true;
+    }
+    return originalStderrWrite(chunk, encoding, callback);
+  };
+}
+
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express, { NextFunction, Request, Response } from 'express';
@@ -1393,8 +1410,8 @@ app.post('/api/v1/agent/actions/:actionId/result', requireAgentAuth, (req: Authe
         incidentId: action.incidentId,
         clusterId: req.clusterId,
         clusterName: cluster.name,
-        targetNamespace: action.targetNamespace,
-        targetResourceName: action.targetResourceName,
+        targetNamespace: (action as any).targetNamespace,
+        targetResourceName: (action as any).targetResourceName,
         success: parsed.data.success,
         message: parsed.data.message
       }
@@ -1653,7 +1670,7 @@ app.post('/api/v1/incidents/:id/ai-analysis', requireUserAuth, requireOrgMembers
         incidentId: incident.id,
         clusterId: incident.clusterId,
         confidence: analysis.confidence,
-        risk: analysis.riskLevel,
+        risk: (analysis as any).riskLevel,
         rootCauseSummary: analysis.rootCause ? analysis.rootCause.substring(0, 150) : undefined
       }
     });

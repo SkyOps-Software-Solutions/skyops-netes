@@ -389,8 +389,8 @@ export const ServiceDetailModal: React.FC<ServiceDetailModalProps> = ({
                         const readyContainers = pod.containers?.filter((c) => c.ready).length || 0;
                         const totalContainers = pod.containers?.length || 1;
                         const totalRestarts = pod.containers?.reduce((acc, c) => acc + (c.restartCount || 0), 0) || 0;
-                        const podIp = pod.specSummary?.podIP || pod.statusSummary?.podIP || '-';
-                        const nodeName = pod.nodeName || pod.specSummary?.nodeName || '-';
+                        const podIp = String(pod.specSummary?.podIP || pod.statusSummary?.podIP || '-');
+                        const nodeName = String(pod.nodeName || pod.specSummary?.nodeName || '-');
 
                         return (
                           <tr key={pod.id || pod.name} className="hover:bg-zinc-800/40 transition-colors">

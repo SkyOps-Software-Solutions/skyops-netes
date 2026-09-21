@@ -606,7 +606,7 @@ export class InMemoryStore implements IPersistenceStore {
       items,
       total,
       page: Math.floor(offset / limit) + 1,
-      pageSize: limit,
+      limit,
       totalPages: Math.ceil(total / limit)
     };
   }

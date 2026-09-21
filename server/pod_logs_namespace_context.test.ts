@@ -263,7 +263,7 @@ describe('Live Pod Logs Namespace Context & State Consistency Suite', () => {
       namespace: 'monitoring',
       kind: 'Pod',
       status: 'Running',
-      health: 'DEGRADED',
+      health: 'WARNING',
       createdAt: Date.now() - 500000,
       updatedAt: Date.now(),
       containers: [{ name: 'prometheus', image: 'prometheus:v2.50', ready: true, restartCount: 2, state: 'running' }]
@@ -293,7 +293,7 @@ describe('Live Pod Logs Namespace Context & State Consistency Suite', () => {
   // Test 8: missing namespace does not silently default to "default"
   it('8. missing namespace does not silently default to "default": reports unavailable', () => {
     // In PodLogsViewer contract: if namespace is missing/empty, it does not query default/<pod>
-    const namespace = '';
+    const namespace: string = '';
     const podName = 'orphan-pod';
 
     let error: string | null = null;

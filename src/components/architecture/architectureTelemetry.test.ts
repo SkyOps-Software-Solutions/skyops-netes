@@ -18,7 +18,7 @@ describe('SkyOps Architecture Telemetry Engine', () => {
     lastHeartbeatAt: Date.now() - 10000
   };
 
-  const mockResources: KubernetesResource[] = [
+  const mockResources: any[] = [
     // 1. Compute
     {
       id: 'node-1',
@@ -212,7 +212,7 @@ describe('SkyOps Architecture Telemetry Engine', () => {
     }
   ];
 
-  const mockIncidents: Incident[] = [
+  const mockIncidents: any[] = [
     {
       id: 'inc-101',
       clusterId: 'cluster-prod-1',

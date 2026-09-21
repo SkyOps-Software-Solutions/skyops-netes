@@ -556,7 +556,7 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
       {activeService && (
         <ServiceDetailModal
           service={activeService}
-          cluster={cluster || safeClusters.find((c) => c.id === activeService.clusterId)}
+          cluster={cluster || (clusters && clusters.find((c) => c.id === activeService.clusterId)) || null}
           clusterResources={allResources}
           incidents={incidents}
           onClose={() => setActiveService(null)}

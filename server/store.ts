@@ -199,8 +199,27 @@ export class DataStore {
         }
 
         console.log(
-          `[DataStore] Successfully hydrated from Cloud Firestore: ${this.orgs.size} orgs, ${this.users.size} users, ${this.clusters.size} clusters, ${this.incidents.size} incidents.`
+          `[DataStore] Hydrated from Cloud Firestore: ${this.orgs.size} orgs, ${this.users.size} users, ${this.clusters.size} clusters, ${this.incidents.size} incidents.`
         );
+
+        // If Firestore had 0 organizations, merge from local backup snapshot and sync forward
+        if (this.orgs.size === 0) {
+          console.log('[DataStore] Firestore has 0 organizations, checking local backup snapshot...');
+          this.loadSnapshot();
+          if (this.orgs.size > 0) {
+            console.log(`[DataStore] Syncing ${this.orgs.size} snapshot organizations forward to Firestore...`);
+            for (const org of this.orgs.values()) {
+              await this.persistence.upsertOrganization(org);
+              const members = this.members.get(org.id);
+              if (members && members.length > 0) {
+                await this.persistence.setOrgMembers(org.id, members);
+              }
+            }
+            for (const user of this.users.values()) {
+              await this.persistence.upsertUser(user);
+            }
+          }
+        }
       } catch (err: any) {
         console.warn('[DataStore] Non-fatal hydration notice, falling back to local JSON store snapshot:', err?.message || err);
         this.loadSnapshot();
@@ -211,11 +230,19 @@ export class DataStore {
     }
   }
 
-  private loadSnapshot() {
-    if (this.persistence.providerName === 'firestore' && (this.persistence as any).connected === true) {
-      // Production uses Cloud Firestore as authoritative storage when verified & connected; local JSON snapshot is disabled
-      return;
+  public hydrateOrganization(org: Organization): void {
+    this.orgs.set(org.id, org);
+  }
+
+  public setOrgMembers(orgId: string, members: OrgMember[]): void {
+    this.members.set(orgId, members);
+    const org = this.orgs.get(orgId);
+    if (org) {
+      org.membersCount = members.filter((m) => m.status !== 'REMOVED').length;
     }
+  }
+
+  private loadSnapshot() {
     try {
       if (fs.existsSync(this.storagePath)) {
         const raw = fs.readFileSync(this.storagePath, 'utf8');
@@ -292,10 +319,6 @@ export class DataStore {
   }
 
   public saveSnapshot() {
-    if (this.persistence.providerName === 'firestore' && (this.persistence as any).connected !== false) {
-      // In production / active Firestore mode, local disk writes are bypassed
-      return;
-    }
     if (this.saveTimeout) clearTimeout(this.saveTimeout);
     this.saveTimeout = setTimeout(() => {
       try {
@@ -335,9 +358,6 @@ export class DataStore {
   }
 
   public saveSnapshotSync() {
-    if (this.persistence.providerName === 'firestore' && (this.persistence as any).connected !== false) {
-      return;
-    }
     try {
       if (this.saveTimeout) clearTimeout(this.saveTimeout);
       const data = {
@@ -393,7 +413,14 @@ export class DataStore {
   // --- Heartbeat & Connection Monitoring ---
   public reconcileClusterConnectionState(cluster: Cluster, now = Date.now()): void {
     // If the cluster is in initial pending or awaiting confirmation, do not mark it offline
-    if (cluster.connectionState === 'pending' || cluster.connectionState === 'agent_detected') {
+    if ((cluster.connectionState as any) === 'pending' || (cluster.connectionState as any) === 'agent_detected') {
+      return;
+    }
+
+    if ((cluster.connectionState as any) === 'disconnected' || (cluster as any).connectionStatus === 'disconnected') {
+      cluster.agentStatus = 'OFFLINE';
+      cluster.status = 'AGENT_OFFLINE';
+      cluster.isLastKnownState = true;
       return;
     }
 
@@ -402,6 +429,7 @@ export class DataStore {
       cluster.status = 'AGENT_OFFLINE';
       cluster.connectionState = 'offline';
       cluster.connectionStatus = 'disconnected';
+      cluster.isLastKnownState = true;
       return;
     }
 
@@ -412,19 +440,23 @@ export class DataStore {
       cluster.status = 'AGENT_OFFLINE';
       cluster.connectionState = 'offline';
       cluster.connectionStatus = 'disconnected';
+      cluster.isLastKnownState = true;
     } else if (elapsedSeconds > 90) {
       cluster.agentStatus = 'STALE';
       cluster.connectionState = 'stale';
       cluster.connectionStatus = 'stale';
+      cluster.isLastKnownState = true;
       if (cluster.status === 'HEALTHY') cluster.status = 'WARNING';
     } else if (elapsedSeconds > 45) {
       cluster.agentStatus = 'RECONNECTING';
       cluster.connectionState = 'reconnecting';
       cluster.connectionStatus = 'reconnecting';
+      cluster.isLastKnownState = true;
     } else {
       cluster.agentStatus = 'CONNECTED';
       cluster.connectionState = 'connected';
       cluster.connectionStatus = 'connected';
+      cluster.isLastKnownState = false;
       // Re-evaluate health based on incidents
       const openIncidents = Array.from(this.incidents.values()).filter(
         (i) => i.clusterId === cluster.id && (i.status === 'OPEN' || i.status === 'IN_PROGRESS' || i.status === 'ACKNOWLEDGED')
@@ -457,6 +489,9 @@ export class DataStore {
       existing.email = userData.email;
       existing.name = userData.name;
       this.saveSnapshot();
+      this.persistence.upsertUser(existing).catch((err) =>
+        console.warn('[DataStore] Failed to persist user to persistence:', err?.message || err)
+      );
       return existing;
     }
 
@@ -467,6 +502,9 @@ export class DataStore {
     };
     this.users.set(newUser.id, newUser);
     this.saveSnapshot();
+    this.persistence.upsertUser(newUser).catch((err) =>
+      console.warn('[DataStore] Failed to persist new user to persistence:', err?.message || err)
+    );
     return newUser;
   }
 
@@ -601,6 +639,13 @@ export class DataStore {
     ]);
 
     this.saveSnapshot();
+    this.persistence.upsertOrganization(org).catch((err) =>
+      console.warn('[DataStore] Failed to persist organization:', err?.message || err)
+    );
+    const initialMembers = this.members.get(orgId) || [];
+    this.persistence.setOrgMembers(orgId, initialMembers).catch((err) =>
+      console.warn('[DataStore] Failed to persist organization members:', err?.message || err)
+    );
     this.getOrCreateOrgSubscription(orgId);
 
     auditService.record({
@@ -708,6 +753,9 @@ export class DataStore {
     }
     org.updatedAt = Date.now();
     this.saveSnapshot();
+    this.persistence.upsertOrganization(org).catch((err) =>
+      console.warn('[DataStore] Failed to persist organization update:', err?.message || err)
+    );
     if (actor) {
       auditService.record({
         orgId,
@@ -847,6 +895,9 @@ export class DataStore {
           inv.role = role;
           inv.expiresAt = Date.now() + 7 * 86400000;
           this.saveSnapshot();
+          this.persistence.saveInvitation(inv).catch((err) =>
+            console.warn('[DataStore] Failed to persist invitation update:', err?.message || err)
+          );
           return inv;
         } else {
           inv.status = 'EXPIRED';
@@ -870,6 +921,9 @@ export class DataStore {
 
     this.invitations.set(invitation.id, invitation);
     this.saveSnapshot();
+    this.persistence.saveInvitation(invitation).catch((err) =>
+      console.warn('[DataStore] Failed to persist invitation:', err?.message || err)
+    );
 
     auditService.record({
       orgId,
@@ -947,6 +1001,9 @@ export class DataStore {
     inv.status = 'REVOKED';
     inv.revokedAt = Date.now();
     this.saveSnapshot();
+    this.persistence.saveInvitation(inv).catch((err) =>
+      console.warn('[DataStore] Failed to persist revoked invitation:', err?.message || err)
+    );
 
     auditService.record({
       orgId,
@@ -974,6 +1031,9 @@ export class DataStore {
     inv.status = 'PENDING';
     inv.expiresAt = Date.now() + 7 * 86400000;
     this.saveSnapshot();
+    this.persistence.saveInvitation(inv).catch((err) =>
+      console.warn('[DataStore] Failed to persist resent invitation:', err?.message || err)
+    );
 
     auditService.record({
       orgId,
@@ -1046,6 +1106,16 @@ export class DataStore {
     inv.status = 'ACCEPTED';
     inv.acceptedAt = Date.now();
     this.saveSnapshot();
+    this.persistence.saveInvitation(inv).catch((err) =>
+      console.warn('[DataStore] Failed to persist accepted invitation:', err?.message || err)
+    );
+    const updatedMembers = this.members.get(inv.orgId) || [];
+    this.persistence.setOrgMembers(inv.orgId, updatedMembers).catch((err) =>
+      console.warn('[DataStore] Failed to persist organization members on accept:', err?.message || err)
+    );
+    this.persistence.upsertOrganization(org).catch((err) =>
+      console.warn('[DataStore] Failed to persist updated organization on accept:', err?.message || err)
+    );
 
     auditService.record({
       orgId: inv.orgId,
@@ -1095,6 +1165,9 @@ export class DataStore {
     member.role = newRole;
     member.updatedAt = Date.now();
     this.saveSnapshot();
+    this.persistence.setOrgMembers(orgId, members).catch((err) =>
+      console.warn('[DataStore] Failed to persist member role update:', err?.message || err)
+    );
 
     auditService.record({
       orgId,
@@ -1145,6 +1218,9 @@ export class DataStore {
       org.membersCount = members.filter((m) => m.status !== 'REMOVED').length;
     }
     this.saveSnapshot();
+    this.persistence.setOrgMembers(orgId, members).catch((err) =>
+      console.warn('[DataStore] Failed to persist member status update:', err?.message || err)
+    );
 
     auditService.record({
       orgId,
@@ -1192,6 +1268,12 @@ export class DataStore {
       org.membersCount = members.filter((m) => m.status !== 'REMOVED').length;
     }
     this.saveSnapshot();
+    this.persistence.setOrgMembers(orgId, members).catch((err) =>
+      console.warn('[DataStore] Failed to persist member list update on remove:', err?.message || err)
+    );
+    this.persistence.removeOrgMember(orgId, targetUserId).catch((err) =>
+      console.warn('[DataStore] Failed to persist member deletion:', err?.message || err)
+    );
 
     auditService.record({
       orgId,
@@ -1483,6 +1565,7 @@ export class DataStore {
       nodeCount: 0,
       podCount: 0,
       openIncidentCount: 0,
+      isLastKnownState: false,
       createdAt: Date.now(),
     };
 
@@ -1491,6 +1574,18 @@ export class DataStore {
     this.activeAgentTokens.set(clusterId, rawToken);
     this.resources.set(clusterId, []);
     this.saveSnapshot();
+    this.persistence.upsertCluster(cluster).catch((err) =>
+      console.warn('[DataStore] Failed to persist new cluster:', err?.message || err)
+    );
+    this.persistence.saveClusterToken({
+      id: `tok-${clusterId}`,
+      tokenHash,
+      clusterId,
+      orgId,
+      createdAt: Date.now()
+    }).catch((err) =>
+      console.warn('[DataStore] Failed to persist cluster token:', err?.message || err)
+    );
 
     return { cluster, rawToken, connectionCode, installKey };
   }
@@ -1622,7 +1717,7 @@ export class DataStore {
     return success;
   }
 
-  public disconnectCluster(clusterId: string, orgId: string): boolean {
+  public disconnectCluster(clusterId: string, orgId: string, _reason?: string): boolean {
     const cluster = this.clusters.get(clusterId);
     if (!cluster || cluster.orgId !== orgId) return false;
 
@@ -1638,7 +1733,11 @@ export class DataStore {
     cluster.agentStatus = 'OFFLINE';
     cluster.connectionState = 'offline';
     cluster.connectionStatus = 'disconnected';
+    cluster.isLastKnownState = true;
     this.saveSnapshot();
+    this.persistence.upsertCluster(cluster).catch((err) =>
+      console.warn('[DataStore] Failed to persist disconnected cluster:', err?.message || err)
+    );
     return true;
   }
 
@@ -1667,6 +1766,9 @@ export class DataStore {
     }
 
     this.saveSnapshot();
+    this.persistence.deleteCluster(clusterId, orgId).catch((err) =>
+      console.warn('[DataStore] Failed to delete cluster from persistence:', err?.message || err)
+    );
 
     auditService.record({
       orgId,
@@ -1716,6 +1818,7 @@ export class DataStore {
     cluster.agentStatus = 'CONNECTED';
     cluster.connectionState = 'connected';
     cluster.connectionStatus = 'connected';
+    cluster.isLastKnownState = false;
     if (cluster.status === 'pending' || cluster.status === 'installing' || cluster.status === 'agent_detected' || cluster.status === 'AGENT_OFFLINE') {
       const openIncidents = Array.from(this.incidents.values()).filter(
         (i) => i.clusterId === clusterId && (i.status === 'OPEN' || i.status === 'IN_PROGRESS' || i.status === 'ACKNOWLEDGED')
@@ -1726,6 +1829,11 @@ export class DataStore {
       else if (hasWarning) cluster.status = 'WARNING';
       else cluster.status = 'HEALTHY';
     }
+
+    this.saveSnapshot();
+    this.persistence.upsertCluster(cluster).catch((err) =>
+      console.warn('[DataStore] Failed to persist registered cluster:', err?.message || err)
+    );
 
     return {
       status: 'REGISTERED',
@@ -1789,6 +1897,7 @@ export class DataStore {
     cluster.agentStatus = 'CONNECTED';
     cluster.connectionState = 'connected';
     cluster.connectionStatus = 'connected';
+    cluster.isLastKnownState = false;
 
     // Refresh cluster health status based on open incidents
     const openIncidents = Array.from(this.incidents.values()).filter(
@@ -1802,17 +1911,58 @@ export class DataStore {
     else cluster.status = 'HEALTHY';
 
     cluster.openIncidentCount = openIncidents.length;
+    this.saveSnapshot();
 
     return true;
   }
 
-  public syncClusterResources(clusterId: string, incomingResources: KubernetesResource[], snapshotComplete = false): void {
+  public syncClusterResources(
+    clusterId: string,
+    incomingResources: KubernetesResource[],
+    snapshotCompleteOrOptions: boolean | {
+      snapshotComplete?: boolean;
+      telemetryTimestamp?: number;
+      sequenceNumber?: number;
+    } = false
+  ): { activeResourcesCount: number; clusterId: string } | undefined {
     const cluster = this.clusters.get(clusterId);
     if (!cluster) return;
 
+    const optionsObj =
+      typeof snapshotCompleteOrOptions === 'boolean'
+        ? { snapshotComplete: snapshotCompleteOrOptions }
+        : (snapshotCompleteOrOptions || {});
+
+    const snapshotComplete = optionsObj.snapshotComplete === true;
+    const telemetryTimestamp = optionsObj.telemetryTimestamp;
+    const sequenceNumber = optionsObj.sequenceNumber;
+
+    // Check sequence number & timestamp to prevent out-of-order stale overwrites
+    if (
+      typeof sequenceNumber === 'number' &&
+      typeof (cluster as any).lastTelemetrySequence === 'number' &&
+      sequenceNumber < (cluster as any).lastTelemetrySequence
+    ) {
+      console.warn(`[DataStore] Rejecting stale sequence telemetry (${sequenceNumber} < ${(cluster as any).lastTelemetrySequence})`);
+      return { activeResourcesCount: (this.resources.get(clusterId) || []).length, clusterId };
+    }
+
+    if (
+      typeof telemetryTimestamp === 'number' &&
+      cluster.lastTelemetrySnapshot &&
+      telemetryTimestamp < cluster.lastTelemetrySnapshot
+    ) {
+      console.warn(`[DataStore] Rejecting stale timestamp telemetry (${telemetryTimestamp} < ${cluster.lastTelemetrySnapshot})`);
+      return { activeResourcesCount: (this.resources.get(clusterId) || []).length, clusterId };
+    }
+
     let finalResources: KubernetesResource[] = incomingResources;
-    if (!snapshotComplete) {
-      const existing = this.resources.get(clusterId) || [];
+    const existing = this.resources.get(clusterId) || [];
+
+    if (incomingResources.length === 0 && existing.length > 0 && !snapshotComplete) {
+      // Empty scrape preserves valid snapshot
+      finalResources = existing;
+    } else if (!snapshotComplete) {
       if (existing.length > 0) {
         const incomingMap = new Map<string, KubernetesResource>();
         for (const res of incomingResources) {
@@ -2318,8 +2468,23 @@ export class DataStore {
       }
     }
 
+    if (typeof sequenceNumber === 'number') {
+      (cluster as any).lastTelemetrySequence = sequenceNumber;
+    }
+    cluster.lastTelemetrySnapshot = telemetryTimestamp || now;
+    cluster.isLastKnownState = false;
+
     this.updateClusterIncidentCount(clusterId);
     this.saveSnapshot();
+
+    this.persistence.saveClusterResources(clusterId, cluster.orgId, finalResources).catch((err) =>
+      console.warn('[DataStore] Failed to persist cluster resources on sync:', err?.message || err)
+    );
+    this.persistence.upsertCluster(cluster).catch((err) =>
+      console.warn('[DataStore] Failed to persist cluster on telemetry sync:', err?.message || err)
+    );
+
+    return { activeResourcesCount: finalResources.length, clusterId };
   }
 
   // --- AI Analysis & Remediation Layer ---

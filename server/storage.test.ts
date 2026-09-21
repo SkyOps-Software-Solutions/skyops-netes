@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import test, { describe, it, beforeEach } from 'node:test';
+import assert from 'node:assert/strict';
 import {
   StorageService,
   MemoryStorageDriver,
@@ -40,72 +41,72 @@ describe('SkyOps Firebase Cloud Storage Foundation', () => {
   describe('Configuration & Bucket Resolution', () => {
     it('resolves canonical bucket name and strips gs:// protocol scheme', () => {
       const bucket = resolveStorageBucket();
-      expect(bucket).toBeDefined();
-      expect(bucket).not.toContain('gs://');
-      expect(bucket).toBe('skyops-a1143.firebasestorage.app');
+      assert.ok(bucket);
+      assert.ok(!bucket.includes('gs://'));
+      assert.equal(bucket, 'skyops-a1143.firebasestorage.app');
     });
 
     it('initializes StorageService with canonical bucket', () => {
-      expect(storageService.getBucketName()).toBe('skyops-a1143.firebasestorage.app');
-      expect(storageService.getDriverName()).toBe('memory');
+      assert.equal(storageService.getBucketName(), 'skyops-a1143.firebasestorage.app');
+      assert.equal(storageService.getDriverName(), 'memory');
     });
   });
 
   describe('Security Validation & Path Isolation', () => {
     it('constructs strict tenant-scoped paths', () => {
       const path = buildStoragePath(orgA, 'incident-artifacts', 'dump.json');
-      expect(path).toBe('tenants/org-acme-corp/incident-artifacts/dump.json');
+      assert.equal(path, 'tenants/org-acme-corp/incident-artifacts/dump.json');
     });
 
     it('parses and validates tenant org from canonical storage path', () => {
       const parsed = parseTenantFromPath('tenants/org-acme-corp/remediation-manifests/v1/patch.yaml');
-      expect(parsed.orgId).toBe(orgA);
-      expect(parsed.category).toBe('remediation-manifests');
-      expect(parsed.subpath).toBe('v1/patch.yaml');
+      assert.equal(parsed.orgId, orgA);
+      assert.equal(parsed.category, 'remediation-manifests');
+      assert.equal(parsed.subpath, 'v1/patch.yaml');
     });
 
     it('rejects path traversal attacks in filenames', () => {
-      expect(() => sanitizeFilename('../../etc/passwd')).toThrow(StorageSecurityError);
-      expect(() => sanitizeFilename('..\\windows\\system32')).toThrow(StorageSecurityError);
-      expect(() => sanitizeFilename('%2e%2e%2fsecret.key')).toThrow(StorageSecurityError);
-      expect(() => sanitizeFilename('payload\0.png')).toThrow(StorageSecurityError);
+      assert.throws(() => sanitizeFilename('../../etc/passwd'), StorageSecurityError);
+      assert.throws(() => sanitizeFilename('..\\windows\\system32'), StorageSecurityError);
+      assert.throws(() => sanitizeFilename('%2e%2e%2fsecret.key'), StorageSecurityError);
+      assert.throws(() => sanitizeFilename('payload\0.png'), StorageSecurityError);
     });
 
     it('rejects forbidden dangerous executable file extensions', () => {
-      expect(() => sanitizeFilename('exploit.exe')).toThrow(StorageSecurityError);
-      expect(() => sanitizeFilename('malware.sh')).toThrow(StorageSecurityError);
-      expect(() => sanitizeFilename('script.bat')).toThrow(StorageSecurityError);
-      expect(() => sanitizeFilename('installer.msi')).toThrow(StorageSecurityError);
+      assert.throws(() => sanitizeFilename('exploit.exe'), StorageSecurityError);
+      assert.throws(() => sanitizeFilename('malware.sh'), StorageSecurityError);
+      assert.throws(() => sanitizeFilename('script.bat'), StorageSecurityError);
+      assert.throws(() => sanitizeFilename('installer.msi'), StorageSecurityError);
     });
 
     it('rejects invalid or traversal organization IDs', () => {
-      expect(() => validateOrgId('../evil-tenant')).toThrow(StorageSecurityError);
-      expect(() => validateOrgId('org/sub/bad')).toThrow(StorageSecurityError);
-      expect(() => validateOrgId('')).toThrow(StorageSecurityError);
+      assert.throws(() => validateOrgId('../evil-tenant'), StorageSecurityError);
+      assert.throws(() => validateOrgId('org/sub/bad'), StorageSecurityError);
+      assert.throws(() => validateOrgId(''), StorageSecurityError);
     });
 
     it('enforces category allowlist', () => {
-      expect(validateCategory('audit-exports')).toBe('audit-exports');
-      expect(validateCategory('remediation-manifests')).toBe('remediation-manifests');
-      expect(() => validateCategory('unauthorized-folder' as any)).toThrow(StorageValidationError);
+      assert.equal(validateCategory('audit-exports'), 'audit-exports');
+      assert.equal(validateCategory('remediation-manifests'), 'remediation-manifests');
+      assert.throws(() => validateCategory('unauthorized-folder' as any), StorageValidationError);
     });
 
     it('enforces MIME type allowlist', () => {
-      expect(validateMimeType('application/json')).toBe('application/json');
-      expect(validateMimeType('text/plain; charset=utf-8')).toBe('text/plain');
-      expect(validateMimeType('application/x-yaml')).toBe('application/x-yaml');
-      expect(() => validateMimeType('application/x-msdownload')).toThrow(StorageValidationError);
+      assert.equal(validateMimeType('application/json'), 'application/json');
+      assert.equal(validateMimeType('text/plain; charset=utf-8'), 'text/plain');
+      assert.equal(validateMimeType('application/x-yaml'), 'application/x-yaml');
+      assert.throws(() => validateMimeType('application/x-msdownload'), StorageValidationError);
     });
 
     it('enforces maximum size limits per category', () => {
       const smallBuffer = Buffer.alloc(1024, 'x'); // 1KB
-      expect(() => validateFileSize(smallBuffer, 'remediation-manifests')).not.toThrow();
+      assert.doesNotThrow(() => validateFileSize(smallBuffer, 'remediation-manifests'));
 
       const emptyBuffer = Buffer.alloc(0);
-      expect(() => validateFileSize(emptyBuffer, 'remediation-manifests')).toThrow(StorageValidationError);
+      assert.throws(() => validateFileSize(emptyBuffer, 'remediation-manifests'), StorageValidationError);
 
       const oversizedManifest = Buffer.alloc(6 * 1024 * 1024, 'a'); // 6MB > 5MB limit
-      expect(() => validateFileSize(oversizedManifest, 'remediation-manifests')).toThrow(StorageValidationError);
+      assert.throws(() => validateFileSize(oversizedManifest, 'remediation-manifests'), StorageValidationError);
     });
   });
 
@@ -125,24 +126,24 @@ describe('SkyOps Firebase Cloud Storage Foundation', () => {
         tags: ['incident', 'prod-crash']
       });
 
-      expect(artifact.id).toMatch(/^art_/);
-      expect(artifact.orgId).toBe(orgA);
-      expect(artifact.category).toBe('incident-artifacts');
-      expect(artifact.storagePath).toContain(`tenants/${orgA}/incident-artifacts/`);
-      expect(artifact.storageBucket).toBe('skyops-a1143.firebasestorage.app');
-      expect(artifact.checksumSha256).toBe(expectedChecksum);
-      expect(artifact.sizeBytes).toBe(buffer.length);
-      expect(artifact.lifecycleStatus).toBe('ACTIVE');
+      assert.match(artifact.id, /^art_/);
+      assert.equal(artifact.orgId, orgA);
+      assert.equal(artifact.category, 'incident-artifacts');
+      assert.ok(artifact.storagePath.includes(`tenants/${orgA}/incident-artifacts/`));
+      assert.equal(artifact.storageBucket, 'skyops-a1143.firebasestorage.app');
+      assert.equal(artifact.checksumSha256, expectedChecksum);
+      assert.equal(artifact.sizeBytes, buffer.length);
+      assert.equal(artifact.lifecycleStatus, 'ACTIVE');
 
       // Verify persisted metadata in persistence store
       const retrieved = await storageService.getArtifact(orgA, artifact.id);
-      expect(retrieved).not.toBeNull();
-      expect(retrieved?.id).toBe(artifact.id);
+      assert.ok(retrieved !== null);
+      assert.equal(retrieved?.id, artifact.id);
 
       // Verify download and cryptographic integrity check
       const downloadResult = await storageService.downloadArtifact(orgA, artifact.id, actor);
-      expect(downloadResult.buffer.toString('utf-8')).toBe(content);
-      expect(downloadResult.artifact.id).toBe(artifact.id);
+      assert.equal(downloadResult.buffer.toString('utf-8'), content);
+      assert.equal(downloadResult.artifact.id, artifact.id);
     });
 
     it('enforces strict cross-tenant isolation: Tenant B cannot access Tenant A artifacts', async () => {
@@ -158,14 +159,16 @@ describe('SkyOps Firebase Cloud Storage Foundation', () => {
 
       // Tenant B queries Tenant A artifact ID -> Expect 404 or Security Error
       const crossTenantGet = await storageService.getArtifact(orgB, artifactA.id);
-      expect(crossTenantGet).toBeNull();
+      assert.equal(crossTenantGet, null);
 
       // Tenant B download attempt -> Fails
-      await expect(storageService.downloadArtifact(orgB, artifactA.id)).rejects.toThrow();
+      await assert.rejects(async () => {
+        await storageService.downloadArtifact(orgB, artifactA.id);
+      });
 
       // Tenant B delete attempt -> Fails
       const deleteResult = await storageService.deleteArtifact(orgB, artifactA.id);
-      expect(deleteResult).toBe(false);
+      assert.equal(deleteResult, false);
     });
 
     it('enforces audit exports immutability: cannot be deleted', async () => {
@@ -180,7 +183,9 @@ describe('SkyOps Firebase Cloud Storage Foundation', () => {
       });
 
       // Attempting to delete an audit-export must throw StorageSecurityError
-      await expect(storageService.deleteArtifact(orgA, artifact.id)).rejects.toThrow(StorageSecurityError);
+      await assert.rejects(async () => {
+        await storageService.deleteArtifact(orgA, artifact.id);
+      }, StorageSecurityError);
     });
 
     it('allows soft and hard deletion for mutable categories', async () => {
@@ -196,19 +201,21 @@ describe('SkyOps Firebase Cloud Storage Foundation', () => {
 
       // Soft delete
       const softDeleted = await storageService.deleteArtifact(orgA, artifact.id, actor, false);
-      expect(softDeleted).toBe(true);
+      assert.equal(softDeleted, true);
 
       const statusAfterSoft = await storageService.getArtifact(orgA, artifact.id);
-      expect(statusAfterSoft?.lifecycleStatus).toBe('DELETED');
+      assert.equal(statusAfterSoft?.lifecycleStatus, 'DELETED');
 
       // Attempting download of deleted artifact throws validation error
-      await expect(storageService.downloadArtifact(orgA, artifact.id)).rejects.toThrow(StorageValidationError);
+      await assert.rejects(async () => {
+        await storageService.downloadArtifact(orgA, artifact.id);
+      }, StorageValidationError);
 
       // Hard delete
       const hardDeleted = await storageService.deleteArtifact(orgA, artifact.id, actor, true);
-      expect(hardDeleted).toBe(true);
+      assert.equal(hardDeleted, true);
       const afterHard = await storageService.getArtifact(orgA, artifact.id);
-      expect(afterHard).toBeNull();
+      assert.equal(afterHard, null);
     });
 
     it('calculates storage usage summary broken down by category', async () => {
@@ -232,13 +239,13 @@ describe('SkyOps Firebase Cloud Storage Foundation', () => {
       });
 
       const summary = await storageService.getStorageUsageSummary(orgUsageId);
-      expect(summary.orgId).toBe(orgUsageId);
-      expect(summary.totalArtifactsCount).toBe(2);
-      expect(summary.totalSizeBytes).toBe(3500);
-      expect(summary.categoryBreakdown['remediation-manifests'].sizeBytes).toBe(1000);
-      expect(summary.categoryBreakdown['remediation-manifests'].count).toBe(1);
-      expect(summary.categoryBreakdown['ai-diagnostics'].sizeBytes).toBe(2500);
-      expect(summary.categoryBreakdown['ai-diagnostics'].count).toBe(1);
+      assert.equal(summary.orgId, orgUsageId);
+      assert.equal(summary.totalArtifactsCount, 2);
+      assert.equal(summary.totalSizeBytes, 3500);
+      assert.equal(summary.categoryBreakdown['remediation-manifests'].sizeBytes, 1000);
+      assert.equal(summary.categoryBreakdown['remediation-manifests'].count, 1);
+      assert.equal(summary.categoryBreakdown['ai-diagnostics'].sizeBytes, 2500);
+      assert.equal(summary.categoryBreakdown['ai-diagnostics'].count, 1);
     });
 
     it('records immutable audit events for storage operations', async () => {
@@ -259,16 +266,16 @@ describe('SkyOps Firebase Cloud Storage Foundation', () => {
 
       // Check audit entries recorded
       const auditEvents = auditService.query({ orgId: orgAuditTest });
-      expect(auditEvents.total).toBeGreaterThanOrEqual(2);
+      assert.ok(auditEvents.total >= 2);
 
       const uploadEvent = auditEvents.items.find((e) => e.action === 'STORAGE_UPLOAD');
-      expect(uploadEvent).toBeDefined();
-      expect(uploadEvent?.resourceId).toBe(artifact.id);
-      expect(uploadEvent?.actorId).toBe(actor.id);
+      assert.ok(uploadEvent);
+      assert.equal(uploadEvent?.resourceId, artifact.id);
+      assert.equal(uploadEvent?.actorId, actor.id);
 
       const downloadEvent = auditEvents.items.find((e) => e.action === 'STORAGE_DOWNLOAD');
-      expect(downloadEvent).toBeDefined();
-      expect(downloadEvent?.resourceId).toBe(artifact.id);
+      assert.ok(downloadEvent);
+      assert.equal(downloadEvent?.resourceId, artifact.id);
     });
 
     it('exports audit ledger directly to immutable storage artifact', async () => {
@@ -287,14 +294,14 @@ describe('SkyOps Firebase Cloud Storage Foundation', () => {
       });
 
       const exportArtifact = await storageService.exportAuditToStorage(orgAuditExport, actor, 'json');
-      expect(exportArtifact.category).toBe('audit-exports');
-      expect(exportArtifact.mimeType).toBe('application/json');
-      expect(exportArtifact.sizeBytes).toBeGreaterThan(0);
+      assert.equal(exportArtifact.category, 'audit-exports');
+      assert.equal(exportArtifact.mimeType, 'application/json');
+      assert.ok(exportArtifact.sizeBytes > 0);
 
       const download = await storageService.downloadArtifact(orgAuditExport, exportArtifact.id, actor);
       const exportedJson = JSON.parse(download.buffer.toString('utf-8'));
-      expect(Array.isArray(exportedJson)).toBe(true);
-      expect(exportedJson.length).toBeGreaterThan(0);
+      assert.ok(Array.isArray(exportedJson));
+      assert.ok(exportedJson.length > 0);
     });
   });
 });

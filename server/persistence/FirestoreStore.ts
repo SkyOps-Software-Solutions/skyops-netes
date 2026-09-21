@@ -1,4 +1,41 @@
-import { Firestore, Query, DocumentData } from '@google-cloud/firestore';
+import { initializeApp, getApps } from 'firebase/app';
+import {
+  getFirestore,
+  setLogLevel,
+  doc,
+  setDoc,
+  getDoc,
+  deleteDoc,
+  collection,
+  getDocs,
+  query,
+  where,
+  limit,
+  orderBy,
+  Firestore as FirebaseFirestoreInstance
+} from 'firebase/firestore';
+
+// Suppress Firestore internal gRPC cancellation logs
+try {
+  setLogLevel('silent');
+} catch {}
+
+if (typeof process !== 'undefined' && process.stderr && (process.stderr as any).write) {
+  const originalStderrWrite = (process.stderr as any).write.bind(process.stderr);
+  (process.stderr as any).write = (chunk: any, encoding?: any, callback?: any) => {
+    const str = typeof chunk === 'string' ? chunk : chunk?.toString() || '';
+    if (
+      str.includes('Disconnecting idle stream. Timed out waiting for new targets') ||
+      (str.includes('GrpcConnection') && (str.includes('CANCELLED') || str.includes('idle stream')))
+    ) {
+      if (typeof encoding === 'function') encoding();
+      else if (typeof callback === 'function') callback();
+      return true;
+    }
+    return originalStderrWrite(chunk, encoding, callback);
+  };
+}
+import crypto from 'crypto';
 import {
   Cluster,
   Incident,
@@ -34,6 +71,112 @@ import { ClusterResourcesRecord, ClusterTokenRecord, IPersistenceStore } from '.
 import { InMemoryStore } from './InMemoryStore';
 import fallbackConfig from '../../firebase-applet-config.json';
 
+class DocRefWrapper {
+  private docRef: any;
+  constructor(private db: any, private col: string, public id: string) {
+    this.docRef = doc(db, col, id);
+  }
+
+  public async get(): Promise<{ exists: boolean; data: () => any }> {
+    const snap = await getDoc(this.docRef);
+    return {
+      exists: snap.exists(),
+      data: () => snap.data()
+    };
+  }
+
+  public async set(data: any, options?: { merge?: boolean }): Promise<void> {
+    await setDoc(this.docRef, data, options || {});
+  }
+
+  public async delete(): Promise<void> {
+    await deleteDoc(this.docRef);
+  }
+}
+
+class CollectionRefWrapper {
+  constructor(
+    private db: any,
+    private name: string,
+    private constraints: any[] = []
+  ) {}
+
+  public doc(id?: string): DocRefWrapper {
+    const docId = id || crypto.randomUUID();
+    return new DocRefWrapper(this.db, this.name, docId);
+  }
+
+  public where(field: string, op: any, val: any): CollectionRefWrapper {
+    if (val === undefined) return this;
+    return new CollectionRefWrapper(this.db, this.name, [
+      ...this.constraints,
+      where(field, op as any, val)
+    ]);
+  }
+
+  public orderBy(field: string, direction?: 'asc' | 'desc'): CollectionRefWrapper {
+    return new CollectionRefWrapper(this.db, this.name, [
+      ...this.constraints,
+      orderBy(field, direction || 'asc')
+    ]);
+  }
+
+  public limit(n: number): CollectionRefWrapper {
+    return new CollectionRefWrapper(this.db, this.name, [
+      ...this.constraints,
+      limit(n)
+    ]);
+  }
+
+  public async get(): Promise<{
+    empty: boolean;
+    size: number;
+    docs: Array<{ id: string; ref: { delete: () => Promise<void> }; data: () => any }>;
+  }> {
+    const col = collection(this.db, this.name);
+    const q = this.constraints.length > 0 ? query(col, ...this.constraints) : col;
+    const snap = await getDocs(q);
+    return {
+      empty: snap.empty,
+      size: snap.size,
+      docs: snap.docs.map((d) => ({
+        id: d.id,
+        ref: { delete: () => deleteDoc(doc(this.db, this.name, d.id)) },
+        data: () => d.data()
+      }))
+    };
+  }
+}
+
+class FirebaseClientWrapper {
+  constructor(private db: any) {}
+
+  public collection(name: string): CollectionRefWrapper {
+    return new CollectionRefWrapper(this.db, name);
+  }
+
+  public batch(): any {
+    const ops: Array<() => Promise<void>> = [];
+    return {
+      set(docRef: any, data: any, options?: any) {
+        ops.push(() => docRef.set(data, options));
+      },
+      delete(docRef: any) {
+        ops.push(() => docRef.delete());
+      },
+      async commit() {
+        for (const op of ops) {
+          await op();
+        }
+      }
+    };
+  }
+
+  public async terminate(): Promise<void> {
+    // No-op for client-side firestore in long-running container
+  }
+}
+
 export interface FirestoreStoreConfig {
   projectId?: string;
   databaseId?: string;
@@ -42,7 +185,7 @@ export interface FirestoreStoreConfig {
 
 export class FirestoreStore implements IPersistenceStore {
   public readonly providerName = 'firestore';
-  private firestore: Firestore;
+  private firestore: any;
   private readonly projectId: string;
   private readonly databaseId: string;
   public connected: boolean = false;
@@ -54,7 +197,8 @@ export class FirestoreStore implements IPersistenceStore {
       process.env.SKYOPS_FIRESTORE_PROJECT_ID ||
       process.env.FIREBASE_PROJECT_ID ||
       process.env.VITE_FIREBASE_PROJECT_ID ||
-      fallbackConfig.projectId;
+      fallbackConfig.projectId ||
+      'skyops-a1143';
 
     this.databaseId =
       config?.databaseId ||
@@ -70,19 +214,36 @@ export class FirestoreStore implements IPersistenceStore {
       );
     }
 
-    const firestoreOptions: Record<string, any> = {
-      projectId: this.projectId
-    };
+    const apps = getApps();
+    const app =
+      apps.length > 0
+        ? apps[0]
+        : initializeApp({
+            projectId: this.projectId,
+            apiKey:
+              process.env.VITE_FIREBASE_API_KEY ||
+              fallbackConfig.apiKey ||
+              'AIzaSyCti1ZOIOIFNVj-TPgHTF2mlbrzBEC-vHc',
+            authDomain:
+              process.env.VITE_FIREBASE_AUTH_DOMAIN ||
+              fallbackConfig.authDomain ||
+              `${this.projectId}.firebaseapp.com`,
+            storageBucket:
+              process.env.VITE_FIREBASE_STORAGE_BUCKET ||
+              fallbackConfig.storageBucket ||
+              `${this.projectId}.firebasestorage.app`,
+            appId:
+              process.env.VITE_FIREBASE_APP_ID ||
+              fallbackConfig.appId ||
+              '1:586158496088:web:28cdaaaa605c5b084ead2d'
+          });
 
-    if (this.databaseId && this.databaseId !== '(default)') {
-      firestoreOptions.databaseId = this.databaseId;
-    }
+    const firestoreInstance =
+      this.databaseId && this.databaseId !== '(default)'
+        ? getFirestore(app, this.databaseId)
+        : getFirestore(app);
 
-    if (config?.keyFilename || process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-      firestoreOptions.keyFilename = config?.keyFilename || process.env.GOOGLE_APPLICATION_CREDENTIALS;
-    }
-
-    this.firestore = new Firestore(firestoreOptions);
+    this.firestore = new FirebaseClientWrapper(firestoreInstance);
   }
 
   public getDatabaseId(): string {
@@ -477,7 +638,7 @@ export class FirestoreStore implements IPersistenceStore {
   public async listClusters(orgId?: string): Promise<Cluster[]> {
     if (!this.connected) return this.fallbackStore.listClusters(orgId);
     try {
-      let query: Query<DocumentData> = this.firestore.collection('clusters');
+      let query: any = this.firestore.collection('clusters');
       if (orgId) {
         query = query.where('orgId', '==', orgId);
       }
@@ -603,7 +764,7 @@ export class FirestoreStore implements IPersistenceStore {
   public async listIncidents(orgId?: string, clusterId?: string): Promise<Incident[]> {
     if (!this.connected) return this.fallbackStore.listIncidents(orgId, clusterId);
     try {
-      let query: Query<DocumentData> = this.firestore.collection('incidents');
+      let query: any = this.firestore.collection('incidents');
       if (orgId) query = query.where('orgId', '==', orgId);
       if (clusterId) query = query.where('clusterId', '==', clusterId);
       const snap = await query.get();
@@ -792,7 +953,7 @@ export class FirestoreStore implements IPersistenceStore {
   public async listRemediationActions(orgId?: string, incidentId?: string): Promise<RemediationAction[]> {
     if (!this.connected) return this.fallbackStore.listRemediationActions(orgId, incidentId);
     try {
-      let query: Query<DocumentData> = this.firestore.collection('remediationActions');
+      let query: any = this.firestore.collection('remediationActions');
       if (orgId) query = query.where('orgId', '==', orgId);
       if (incidentId) query = query.where('incidentId', '==', incidentId);
       const snap = await query.get();
@@ -1035,7 +1196,7 @@ export class FirestoreStore implements IPersistenceStore {
   public async listWebhookDeliveries(orgId: string, webhookId?: string, limit = 100): Promise<WebhookDeliveryRecord[]> {
     if (!this.connected) return this.fallbackStore.listWebhookDeliveries(orgId, webhookId, limit);
     try {
-      let query: Query<DocumentData> = this.firestore
+      let query: any = this.firestore
         .collection('webhookDeliveries')
         .where('orgId', '==', orgId);
 
@@ -1198,7 +1359,7 @@ export class FirestoreStore implements IPersistenceStore {
   ): Promise<PaginatedResult<StoredArtifact>> {
     if (!this.connected) return this.fallbackStore.listStoredArtifacts(orgId, filters);
     try {
-      let query: Query<DocumentData> = this.firestore
+      let query: any = this.firestore
         .collection('storedArtifacts')
         .where('orgId', '==', orgId);
 
@@ -1239,7 +1400,7 @@ export class FirestoreStore implements IPersistenceStore {
         items,
         total,
         page: Math.floor(offset / limit) + 1,
-        pageSize: limit,
+        limit,
         totalPages: Math.ceil(total / limit)
       };
     } catch (err: any) {

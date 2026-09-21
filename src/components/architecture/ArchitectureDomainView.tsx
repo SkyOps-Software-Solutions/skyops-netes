@@ -552,7 +552,7 @@ export const ArchitectureDomainView: React.FC<ArchitectureDomainViewProps> = ({
                           <span>{(res.metrics as any)?.cpuUsage || 'CPU Unavailable'}</span>
                         ) : res.kind === 'Pod' ? (
                           <span>
-                            {res.metrics?.cpu?.formatted ? `${res.metrics.cpu.formatted} CPU` : 'CPU Unavailable'}
+                            {(res.metrics?.cpu as any)?.formatted ? `${(res.metrics?.cpu as any).formatted} CPU` : 'CPU Unavailable'}
                             {res.restartCount !== undefined ? ` • ${res.restartCount} restarts` : ''}
                           </span>
                         ) : res.kind === 'Deployment' || res.kind === 'StatefulSet' ? (

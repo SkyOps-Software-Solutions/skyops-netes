@@ -2,20 +2,24 @@ import { AlertCircle, Check, Copy, Loader2, X } from 'lucide-react';
 import React, { useState } from 'react';
 
 export const Button: React.FC<{
+  id?: string;
   children: React.ReactNode;
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline';
   size?: 'sm' | 'md' | 'lg';
   onClick?: () => void;
   disabled?: boolean;
+  loading?: boolean;
   type?: 'button' | 'submit' | 'reset';
   className?: string;
   icon?: React.ReactNode;
 }> = ({
+  id,
   children,
   variant = 'secondary',
   size = 'md',
   onClick,
   disabled = false,
+  loading = false,
   type = 'button',
   className = '',
   icon
@@ -39,12 +43,13 @@ export const Button: React.FC<{
 
   return (
     <button
+      id={id}
       type={type}
       onClick={onClick}
-      disabled={disabled}
+      disabled={disabled || loading}
       className={`${base} ${sizes[size]} ${variants[variant]} ${className}`}
     >
-      {icon && <span className="w-4 h-4">{icon}</span>}
+      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : icon && <span className="w-4 h-4">{icon}</span>}
       {children}
     </button>
   );
@@ -97,16 +102,21 @@ export const Modal: React.FC<{
   onClose: () => void;
   title: string;
   children: React.ReactNode;
-  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'max-w-sm' | 'max-w-md' | 'max-w-lg' | 'max-w-xl' | 'max-w-2xl' | string;
 }> = ({ isOpen, onClose, title, children, maxWidth = 'lg' }) => {
   if (!isOpen) return null;
 
-  const widths = {
+  const widths: Record<string, string> = {
     sm: 'max-w-md',
     md: 'max-w-lg',
     lg: 'max-w-2xl',
     xl: 'max-w-4xl',
-    '2xl': 'max-w-6xl'
+    '2xl': 'max-w-6xl',
+    'max-w-sm': 'max-w-sm',
+    'max-w-md': 'max-w-md',
+    'max-w-lg': 'max-w-lg',
+    'max-w-xl': 'max-w-xl',
+    'max-w-2xl': 'max-w-2xl'
   };
 
   return (

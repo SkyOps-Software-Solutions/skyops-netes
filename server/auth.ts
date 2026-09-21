@@ -116,6 +116,8 @@ export async function verifyFirebaseIdToken(rawToken: string, projectId: string)
   const validProjects = new Set<string>([
     projectId,
     config.FIREBASE_PROJECT_ID,
+    'skyops-a1143',
+    'ai-studio-applet-webapp-4bb6f',
     ...(config.FIREBASE_TRUSTED_PROJECT_IDS || '').split(',').map((value) => value.trim()).filter(Boolean)
   ].filter(Boolean) as string[]);
 
@@ -205,15 +207,33 @@ export async function requireUserAuth(
 /**
  * Middleware: Require Organization Membership & Role Resolution
  */
-export function requireOrgMembership(
+export async function requireOrgMembership(
   req: AuthenticatedUserRequest,
   res: Response,
   next: NextFunction
-): void | Response {
+): Promise<void | Response> {
   if (!req.user) return res.status(401).json({ error: 'Authentication required' });
 
   const requestedOrgId = (req.headers['x-org-id'] as string) || (req.query.orgId as string) || (req.body?.orgId as string);
-  const userOrgs = store.getOrganizationsForUser(req.user.id, req.user.email);
+  let userOrgs = store.getOrganizationsForUser(req.user.id, req.user.email);
+
+  if (userOrgs.length === 0) {
+    try {
+      const persistedOrgs = await store.getPersistence().getUserOrganizations(req.user.id, req.user.email);
+      if (persistedOrgs && persistedOrgs.length > 0) {
+        for (const po of persistedOrgs) {
+          store.hydrateOrganization(po);
+          const members = await store.getPersistence().getOrgMembers(po.id);
+          if (members && members.length > 0) {
+            store.setOrgMembers(po.id, members);
+          }
+        }
+        userOrgs = store.getOrganizationsForUser(req.user.id, req.user.email);
+      }
+    } catch (err: any) {
+      console.warn('[SkyOps Auth] Notice: Firestore user organizations lookup failed:', err?.message || err);
+    }
+  }
 
   if (userOrgs.length === 0) {
     // Auto-bootstrap personal workspace for new tenant
@@ -234,12 +254,13 @@ export function requireOrgMembership(
       )
     : userOrgs[0];
 
-  // For /api/v1/auth/session, if a stale or invalid org header was passed, fall back to user's first valid organization
+  // For /api/v1/auth/session, or if requestedOrgId was not found,
+  // fall back to user's first valid organization for session establishment
   const isSessionEndpoint =
     req.path === '/api/v1/auth/session' ||
     req.originalUrl?.includes('/api/v1/auth/session') ||
     req.url?.includes('/api/v1/auth/session');
-  if (!targetOrg && isSessionEndpoint) {
+  if (!targetOrg && (isSessionEndpoint || !requestedOrgId)) {
     targetOrg = userOrgs[0];
   }
 
@@ -248,6 +269,7 @@ export function requireOrgMembership(
       error: 'Forbidden: You do not have access to this organization',
       code: 'ORG_ACCESS_DENIED',
       requestedOrgId: requestedOrgId,
+      availableOrgs: userOrgs.map((o) => ({ id: o.id, name: o.name, slug: o.slug })),
       message: 'You are not an authorized member of this organization.'
     });
   }

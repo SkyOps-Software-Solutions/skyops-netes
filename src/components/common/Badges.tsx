@@ -172,11 +172,11 @@ export const SeverityBadge: React.FC<{ severity: IncidentSeverity; size?: 'sm' |
   );
 };
 
-export const StatusBadge: React.FC<{ status: IncidentStatus; size?: 'sm' | 'md' }> = ({
+export const StatusBadge: React.FC<{ status: IncidentStatus | string; size?: 'sm' | 'md' }> = ({
   status,
   size = 'md'
 }) => {
-  const styles: Record<IncidentStatus, { bg: string; text: string; border: string }> = {
+  const styles: Record<string, { bg: string; text: string; border: string }> = {
     OPEN: {
       bg: 'bg-rose-950/50 text-rose-300',
       text: 'text-rose-400',
@@ -201,24 +201,39 @@ export const StatusBadge: React.FC<{ status: IncidentStatus; size?: 'sm' | 'md' 
       bg: 'bg-zinc-900 text-zinc-400',
       text: 'text-zinc-400',
       border: 'border-zinc-700'
+    },
+    Ready: {
+      bg: 'bg-emerald-950/50 text-emerald-300',
+      text: 'text-emerald-400',
+      border: 'border-emerald-700/60'
+    },
+    Running: {
+      bg: 'bg-emerald-950/50 text-emerald-300',
+      text: 'text-emerald-400',
+      border: 'border-emerald-700/60'
     }
   };
 
-  const current = styles[status] || styles.OPEN;
+  const current = styles[status] || {
+    bg: 'bg-zinc-900 text-zinc-300',
+    text: 'text-zinc-400',
+    border: 'border-zinc-700'
+  };
   const padding = size === 'sm' ? 'px-2 py-0.5 text-xs' : 'px-2.5 py-1 text-xs';
 
   return (
     <span
       className={`inline-flex items-center font-mono font-medium rounded border ${current.bg} ${current.border} ${padding}`}
     >
-      {status.replace('_', ' ')}
+      {(status || '').replace('_', ' ')}
     </span>
   );
 };
 
-export const ClusterStatusBadge: React.FC<{ status: ClusterStatus; agentStatus?: AgentStatus }> = ({
+export const ClusterStatusBadge: React.FC<{ status: ClusterStatus; agentStatus?: AgentStatus; isLastKnownState?: boolean }> = ({
   status,
-  agentStatus
+  agentStatus,
+  isLastKnownState
 }) => {
   let label: string = status;
   let bg = 'bg-slate-900 text-slate-300 border-slate-700';
@@ -270,12 +285,22 @@ export const ClusterStatusBadge: React.FC<{ status: ClusterStatus; agentStatus?:
   }
 
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 font-mono text-xs font-medium px-2.5 py-1 rounded border ${bg}`}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
-      {label}
-    </span>
+    <div className="inline-flex items-center gap-1.5 flex-wrap">
+      <span
+        className={`inline-flex items-center gap-1.5 font-mono text-xs font-medium px-2.5 py-1 rounded border ${bg}`}
+      >
+        <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
+        {label}
+      </span>
+      {isLastKnownState && (
+        <span
+          className="inline-flex items-center font-mono text-[10px] font-medium px-2 py-0.5 rounded border bg-amber-950/40 text-amber-300 border-amber-800/50 uppercase tracking-wide"
+          title="Cluster agent is offline. Displaying authoritative last known snapshot."
+        >
+          Last known state
+        </span>
+      )}
+    </div>
   );
 };
 

@@ -16,7 +16,7 @@ describe('SkyOps Architecture Topology Graph Builder', () => {
     createdAt: Date.now() - 100000
   };
 
-  const mockResources: KubernetesResource[] = [
+  const mockResources: any[] = [
     // 1. Node
     {
       id: 'node-1',

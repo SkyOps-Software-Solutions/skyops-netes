@@ -228,7 +228,7 @@ export const UsageManager: React.FC = () => {
               Resource Quotas & Real-time Consumption
             </h4>
             <span className="text-[11px] font-mono text-zinc-500">
-              Retention SLA: {overview.plan.limits.telemetryRetentionDays} Days
+              Retention SLA: {overview.plan.limits.telemetryRetentionDays ?? overview.plan.limits.dataRetentionDays} Days
             </span>
           </div>
 

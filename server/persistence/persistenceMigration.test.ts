@@ -117,8 +117,9 @@ test('Production Persistence Architecture & Migration Suite', async (suite) => {
       resourceType: 'CLUSTER',
       resourceId: 'cluster-alpha',
       result: 'SUCCESS',
-      timestamp: 3000
-    });
+      timestamp: 3000,
+      hash: 'hash-aud-1'
+    } as any);
 
     const auditLogs = await store.queryAuditEvents({ orgId: 'org-test-1', page: 1, limit: 10 });
     assert.equal(auditLogs.items.length, 1);

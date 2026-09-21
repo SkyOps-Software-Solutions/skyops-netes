@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
+import fallbackConfig from '../firebase-applet-config.json';
 
 dotenv.config();
 
@@ -79,8 +80,14 @@ try {
     APP_URL: process.env.APP_URL,
     SKYOPS_DATA_DIR: process.env.SKYOPS_DATA_DIR,
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
-    FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
-    FIREBASE_TRUSTED_PROJECT_IDS: process.env.FIREBASE_TRUSTED_PROJECT_IDS,
+    FIREBASE_PROJECT_ID:
+      process.env.FIREBASE_PROJECT_ID ||
+      process.env.VITE_FIREBASE_PROJECT_ID ||
+      fallbackConfig.projectId ||
+      'skyops-a1143',
+    FIREBASE_TRUSTED_PROJECT_IDS:
+      process.env.FIREBASE_TRUSTED_PROJECT_IDS ||
+      'skyops-a1143,ai-studio-applet-webapp-4bb6f',
     CORS_ORIGINS: process.env.CORS_ORIGINS,
     ENABLE_DEV_SIMULATION: process.env.ENABLE_DEV_SIMULATION,
     SKYOPS_ALLOW_DEMO_AUTH: process.env.SKYOPS_ALLOW_DEMO_AUTH,
@@ -96,8 +103,18 @@ try {
     SKYOPS_SMTP_SECURE: process.env.SKYOPS_SMTP_SECURE,
     SKYOPS_SMTP_USER: process.env.SKYOPS_SMTP_USER,
     SKYOPS_SMTP_PASS: process.env.SKYOPS_SMTP_PASS,
-    SKYOPS_STORAGE_BUCKET: process.env.SKYOPS_STORAGE_BUCKET,
-    FIREBASE_STORAGE_BUCKET: process.env.FIREBASE_STORAGE_BUCKET
+    SKYOPS_STORAGE_BUCKET:
+      process.env.SKYOPS_STORAGE_BUCKET ||
+      process.env.FIREBASE_STORAGE_BUCKET ||
+      process.env.VITE_FIREBASE_STORAGE_BUCKET ||
+      fallbackConfig.storageBucket ||
+      'skyops-a1143.firebasestorage.app',
+    FIREBASE_STORAGE_BUCKET:
+      process.env.FIREBASE_STORAGE_BUCKET ||
+      process.env.SKYOPS_STORAGE_BUCKET ||
+      process.env.VITE_FIREBASE_STORAGE_BUCKET ||
+      fallbackConfig.storageBucket ||
+      'skyops-a1143.firebasestorage.app'
   });
 } catch (err) {
   console.error('[SkyOps Configuration] Fatal Configuration Validation Error:', err);

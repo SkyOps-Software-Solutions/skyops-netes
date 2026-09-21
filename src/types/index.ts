@@ -77,6 +77,7 @@ export interface PlanLimits {
   workloads: number;
   members: number;
   dataRetentionDays: number;
+  telemetryRetentionDays?: number;
   aiInvestigationsMonthly: number;
   aiMonthlyAllowance?: number;
   remediationsMonthly: number;
@@ -98,6 +99,12 @@ export interface PlanFeatures {
   webhooks: boolean;
   rbac: 'basic' | 'standard' | 'advanced' | 'custom';
   support: 'community' | 'standard' | 'priority' | 'dedicated_sla';
+  geminiRootCauseAnalysis?: boolean;
+  autonomousRemediation?: boolean;
+  customWebhooks?: boolean;
+  auditLogExport?: boolean;
+  emailAlerts?: boolean;
+  ssoSaml?: boolean;
 }
 
 export interface PlanIntervalPricing {
@@ -343,6 +350,8 @@ export interface Cluster {
   installKey?: string;
   installKeyExpiresAt?: number;
   isSimulated?: boolean;
+  isLastKnownState?: boolean;
+  lastTelemetrySnapshot?: number;
 }
 
 export type IncidentSeverity = 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
@@ -500,6 +509,8 @@ export interface Incident {
   confidence?: 'LOW' | 'MEDIUM' | 'HIGH';
   summary?: string;
   rootCauseAnalysis?: string;
+  affectedPodNames?: string[];
+  createdAt?: number;
 }
 
 export type RemediationActionStatus =
@@ -835,6 +846,10 @@ export interface NodeMetricsSummary extends ResourceMetrics {
   podCapacity: number;
   conditions: any;
   conditionFlags?: any;
+  cpuUsage?: string;
+  cpuPercent?: number;
+  memoryUsage?: string;
+  memoryPercent?: number;
   cpu: {
     capacity?: ResourceMetricValue;
     allocatable?: ResourceMetricValue;
@@ -1096,8 +1111,13 @@ export interface MetricsServerVerificationEvidence {
   podMetricsAvailable: boolean;
   podMetricsCount?: number;
   lastVerifiedAt?: number;
+  verifiedAt?: number | string;
   rawError?: string;
   category?: string;
+  whatHappened?: string;
+  why?: string;
+  impact?: string;
+  nextAction?: string;
 }
 
 export interface MetricsServerStatus {
@@ -1256,8 +1276,10 @@ export interface AIVerificationCondition {
 
 export interface AIVerificationCriteria {
   expectedState: string; // e.g. "Pod phase Running and all container ready probes passing"
+  expectedStatus?: string;
   conditions: AIVerificationCondition[];
   observationWindowSeconds?: number; // e.g. 30
+  observationPeriodSeconds?: number;
 }
 
 export interface AIRemediationAction {
@@ -1465,10 +1487,12 @@ export interface CorrelatedTimelineEvent {
   temporalDistance?: string; // e.g. "-12m before incident", "+15s after detection"
   relationship?: 'OBSERVED' | 'CORRELATED' | 'LIKELY_RELATED' | 'PLAUSIBLE' | 'UNKNOWN';
   evidenceConfidence?: number;
+  confidence?: number;
 }
 
 export interface DetectedResourceChange {
   changeId: string;
+  changeType?: string;
   resourceKind: string;
   resourceName: string;
   namespace?: string;

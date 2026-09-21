@@ -99,10 +99,12 @@ export interface CorrelatedTimelineEvent {
   temporalDistance?: string;
   relationship?: 'OBSERVED' | 'CORRELATED' | 'LIKELY_RELATED' | 'PLAUSIBLE' | 'UNKNOWN';
   evidenceConfidence?: number;
+  confidence?: number;
 }
 
 export interface DetectedResourceChange {
   changeId: string;
+  changeType?: string;
   resourceKind: string;
   resourceName: string;
   namespace?: string;

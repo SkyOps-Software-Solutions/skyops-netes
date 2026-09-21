@@ -338,7 +338,11 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-zinc-100 font-mono">{cluster.name}</h1>
-              <ClusterStatusBadge status={cluster.status} agentStatus={cluster.agentStatus} />
+              <ClusterStatusBadge
+                status={cluster.status}
+                agentStatus={cluster.agentStatus}
+                isLastKnownState={cluster.isLastKnownState || cluster.agentStatus === 'OFFLINE' || cluster.connectionState === 'offline'}
+              />
             </div>
             <div className="text-xs font-mono text-zinc-500 mt-0.5">{cluster.id}</div>
           </div>
@@ -446,11 +450,14 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
               <Radio className="w-4 h-4 text-zinc-500" />
             </div>
             <div>
-              <div className="font-semibold text-zinc-200">
-                Agent Offline
+              <div className="font-semibold text-zinc-200 flex items-center gap-2">
+                <span>Agent Offline</span>
+                <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                  Last known state
+                </span>
               </div>
               <div className="text-zinc-400 text-[11px] mt-0.5">
-                The agent has not communicated for more than 3 minutes. The agent is attempting automatic recovery. No reinstallation is required.
+                Displaying the last known cluster snapshot. All cluster resources and incident history are safely preserved. Telemetry will automatically resume when the agent reconnects.
               </div>
             </div>
           </div>

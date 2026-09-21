@@ -167,7 +167,11 @@ export const ClustersView: React.FC<ClustersViewProps> = ({
                     </td>
 
                     <td className="px-5 py-3.5">
-                      <ClusterStatusBadge status={cluster.status} agentStatus={cluster.agentStatus} />
+                      <ClusterStatusBadge
+                        status={cluster.status}
+                        agentStatus={cluster.agentStatus}
+                        isLastKnownState={cluster.isLastKnownState || cluster.agentStatus === 'OFFLINE' || cluster.connectionState === 'offline'}
+                      />
                     </td>
 
                     <td className="px-5 py-3.5">

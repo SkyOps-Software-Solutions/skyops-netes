@@ -253,11 +253,12 @@ export const ArchitectureExplanationModal: React.FC<ArchitectureExplanationModal
         namespace: undefined,
         domainId: undefined,
         resource: undefined,
-        health: cluster?.status === 'DEGRADED' ? ('CRITICAL' as const) : ('HEALTHY' as const)
+        health: (cluster?.status as string) === 'DEGRADED' || cluster?.status === 'CRITICAL' ? ('CRITICAL' as const) : ('HEALTHY' as const)
       };
     }
 
     if (selectedNode.type === 'domain_group') {
+      const h = selectedNode.health;
       return {
         type: 'domain' as const,
         id: selectedNode.id,
@@ -266,10 +267,11 @@ export const ArchitectureExplanationModal: React.FC<ArchitectureExplanationModal
         namespace: undefined,
         domainId: selectedNode.domainId,
         resource: undefined,
-        health: selectedNode.health || ('HEALTHY' as const)
+        health: h === 'UNKNOWN' || !h ? ('HEALTHY' as const) : h
       };
     }
 
+    const resHealth = selectedNode.health;
     return {
       type: 'resource' as const,
       id: selectedNode.id,
@@ -278,7 +280,7 @@ export const ArchitectureExplanationModal: React.FC<ArchitectureExplanationModal
       namespace: selectedNode.namespace || 'default',
       domainId: selectedNode.domainId,
       resource: selectedNode.resource,
-      health: selectedNode.health || ('HEALTHY' as const)
+      health: resHealth === 'UNKNOWN' || !resHealth ? ('HEALTHY' as const) : resHealth
     };
   }, [selectedNode, cluster]);
 
@@ -311,7 +313,7 @@ export const ArchitectureExplanationModal: React.FC<ArchitectureExplanationModal
       if (selectedNode.type === 'domain_group') {
         return selectedNode.domainId ? i.resourceKind?.toLowerCase().includes(selectedNode.domainId.toLowerCase()) : false;
       }
-      return i.resourceName === selectedNode.name || i.resourceId === selectedNode.id;
+      return i.resourceName === selectedNode.name || (i as any).resourceId === selectedNode.id;
     }));
   }, [selectedNode, incidents]);
 

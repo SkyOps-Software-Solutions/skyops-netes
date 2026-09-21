@@ -19,6 +19,7 @@ export interface PlanLimits {
   workloads: number; // Max pods/workloads (-1 for unlimited/custom)
   members: number; // Max team members (-1 for unlimited/custom)
   dataRetentionDays: number; // Telemetry retention
+  telemetryRetentionDays?: number;
   auditRetentionDays: number; // Audit log retention
   aiMonthlyAllowance: number; // Number of AI RCA & investigation requests/month (-1 for unlimited)
   storageGb: number; // Telemetry storage cap in GB
@@ -36,6 +37,12 @@ export interface PlanFeatures {
   rbac: 'basic' | 'full' | 'advanced';
   slaSupport: 'community' | 'standard_8h' | 'business_4h' | 'enterprise_1h';
   customIntegrations?: boolean;
+  geminiRootCauseAnalysis?: boolean;
+  autonomousRemediation?: boolean;
+  customWebhooks?: boolean;
+  auditLogExport?: boolean;
+  emailAlerts?: boolean;
+  ssoSaml?: boolean;
 }
 
 export interface IntervalPricing {

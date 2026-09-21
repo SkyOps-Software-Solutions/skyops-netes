@@ -29,11 +29,11 @@ export function determinePersistenceProvider(): 'firestore' | 'memory' {
     return envProvider === 'firestore' ? 'firestore' : 'memory';
   }
 
-  // Development: Use firestore if explicitly set or if credentials available, otherwise default to memory/local
-  if (envProvider === 'firestore') {
-    return 'firestore';
+  // Development: Use firestore by default as authoritative persistence provider unless explicitly set to memory
+  if (envProvider === 'memory') {
+    return 'memory';
   }
-  return 'memory';
+  return 'firestore';
 }
 
 export function getPersistenceStore(): IPersistenceStore {

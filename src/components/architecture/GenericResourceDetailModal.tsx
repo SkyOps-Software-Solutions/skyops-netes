@@ -314,7 +314,7 @@ export const GenericResourceDetailModal: React.FC<GenericResourceDetailModalProp
                             <td className="py-2 px-3">
                               <span
                                 className={`px-1.5 py-0.5 rounded text-[10px] font-mono uppercase ${
-                                  c.status === 'True' || c.status === true
+                                  c.status === 'True' || (c.status as any) === true
                                     ? 'bg-emerald-500/20 text-emerald-400'
                                     : 'bg-zinc-800 text-zinc-400'
                                 }`}

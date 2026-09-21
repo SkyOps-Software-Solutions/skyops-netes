@@ -502,15 +502,15 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
             <span className="text-zinc-500 text-[11px]">Cluster Health:</span>
             <span
               className={`font-bold flex items-center gap-1 ${
-                telemetry.totalIncidentCount > 0 ? 'text-rose-400' : 'text-emerald-400'
+                telemetry.activeIncidents.length > 0 ? 'text-rose-400' : 'text-emerald-400'
               }`}
             >
               <span
                 className={`w-1.5 h-1.5 rounded-full ${
-                  telemetry.totalIncidentCount > 0 ? 'bg-rose-500' : 'bg-emerald-400'
+                  telemetry.activeIncidents.length > 0 ? 'bg-rose-500' : 'bg-emerald-400'
                 }`}
               />
-              {telemetry.totalIncidentCount > 0 ? 'Degraded' : 'Healthy'}
+              {telemetry.activeIncidents.length > 0 ? 'Degraded' : 'Healthy'}
             </span>
           </div>
 
@@ -568,9 +568,10 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
       {/* Detail Modals for Seamless Continuity */}
       {activeResource && (
         <>
-          {activeResource.kind === 'Node' && (
+          {activeResource.kind === 'Node' && activeCluster && (
             <NodeDetailModal
               node={activeResource}
+              cluster={activeCluster}
               clusterResources={clusterFilteredResources}
               incidents={incidents}
               onClose={handleCloseModal}
@@ -584,14 +585,9 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
               clusterResources={clusterFilteredResources}
               incidents={incidents}
               onClose={handleCloseModal}
-              onSelectNode={handleOpenDetailsModal}
-              onSelectWorkload={handleOpenDetailsModal}
-              onSelectService={handleOpenDetailsModal}
+              onSelectResource={handleOpenDetailsModal}
               onSelectIncident={(incId) => {
                 if (onSelectIncident) onSelectIncident(incId);
-              }}
-              onOpenLogs={(pod) => {
-                if (onOpenLogs) onOpenLogs(pod.clusterId, pod.namespace, pod.name);
               }}
             />
           )}
@@ -609,14 +605,12 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
           {activeResource.kind === 'Service' && (
             <ServiceDetailModal
               service={activeResource}
+              cluster={activeCluster}
               clusterResources={clusterFilteredResources}
               incidents={incidents}
               onClose={handleCloseModal}
               onSelectPod={handleOpenDetailsModal}
               onSelectResource={handleOpenDetailsModal}
-              onSelectIncident={(incId) => {
-                if (onSelectIncident) onSelectIncident(incId);
-              }}
             />
           )}
 
@@ -628,8 +622,8 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
                 incidents={incidents}
                 onClose={handleCloseModal}
                 onSelectResource={handleOpenDetailsModal}
-                onSelectIncident={(inc) => {
-                  if (onSelectIncident) onSelectIncident(inc.id);
+                onSelectIncident={(inc: any) => {
+                  if (onSelectIncident) onSelectIncident(typeof inc === 'string' ? inc : inc.id);
                 }}
               />
             )}

@@ -11,7 +11,7 @@ import {
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { auth, db, googleProvider } from '../firebase';
+import { auth, db, googleProvider, resolvedFirebaseConfig } from '../firebase';
 import { Organization, OrgMember, Role, User } from '../types/index';
 
 interface AuthContextType {
@@ -133,6 +133,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
+    console.info('[SkyOps AuthContext] Initializing Firebase runtime environment:', {
+      projectId: resolvedFirebaseConfig.projectId,
+      firestoreDatabaseId: resolvedFirebaseConfig.firestoreDatabaseId || '(default)',
+      authDomain: resolvedFirebaseConfig.authDomain,
+      envProjectId: (import.meta as any).env?.VITE_FIREBASE_PROJECT_ID,
+      envDatabaseId: (import.meta as any).env?.VITE_FIREBASE_FIRESTORE_DATABASE_ID
+    });
+
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       setFirebaseUser(fbUser);
       if (fbUser) {

@@ -152,11 +152,18 @@ function getPublicServerUrl(req?: Request): string {
 
 // --- Health Check ---
 app.get('/api/health', (req, res) => {
+  const persistence = store.getPersistence();
+  const isHealthy = (persistence as any).isHealthySync ? (persistence as any).isHealthySync() : true;
   res.json({
     status: 'ok',
     service: 'SkyOps Central Ingestion API',
     version: AGENT_VERSION,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    persistence: {
+      provider: persistence.providerName,
+      connected: isHealthy,
+      databaseId: (persistence as any).getDatabaseId ? (persistence as any).getDatabaseId() : 'unknown'
+    }
   });
 });
 

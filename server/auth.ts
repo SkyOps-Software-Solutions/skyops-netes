@@ -260,7 +260,7 @@ export async function requireOrgMembership(
     req.path === '/api/v1/auth/session' ||
     req.originalUrl?.includes('/api/v1/auth/session') ||
     req.url?.includes('/api/v1/auth/session');
-  if (!targetOrg && (isSessionEndpoint || !requestedOrgId)) {
+  if (!targetOrg && (isSessionEndpoint || !requestedOrgId || userOrgs.length > 0)) {
     targetOrg = userOrgs[0];
   }
 

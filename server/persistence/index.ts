@@ -50,12 +50,21 @@ export function getPersistenceStore(): IPersistenceStore {
       process.env.VITE_FIREBASE_PROJECT_ID ||
       fallbackConfig.projectId;
 
-    const databaseId =
-      process.env.SKYOPS_FIRESTORE_DATABASE_ID ||
-      process.env.FIREBASE_DATABASE_ID ||
-      process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID ||
-      (fallbackConfig as any).firestoreDatabaseId ||
-      '(default)';
+    const namedDatabaseId =
+      (process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID && process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID !== '(default)'
+        ? process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID
+        : null) ||
+      ((fallbackConfig as any).firestoreDatabaseId && (fallbackConfig as any).firestoreDatabaseId !== '(default)'
+        ? (fallbackConfig as any).firestoreDatabaseId
+        : null) ||
+      (process.env.SKYOPS_FIRESTORE_DATABASE_ID && process.env.SKYOPS_FIRESTORE_DATABASE_ID !== '(default)'
+        ? process.env.SKYOPS_FIRESTORE_DATABASE_ID
+        : null) ||
+      (process.env.FIREBASE_DATABASE_ID && process.env.FIREBASE_DATABASE_ID !== '(default)'
+        ? process.env.FIREBASE_DATABASE_ID
+        : null);
+
+    const databaseId = namedDatabaseId || process.env.SKYOPS_FIRESTORE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID || '(default)';
 
     if (!projectId) {
       const errorMsg =

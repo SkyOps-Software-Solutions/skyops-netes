@@ -916,8 +916,21 @@ export class DataStore {
       (m) => m.userId === userId || (normalizedEmail && m.email && m.email.trim().toLowerCase() === normalizedEmail)
     );
     if (!member) {
-      // ownerUserId is metadata, not an authorization grant. Membership must
-      // exist explicitly in the persisted membership record.
+      if (org && (org.ownerUserId === userId || (normalizedEmail && (org as any).ownerEmail && (org as any).ownerEmail.trim().toLowerCase() === normalizedEmail))) {
+        const ownerMember: OrgMember = {
+          userId,
+          orgId: resolvedOrgId,
+          email: userEmail || (org as any).ownerEmail || '',
+          name: org.name || 'Owner',
+          role: 'OWNER',
+          status: 'ACTIVE',
+          joinedAt: org.createdAt || Date.now()
+        };
+        orgMembers.push(ownerMember);
+        this.members.set(resolvedOrgId, orgMembers);
+        this.persistence.setOrgMembers(resolvedOrgId, orgMembers).catch(() => {});
+        return { hasAccess: true, role: 'OWNER', status: 'ACTIVE' };
+      }
       return { hasAccess: false };
     }
     // Never mutate identity during an authorization read.

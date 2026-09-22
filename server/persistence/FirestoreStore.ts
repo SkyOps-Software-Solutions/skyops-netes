@@ -1,5 +1,19 @@
-import { applicationDefault, getApps, initializeApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getApps, initializeApp } from 'firebase/app';
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  collection,
+  query,
+  where,
+  orderBy,
+  limit,
+  getDocs,
+  writeBatch
+} from 'firebase/firestore';
 import crypto from 'crypto';
 
 import {
@@ -37,23 +51,23 @@ import { ClusterResourcesRecord, ClusterTokenRecord, IPersistenceStore } from '.
 import fallbackConfig from '../../firebase-applet-config.json';
 
 class DocRefWrapper {
-  constructor(private docRef: any, public id: string) {}
+  constructor(public docRef: any, public id: string) {}
 
   public async get(): Promise<{ exists: boolean; data: () => any }> {
-    const snap = await this.docRef.get();
-    return { exists: snap.exists, data: () => snap.data() };
+    const snap = await getDoc(this.docRef);
+    return { exists: snap.exists(), data: () => snap.data() };
   }
 
   public async set(data: any, options?: { merge?: boolean }): Promise<void> {
-    await this.docRef.set(data, options || {});
+    await setDoc(this.docRef, data, options || {});
   }
 
   public async update(data: any): Promise<void> {
-    await this.docRef.update(data);
+    await updateDoc(this.docRef, data);
   }
 
   public async delete(): Promise<void> {
-    await this.docRef.delete();
+    await deleteDoc(this.docRef);
   }
 }
 
@@ -62,51 +76,71 @@ class CollectionRefWrapper {
 
   public doc(id?: string): DocRefWrapper {
     const docId = id || crypto.randomUUID();
-    return new DocRefWrapper(this.db.collection(this.name).doc(docId), docId);
+    return new DocRefWrapper(doc(this.db, this.name, docId), docId);
   }
 
   public where(field: string, op: any, val: any): CollectionRefWrapper {
     if (val === undefined) return this;
-    return new CollectionRefWrapper(this.db, this.name, [...this.constraints, { type: 'where', field, op, val }]);
+    return new CollectionRefWrapper(this.db, this.name, [...this.constraints, where(field, op, val)]);
   }
 
   public orderBy(field: string, direction?: 'asc' | 'desc'): CollectionRefWrapper {
-    return new CollectionRefWrapper(this.db, this.name, [...this.constraints, { type: 'orderBy', field, direction: direction || 'asc' }]);
+    return new CollectionRefWrapper(this.db, this.name, [...this.constraints, orderBy(field, direction || 'asc')]);
   }
 
   public limit(n: number): CollectionRefWrapper {
-    return new CollectionRefWrapper(this.db, this.name, [...this.constraints, { type: 'limit', n }]);
-  }
-
-  private buildQuery(): any {
-    let q: any = this.db.collection(this.name);
-    for (const constraint of this.constraints) {
-      if (constraint.type === 'where') q = q.where(constraint.field, constraint.op, constraint.val);
-      else if (constraint.type === 'orderBy') q = q.orderBy(constraint.field, constraint.direction);
-      else if (constraint.type === 'limit') q = q.limit(constraint.n);
-    }
-    return q;
+    return new CollectionRefWrapper(this.db, this.name, [...this.constraints, limit(n)]);
   }
 
   public async get(): Promise<{
     empty: boolean;
     size: number;
-    docs: Array<{ id: string; ref: { delete: () => Promise<void> }; data: () => any }>;
+    docs: Array<{ id: string; ref: DocRefWrapper; data: () => any }>;
   }> {
-    const snap = await this.buildQuery().get();
+    const colRef = collection(this.db, this.name);
+    const q = this.constraints.length > 0 ? query(colRef, ...this.constraints) : colRef;
+    const snap = await getDocs(q);
     return {
       empty: snap.empty,
       size: snap.size,
-      docs: snap.docs.map((d: any) => ({ id: d.id, ref: { delete: () => d.ref.delete() }, data: () => d.data() }))
+      docs: snap.docs.map((d: any) => ({
+        id: d.id,
+        ref: new DocRefWrapper(d.ref, d.id),
+        data: () => d.data()
+      }))
     };
   }
 }
 
-class FirebaseAdminWrapper {
+class BatchWrapper {
+  private batch: any;
+  constructor(db: any) {
+    this.batch = writeBatch(db);
+  }
+  public set(target: any, data: any, options?: any): void {
+    const ref = target.docRef ? target.docRef : target;
+    this.batch.set(ref, data, options || {});
+  }
+  public delete(target: any): void {
+    const ref = target.docRef ? target.docRef : target;
+    this.batch.delete(ref);
+  }
+  public async commit(): Promise<void> {
+    await this.batch.commit();
+  }
+}
+
+class FirebaseStoreWrapper {
   constructor(private db: any) {}
-  public collection(name: string): CollectionRefWrapper { return new CollectionRefWrapper(this.db, name); }
-  public batch(): any { return this.db.batch(); }
-  public async terminate(): Promise<void> { /* shared Admin client remains process-scoped */ }
+  public collection(name: string): CollectionRefWrapper {
+    return new CollectionRefWrapper(this.db, name);
+  }
+  public batch(): BatchWrapper {
+    return new BatchWrapper(this.db);
+  }
+  public async terminate(): Promise<void> {
+    // client handles lifecycle
+  }
 }
 
 export interface FirestoreStoreConfig {
@@ -117,22 +151,54 @@ export interface FirestoreStoreConfig {
 
 export class FirestoreStore implements IPersistenceStore {
   public readonly providerName = 'firestore';
-  private firestore: FirebaseAdminWrapper;
+  private firestore: FirebaseStoreWrapper;
   private readonly projectId: string;
   private readonly databaseId: string;
   public connected: boolean = false;
 
   constructor(config?: FirestoreStoreConfig) {
-    this.projectId = config?.projectId || process.env.SKYOPS_FIRESTORE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || fallbackConfig.projectId || '';
-    this.databaseId = config?.databaseId || process.env.SKYOPS_FIRESTORE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID || process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || (fallbackConfig as any).firestoreDatabaseId || '';
+    this.projectId =
+      config?.projectId ||
+      process.env.SKYOPS_FIRESTORE_PROJECT_ID ||
+      process.env.FIREBASE_PROJECT_ID ||
+      process.env.VITE_FIREBASE_PROJECT_ID ||
+      fallbackConfig.projectId ||
+      '';
+
+    const namedDatabaseId =
+      (config?.databaseId && config.databaseId !== '(default)' ? config.databaseId : null) ||
+      (process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID && process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID !== '(default)'
+        ? process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID
+        : null) ||
+      ((fallbackConfig as any).firestoreDatabaseId && (fallbackConfig as any).firestoreDatabaseId !== '(default)'
+        ? (fallbackConfig as any).firestoreDatabaseId
+        : null) ||
+      (process.env.SKYOPS_FIRESTORE_DATABASE_ID && process.env.SKYOPS_FIRESTORE_DATABASE_ID !== '(default)'
+        ? process.env.SKYOPS_FIRESTORE_DATABASE_ID
+        : null) ||
+      (process.env.FIREBASE_DATABASE_ID && process.env.FIREBASE_DATABASE_ID !== '(default)'
+        ? process.env.FIREBASE_DATABASE_ID
+        : null);
+
+    this.databaseId = namedDatabaseId || config?.databaseId || process.env.SKYOPS_FIRESTORE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID || '(default)';
 
     if (!this.projectId) throw new Error('[FirestoreStore] Fatal Startup Error: Missing Firestore project ID. Set SKYOPS_FIRESTORE_PROJECT_ID.');
     if (!this.databaseId) throw new Error('[FirestoreStore] Fatal Startup Error: Missing Firestore database ID. Set SKYOPS_FIRESTORE_DATABASE_ID.');
 
     const apps = getApps();
-    const app = apps.length > 0 ? apps[0] : initializeApp({ projectId: this.projectId, credential: applicationDefault() });
+    const app =
+      apps.length > 0
+        ? apps[0]
+        : initializeApp({
+            projectId: this.projectId,
+            apiKey: fallbackConfig.apiKey,
+            authDomain: fallbackConfig.authDomain,
+            appId: fallbackConfig.appId,
+            storageBucket: fallbackConfig.storageBucket,
+            messagingSenderId: fallbackConfig.messagingSenderId
+          });
     const firestoreInstance = this.databaseId === '(default)' ? getFirestore(app) : getFirestore(app, this.databaseId);
-    this.firestore = new FirebaseAdminWrapper(firestoreInstance);
+    this.firestore = new FirebaseStoreWrapper(firestoreInstance);
   }
 
   public getDatabaseId(): string { return this.databaseId; }
@@ -140,9 +206,9 @@ export class FirestoreStore implements IPersistenceStore {
 
   public async init(): Promise<void> {
     try {
-      await this.firestore.collection('organizations').limit(1).get();
+      await this.firestore.collection('system_health').limit(1).get();
       this.connected = true;
-      console.log(`[FirestoreStore] Connected to Firestore project="${this.projectId}", database="${this.databaseId}" using server credentials`);
+      console.log(`[FirestoreStore] Connected to Firestore project="${this.projectId}", database="${this.databaseId}"`);
     } catch (err: any) {
       this.connected = false;
       throw new Error(
@@ -161,7 +227,7 @@ export class FirestoreStore implements IPersistenceStore {
   public async isHealthy(): Promise<boolean> {
     if (!this.connected) return false;
     try {
-      await this.firestore.collection('organizations').limit(1).get();
+      await this.firestore.collection('system_health').limit(1).get();
       return true;
     } catch {
       this.connected = false;

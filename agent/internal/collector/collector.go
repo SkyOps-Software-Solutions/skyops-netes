@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -152,16 +153,30 @@ func (c *Collector) collectFromKubernetes(ctx context.Context) {
 		return
 	}
 
+	// Enforce strict timeout for the entire collection cycle to prevent hanging reads on network/API stalls
+	scrapeTimeout := c.cfg.TelemetryInterval
+	if scrapeTimeout <= 0 {
+		scrapeTimeout = 30 * time.Second
+	}
+	scrapeCtx, cancel := context.WithTimeout(ctx, scrapeTimeout)
+	defer cancel()
+
 	cycleStart := time.Now().UnixMilli()
 	c.lastObservedAt = cycleStart
 	collectionStatus := make(map[string]CollectionStatusItem)
 
+	select {
+	case <-scrapeCtx.Done(): // Context cancellation guard
+		return
+	default:
+	}
+
 	// 1. Fetch Events first to correlate with pods, nodes, and workloads
-	eventsMap, totalEvents := c.collectEvents(ctx)
+	eventsMap, totalEvents := c.collectEvents(scrapeCtx)
 
 	// Fetch real metrics from Metrics Server (/apis/metrics.k8s.io/v1beta1) if available
 	nodeMetricsMap := make(map[string]*K8sNodeMetrics)
-	if nodeMetricsList, err := c.k8sClient.GetNodeMetrics(ctx); err == nil && nodeMetricsList != nil {
+	if nodeMetricsList, err := c.k8sClient.GetNodeMetrics(scrapeCtx); err == nil && nodeMetricsList != nil {
 		for i := range nodeMetricsList.Items {
 			item := &nodeMetricsList.Items[i]
 			nodeMetricsMap[item.Metadata.Name] = item
@@ -173,7 +188,7 @@ func (c *Collector) collectFromKubernetes(ctx context.Context) {
 
 	podMetricsMap := make(map[string]*K8sPodMetrics)
 	var podMetricsErr error
-	if podMetricsList, err := c.k8sClient.GetPodMetrics(ctx); err == nil && podMetricsList != nil {
+	if podMetricsList, err := c.k8sClient.GetPodMetrics(scrapeCtx); err == nil && podMetricsList != nil {
 		for i := range podMetricsList.Items {
 			item := &podMetricsList.Items[i]
 			key := fmt.Sprintf("%s/%s", item.Metadata.Namespace, item.Metadata.Name)
@@ -202,69 +217,27 @@ func (c *Collector) collectFromKubernetes(ctx context.Context) {
 	}
 
 	// 2. Nodes
-	nodeObservations, detectedK8sVer, nodeStat := c.collectNodes(ctx, eventsMap, nodeMetricsMap)
+	nodeObservations, detectedK8sVer, nodeStat := c.collectNodes(scrapeCtx, eventsMap, nodeMetricsMap)
 	collectionStatus["nodes"] = nodeStat
 	for _, obs := range nodeObservations {
 		c.RecordObservation(obs)
 	}
 
 	// 3. Pods
-	podObservations, podStat := c.collectPods(ctx, eventsMap, podMetricsMap)
+	podObservations, podStat := c.collectPods(scrapeCtx, eventsMap, podMetricsMap)
 	collectionStatus["pods"] = podStat
 	for _, obs := range podObservations {
 		c.RecordObservation(obs)
 	}
 
-	// 4. Deployments
-	deploymentObservations, depStat := c.collectDeployments(ctx, eventsMap)
-	collectionStatus["deployments"] = depStat
-	for _, obs := range deploymentObservations {
-		c.RecordObservation(obs)
-	}
-
-	// 5. StatefulSets
-	statefulSetObservations, ssStat := c.collectStatefulSets(ctx, eventsMap)
-	collectionStatus["statefulsets"] = ssStat
-	for _, obs := range statefulSetObservations {
-		c.RecordObservation(obs)
-	}
-
-	// 6. DaemonSets
-	daemonSetObservations, dsStat := c.collectDaemonSets(ctx, eventsMap)
-	collectionStatus["daemonsets"] = dsStat
-	for _, obs := range daemonSetObservations {
-		c.RecordObservation(obs)
-	}
-
-	// 7. ReplicaSets
-	replicaSetObservations, rsStat := c.collectReplicaSets(ctx, eventsMap)
-	collectionStatus["replicasets"] = rsStat
-	for _, obs := range replicaSetObservations {
-		c.RecordObservation(obs)
-	}
-
-	// 8. Jobs
-	jobObservations, jobStat := c.collectJobs(ctx, eventsMap)
-	collectionStatus["jobs"] = jobStat
-	for _, obs := range jobObservations {
-		c.RecordObservation(obs)
-	}
-
-	// 9. CronJobs
-	cronJobObservations, cjStat := c.collectCronJobs(ctx, eventsMap)
-	collectionStatus["cronjobs"] = cjStat
-	for _, obs := range cronJobObservations {
-		c.RecordObservation(obs)
-	}
-
-	// 10. Networking: Endpoints, EndpointSlices, Services, Ingresses
-	endpointObservations, epStat := c.collectEndpoints(ctx)
+	// Networking dependencies: Endpoints & EndpointSlices needed for Service routing
+	endpointObservations, epStat := c.collectEndpoints(scrapeCtx)
 	collectionStatus["endpoints"] = epStat
 	for _, obs := range endpointObservations {
 		c.RecordObservation(obs)
 	}
 
-	endpointSliceObservations, epsStat := c.collectEndpointSlices(ctx)
+	endpointSliceObservations, epsStat := c.collectEndpointSlices(scrapeCtx)
 	collectionStatus["endpointslices"] = epsStat
 	for _, obs := range endpointSliceObservations {
 		c.RecordObservation(obs)
@@ -272,119 +245,149 @@ func (c *Collector) collectFromKubernetes(ctx context.Context) {
 
 	epIndex := buildServiceEndpointIndex(endpointObservations, endpointSliceObservations)
 
-	serviceObservations, svcStat := c.collectServices(ctx, eventsMap, epIndex)
+	serviceObservations, svcStat := c.collectServices(scrapeCtx, eventsMap, epIndex)
 	collectionStatus["services"] = svcStat
 	for _, obs := range serviceObservations {
 		c.RecordObservation(obs)
 	}
 
-	ingressObservations, ingStat := c.collectIngresses(ctx, eventsMap)
+	ingressObservations, ingStat := c.collectIngresses(scrapeCtx, eventsMap)
 	collectionStatus["ingresses"] = ingStat
 	for _, obs := range ingressObservations {
 		c.RecordObservation(obs)
 	}
 
-	// 11. Storage: PVCs, PVs, StorageClasses
-	pvcObservations, pvcStat := c.collectPVCs(ctx, eventsMap)
-	collectionStatus["pvcs"] = pvcStat
-	for _, obs := range pvcObservations {
-		c.RecordObservation(obs)
+	// Define tasks for remaining independent resource categories to process in a bounded worker pool
+	type resourceTask struct {
+		category string
+		fn       func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem)
 	}
 
-	pvObservations, pvStat := c.collectPersistentVolumes(ctx, eventsMap)
-	collectionStatus["persistentvolumes"] = pvStat
-	for _, obs := range pvObservations {
-		c.RecordObservation(obs)
+	type resourceResult struct {
+		category string
+		stat     CollectionStatusItem
+		obs      []ResourceObservation
 	}
 
-	scObservations, scStat := c.collectStorageClasses(ctx)
-	collectionStatus["storageclasses"] = scStat
-	for _, obs := range scObservations {
-		c.RecordObservation(obs)
+	tasks := []resourceTask{
+		{category: "deployments", fn: func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem) {
+			return c.collectDeployments(tCtx, eventsMap)
+		}},
+		{category: "statefulsets", fn: func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem) {
+			return c.collectStatefulSets(tCtx, eventsMap)
+		}},
+		{category: "daemonsets", fn: func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem) {
+			return c.collectDaemonSets(tCtx, eventsMap)
+		}},
+		{category: "replicasets", fn: func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem) {
+			return c.collectReplicaSets(tCtx, eventsMap)
+		}},
+		{category: "jobs", fn: func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem) {
+			return c.collectJobs(tCtx, eventsMap)
+		}},
+		{category: "cronjobs", fn: func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem) {
+			return c.collectCronJobs(tCtx, eventsMap)
+		}},
+		{category: "pvcs", fn: func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem) {
+			return c.collectPVCs(tCtx, eventsMap)
+		}},
+		{category: "persistentvolumes", fn: func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem) {
+			return c.collectPersistentVolumes(tCtx, eventsMap)
+		}},
+		{category: "storageclasses", fn: func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem) {
+			return c.collectStorageClasses(tCtx)
+		}},
+		{category: "configmaps", fn: func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem) {
+			return c.collectConfigMaps(tCtx)
+		}},
+		{category: "secrets", fn: func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem) {
+			return c.collectSecrets(tCtx)
+		}},
+		{category: "namespaces", fn: func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem) {
+			return c.collectNamespaces(tCtx)
+		}},
+		{category: "resourcequotas", fn: func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem) {
+			return c.collectResourceQuotas(tCtx)
+		}},
+		{category: "limitranges", fn: func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem) {
+			return c.collectLimitRanges(tCtx)
+		}},
+		{category: "serviceaccounts", fn: func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem) {
+			return c.collectServiceAccounts(tCtx)
+		}},
+		{category: "rolebindings", fn: func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem) {
+			return c.collectRoleBindings(tCtx)
+		}},
+		{category: "clusterrolebindings", fn: func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem) {
+			return c.collectClusterRoleBindings(tCtx)
+		}},
+		{category: "helm", fn: func(tCtx context.Context) ([]ResourceObservation, CollectionStatusItem) {
+			return c.collectHelmReleases(tCtx)
+		}},
 	}
 
-	// 12. Config & Secrets Metadata (Strictly zero sensitive values!)
-	cmObservations, cmStat := c.collectConfigMaps(ctx)
-	collectionStatus["configmaps"] = cmStat
-	for _, obs := range cmObservations {
-		c.RecordObservation(obs)
+	// Bounded worker pool to prevent goroutine explosion and ensure clean teardown
+	taskChan := make(chan resourceTask, len(tasks))
+	resultChan := make(chan resourceResult, len(tasks))
+	var workerWg sync.WaitGroup
+	const poolWorkers = 4
+
+	for i := 0; i < poolWorkers; i++ {
+		workerWg.Add(1)
+		go func() {
+			defer workerWg.Done()
+			for {
+				select {
+				case <-scrapeCtx.Done(): // Context cancellation guard: eliminates goroutine leaks
+					return
+				case t, ok := <-taskChan:
+					if !ok {
+						return
+					}
+					obs, stat := t.fn(scrapeCtx)
+					select {
+					case <-scrapeCtx.Done(): // Context cancellation guard
+						return
+					case resultChan <- resourceResult{category: t.category, stat: stat, obs: obs}:
+					}
+				}
+			}
+		}()
 	}
 
-	secObservations, secStat := c.collectSecrets(ctx)
-	collectionStatus["secrets"] = secStat
-	for _, obs := range secObservations {
-		c.RecordObservation(obs)
+	for _, t := range tasks {
+		select {
+		case <-scrapeCtx.Done():
+			break
+		case taskChan <- t:
+		}
 	}
+	close(taskChan)
 
-	// 13. Cluster Governance: Namespaces, ResourceQuotas, LimitRanges
-	nsObservations, nsStat := c.collectNamespaces(ctx)
-	collectionStatus["namespaces"] = nsStat
-	for _, obs := range nsObservations {
-		c.RecordObservation(obs)
-	}
+	// Clean teardown: close result channel once all workers finish
+	go func() {
+		workerWg.Wait()
+		close(resultChan)
+	}()
 
-	rqObservations, rqStat := c.collectResourceQuotas(ctx)
-	collectionStatus["resourcequotas"] = rqStat
-	for _, obs := range rqObservations {
-		c.RecordObservation(obs)
-	}
-
-	lrObservations, lrStat := c.collectLimitRanges(ctx)
-	collectionStatus["limitranges"] = lrStat
-	for _, obs := range lrObservations {
-		c.RecordObservation(obs)
-	}
-
-	// 14. RBAC: ServiceAccounts, RoleBindings, ClusterRoleBindings
-	saObservations, saStat := c.collectServiceAccounts(ctx)
-	collectionStatus["serviceaccounts"] = saStat
-	for _, obs := range saObservations {
-		c.RecordObservation(obs)
-	}
-
-	rbObservations, rbStat := c.collectRoleBindings(ctx)
-	collectionStatus["rolebindings"] = rbStat
-	for _, obs := range rbObservations {
-		c.RecordObservation(obs)
-	}
-
-	crbObservations, crbStat := c.collectClusterRoleBindings(ctx)
-	collectionStatus["clusterrolebindings"] = crbStat
-	for _, obs := range crbObservations {
-		c.RecordObservation(obs)
-	}
-
-	// 15. Helm Discovery (Metadata ONLY)
-	helmObservations, helmStat := c.collectHelmReleases(ctx)
-	collectionStatus["helm"] = helmStat
-	for _, obs := range helmObservations {
-		c.RecordObservation(obs)
+	var poolObservations []ResourceObservation
+	for res := range resultChan {
+		collectionStatus[res.category] = res.stat
+		for _, obs := range res.obs {
+			c.RecordObservation(obs)
+		}
+		poolObservations = append(poolObservations, res.obs...)
 	}
 
 	// Aggregate all observations for graph, change detection, and intelligence
-	allObservations := make([]ResourceObservation, 0, len(nodeObservations)+len(podObservations)+len(deploymentObservations))
+	allObservations := make([]ResourceObservation, 0, len(nodeObservations)+len(podObservations)+len(serviceObservations)+len(endpointObservations)+len(endpointSliceObservations)+len(ingressObservations)+len(poolObservations))
 	allObservations = append(allObservations, nodeObservations...)
 	allObservations = append(allObservations, podObservations...)
-	allObservations = append(allObservations, deploymentObservations...)
-	allObservations = append(allObservations, statefulSetObservations...)
-	allObservations = append(allObservations, daemonSetObservations...)
-	allObservations = append(allObservations, jobObservations...)
-	allObservations = append(allObservations, cronJobObservations...)
 	allObservations = append(allObservations, serviceObservations...)
+	allObservations = append(allObservations, endpointObservations...)
 	allObservations = append(allObservations, endpointSliceObservations...)
 	allObservations = append(allObservations, ingressObservations...)
-	allObservations = append(allObservations, pvcObservations...)
-	allObservations = append(allObservations, pvObservations...)
-	allObservations = append(allObservations, scObservations...)
-	allObservations = append(allObservations, cmObservations...)
-	allObservations = append(allObservations, secObservations...)
-	allObservations = append(allObservations, nsObservations...)
-	allObservations = append(allObservations, rqObservations...)
-	allObservations = append(allObservations, lrObservations...)
-	allObservations = append(allObservations, saObservations...)
-	allObservations = append(allObservations, rbObservations...)
-	allObservations = append(allObservations, crbObservations...)
-	allObservations = append(allObservations, helmObservations...)
+	allObservations = append(allObservations, poolObservations...)
 
 	// Update cluster relationship graph
 	if c.graph != nil {
@@ -418,6 +421,7 @@ func (c *Collector) collectFromKubernetes(ctx context.Context) {
 	c.lastNodeIntel = nodeIntelList
 
 	// Snapshot is complete if core infrastructure (nodes, pods, deployments) succeeded
+	depStat := collectionStatus["deployments"]
 	c.lastSnapshotComplete = nodeStat.Success && podStat.Success && depStat.Success
 	c.lastCollectionStatus = collectionStatus
 
@@ -2472,6 +2476,10 @@ func (c *Collector) flushQueue(ctx context.Context) {
 		return
 	}
 
+	// Strict context timeout for queue flushing
+	flushCtx, flushCancel := context.WithTimeout(ctx, 15*time.Second)
+	defer flushCancel()
+
 	batchID := uuid.New().String()
 	payload := map[string]interface{}{
 		"clusterId":        c.cfg.ClusterID,
@@ -2491,7 +2499,7 @@ func (c *Collector) flushQueue(ctx context.Context) {
 		c.metrics.Gauge("skyops_agent_queue_depth").Set(int64(c.queue.Size()), nil)
 	}
 
-	if err := c.client.SendTelemetry(ctx, payload); err != nil {
+	if err := c.client.SendTelemetry(flushCtx, payload); err != nil {
 		slog.Warn("Failed to dispatch telemetry batch directly to backend", "error", err, "itemCount", len(items))
 
 		// If durable disk spool is configured, spool batch to prevent memory pressure or telemetry loss
@@ -2533,14 +2541,27 @@ func (c *Collector) flushQueue(ctx context.Context) {
 }
 
 func (c *Collector) drainSpool(ctx context.Context) {
+	drainCtx, drainCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer drainCancel()
+
 	for {
+		select {
+		case <-drainCtx.Done(): // Context cancellation guard to prevent goroutine hanging on shutdown
+			return
+		default:
+		}
+
 		batch, filePath, err := c.spool.ReadOldestBatch()
 		if err != nil {
 			break // Spool empty or unreadable
 		}
 
-		if err := c.client.SendTelemetry(ctx, batch); err != nil {
-			slog.Warn("Failed to drain spooled batch to backend; pausing spool drain", "file", filePath, "error", err)
+		sendCtx, sendCancel := context.WithTimeout(drainCtx, 10*time.Second)
+		sendErr := c.client.SendTelemetry(sendCtx, batch)
+		sendCancel()
+
+		if sendErr != nil {
+			slog.Warn("Failed to drain spooled batch to backend; pausing spool drain", "file", filePath, "error", sendErr)
 			break
 		}
 

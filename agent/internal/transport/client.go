@@ -215,6 +215,42 @@ func (c *Client) ReportActionResult(ctx context.Context, actionID string, succes
 	return c.postWithRetry(ctx, url, payload, "action_result")
 }
 
+// ReportDetailedActionResult reports an atomic remediation job state update with full execution context and traces
+func (c *Client) ReportDetailedActionResult(ctx context.Context, actionID string, payload interface{}) error {
+	url := fmt.Sprintf("%s/api/v1/agent/actions/%s/result", c.cfg.ServerURL, actionID)
+	return c.postWithRetry(ctx, url, payload, "action_result")
+}
+
+// OpenActionStream opens a persistent HTTP Server-Sent Events (SSE) connection to receive real-time remediation actions
+func (c *Client) OpenActionStream(ctx context.Context) (*http.Response, error) {
+	url := fmt.Sprintf("%s/api/v1/agent/actions/stream", c.cfg.ServerURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.cfg.AgentToken))
+	req.Header.Set("User-Agent", fmt.Sprintf("SkyOpsAgent/%s", c.cfg.AgentVersion))
+	req.Header.Set("X-Cluster-ID", c.cfg.ClusterID)
+	req.Header.Set("X-Agent-ID", c.cfg.AgentID)
+
+	streamClient := &http.Client{
+		Transport: c.httpClient.Transport,
+		Timeout:   0, // Streaming connection has no fixed timeout
+	}
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		c.circuitBreaker.RecordFailure()
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("action stream returned status %d", resp.StatusCode)
+	}
+	c.circuitBreaker.RecordSuccess()
+	return resp, nil
+}
+
 func (c *Client) postWithRetry(ctx context.Context, url string, payload interface{}, opType string) error {
 	if !c.circuitBreaker.Allow() {
 		return ErrCircuitOpen

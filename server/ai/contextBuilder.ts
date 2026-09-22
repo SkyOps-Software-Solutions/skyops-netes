@@ -1,6 +1,9 @@
 import { Incident, IntelligenceAnalysis, KubernetesResource } from '../../src/types/index';
 import { IncidentContext } from './types';
 
+// Re-export distributed trace context methods (AsyncLocalStorage)
+export * from '../../contextBuilder';
+
 // Normal operational keys that should NEVER be redacted by key-name matches
 export const OPERATIONAL_KEY_SAFE_LIST = new Set([
   'image',

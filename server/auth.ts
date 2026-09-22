@@ -15,12 +15,14 @@ export interface AuthenticatedUser {
 export interface AuthenticatedUserRequest extends Request {
   user?: AuthenticatedUser;
   orgId?: string;
+  tenantId?: string;
   userRole?: Role;
 }
 
 export interface AuthenticatedAgentRequest extends Request {
   clusterId?: string;
   orgId?: string;
+  tenantId?: string;
 }
 
 // In-memory cache for Google Public Certificates for Firebase Auth ID token verification
@@ -297,6 +299,7 @@ export async function requireOrgMembership(
   }
 
   req.orgId = targetOrgId;
+  req.tenantId = targetOrgId;
   req.userRole = access.role || 'VIEWER';
   next();
 }
@@ -482,5 +485,191 @@ export async function requireAgentAuth(
 
   req.clusterId = verified.clusterId;
   req.orgId = verified.orgId;
+  req.tenantId = verified.orgId;
   next();
+}
+
+/**
+ * ============================================================================
+ * RBAC & Cross-Tenant Boundary Enforcement for Automated Remediation
+ * ============================================================================
+ */
+
+/**
+ * Error thrown whenever an execution principal, agent, or automated workflow
+ * attempts to access or mutate a resource belonging to a different tenant.
+ */
+export class UnauthorizedTenantAccessException extends Error {
+  public readonly statusCode = 403;
+  public readonly code = 'UNAUTHORIZED_TENANT_ACCESS';
+  public readonly tenantId: string;
+  public readonly targetResourceTenantId: string;
+
+  constructor(message: string, tenantId: string, targetResourceTenantId: string) {
+    super(message);
+    this.name = 'UnauthorizedTenantAccessException';
+    this.tenantId = tenantId;
+    this.targetResourceTenantId = targetResourceTenantId;
+    Object.setPrototypeOf(this, UnauthorizedTenantAccessException.prototype);
+  }
+}
+
+/**
+ * Normalized context representation for tenant validation.
+ */
+export interface TenantContext {
+  tenantId: string;
+  userId?: string;
+  role?: Role | string;
+  isAutonomousAgent?: boolean;
+  clusterId?: string;
+  namespace?: string;
+}
+
+/**
+ * Middleware/Guard Function:
+ * Enforces strict boundary isolation between tenants.
+ * Immediately throws UnauthorizedTenantAccessException (HTTP 403) if userContext.tenantId !== targetResourceTenantId.
+ *
+ * CRITICAL SECURITY GUARANTEE:
+ * Even if the executing user possesses elevated system/admin roles (e.g. OWNER or ADMIN),
+ * cross-tenant mutation is strictly forbidden to prevent automated remediation workflows
+ * from leaking actions across tenant perimeters.
+ *
+ * @param userContext Active tenant execution context or authenticated request
+ * @param targetResourceTenantId Tenant ID owning the target Kubernetes or incident resource
+ */
+export function validateTenantBoundary(
+  userContext:
+    | TenantContext
+    | AuthenticatedUserRequest
+    | AuthenticatedAgentRequest
+    | { tenantId?: string; orgId?: string; [key: string]: any },
+  targetResourceTenantId: string
+): void {
+  // Extract originating tenant from explicit tenantId, orgId, or headers
+  const contextTenantId =
+    (userContext as any)?.tenantId ||
+    (userContext as any)?.orgId ||
+    (userContext as any)?.headers?.['x-tenant-id'] ||
+    (userContext as any)?.headers?.['x-org-id'];
+
+  const cleanContextTenant = typeof contextTenantId === 'string' ? contextTenantId.trim() : '';
+  const cleanTargetTenant = typeof targetResourceTenantId === 'string' ? targetResourceTenantId.trim() : '';
+
+  // Fail-closed: both context and target tenant must be explicitly known
+  if (!cleanContextTenant || !cleanTargetTenant) {
+    throw new UnauthorizedTenantAccessException(
+      'Forbidden: Cross-tenant boundary validation failed due to missing tenant identifier in execution context or target resource',
+      cleanContextTenant || 'UNKNOWN',
+      cleanTargetTenant || 'UNKNOWN'
+    );
+  }
+
+  // Strict tenant boundary check: Elevated privileges DO NOT bypass tenant boundary
+  if (cleanContextTenant !== cleanTargetTenant) {
+    throw new UnauthorizedTenantAccessException(
+      `Forbidden: Cross-tenant access denied. Context tenant '${cleanContextTenant}' cannot access, remediate, or mutate resources belonging to tenant '${cleanTargetTenant}'.`,
+      cleanContextTenant,
+      cleanTargetTenant
+    );
+  }
+}
+
+/**
+ * Autonomous Agent Guard:
+ * Validates that an autonomous execution agent cannot operate on resources outside
+ * its registered and authenticated tenant boundary.
+ *
+ * @param req Authenticated agent request with verified agent token
+ * @param targetResourceOrgId Target resource organization/tenant ID
+ */
+export function validateAgentTenantBoundary(
+  req: AuthenticatedAgentRequest,
+  targetResourceOrgId: string
+): void {
+  const agentTenantId = req.orgId || req.tenantId;
+  if (!agentTenantId) {
+    throw new UnauthorizedTenantAccessException(
+      'Forbidden: Autonomous agent has no authenticated tenant identity',
+      'UNKNOWN',
+      targetResourceOrgId
+    );
+  }
+
+  validateTenantBoundary(
+    {
+      tenantId: agentTenantId,
+      clusterId: req.clusterId,
+      isAutonomousAgent: true
+    },
+    targetResourceOrgId
+  );
+}
+
+/**
+ * Background / Cron Task Query Scoping:
+ * Explicitly scopes database query filters by tenantId to prevent automated background
+ * tasks from leaking or executing cross-tenant operations.
+ *
+ * @param tenantId The originating tenant ID
+ * @param query Optional existing query criteria to merge with tenant filter
+ */
+export function scopeRemediationQueryByTenant<T extends Record<string, any>>(
+  tenantId: string,
+  query?: T
+): T & { orgId: string; tenantId: string } {
+  if (!tenantId || typeof tenantId !== 'string' || tenantId.trim() === '') {
+    throw new UnauthorizedTenantAccessException(
+      'Cannot execute background remediation task: missing or invalid tenantId',
+      'UNKNOWN',
+      'UNKNOWN'
+    );
+  }
+
+  const cleanTenant = tenantId.trim();
+  return {
+    ...(query || ({} as T)),
+    orgId: cleanTenant,
+    tenantId: cleanTenant
+  };
+}
+
+/**
+ * Express Middleware Guard:
+ * Intercepts requests and enforces tenant boundary validation against an extracted target tenant ID.
+ *
+ * @param extractTargetTenantId Function to extract target tenant ID from request parameters or body
+ */
+export function requireTenantBoundary(
+  extractTargetTenantId: (req: Request) => string | undefined | Promise<string | undefined>
+) {
+  return async (
+    req: AuthenticatedUserRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void | Response> => {
+    try {
+      const targetTenantId = await extractTargetTenantId(req);
+      if (!targetTenantId) {
+        return res.status(400).json({
+          error: 'Bad Request: Target resource tenant could not be determined',
+          code: 'MISSING_RESOURCE_TENANT'
+        });
+      }
+
+      validateTenantBoundary(req, targetTenantId);
+      next();
+    } catch (err: any) {
+      if (err instanceof UnauthorizedTenantAccessException || err?.statusCode === 403) {
+        return res.status(403).json({
+          error: err.message,
+          code: err.code || 'UNAUTHORIZED_TENANT_ACCESS',
+          tenantId: err.tenantId,
+          targetResourceTenantId: err.targetResourceTenantId
+        });
+      }
+      next(err);
+    }
+  };
 }

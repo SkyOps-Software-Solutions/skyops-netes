@@ -1373,11 +1373,43 @@ app.get('/api/v1/agent/actions', requireAgentAuth, (req: AuthenticatedAgentReque
   res.json({ actions: store.claimPendingRemediationActions(req.clusterId!) });
 });
 
+app.get('/api/v1/agent/actions/stream', requireAgentAuth, (req: AuthenticatedAgentRequest, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  // Stream initial pending actions if any
+  const initialActions = store.claimPendingRemediationActions(req.clusterId!);
+  if (initialActions.length > 0) {
+    res.write(`event: actions\ndata: ${JSON.stringify({ actions: initialActions })}\n\n`);
+  }
+
+  const pingInterval = setInterval(() => {
+    try {
+      res.write(': ping\n\n');
+    } catch {
+      clearInterval(pingInterval);
+    }
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(pingInterval);
+  });
+});
+
 const ActionResultSchema = z.object({
   actionId: z.string().min(1).optional(),
-  success: z.boolean(),
-  message: z.string().min(1).max(4096)
-});
+  success: z.boolean().default(false),
+  message: z.string().min(1).max(8192),
+  state: z.enum(['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED']).optional(),
+  executionContext: z.record(z.string(), z.any()).optional(),
+  runtimeTraces: z.array(z.any()).optional(),
+  stdErr: z.string().optional(),
+  durationMs: z.number().optional(),
+  timestamp: z.number().optional(),
+  agentId: z.string().optional()
+}).passthrough();
 
 app.post('/api/v1/agent/actions/:actionId/result', requireAgentAuth, (req: AuthenticatedAgentRequest, res) => {
   const parsed = ActionResultSchema.safeParse(req.body);

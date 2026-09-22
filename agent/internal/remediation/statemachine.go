@@ -58,18 +58,22 @@ func (sm *StateMachine) Transition(next ActionState, message string) error {
 	valid := false
 	switch curr {
 	case StateProposed:
-		valid = (next == StateValidating || next == StateRejected)
+		valid = (next == StateValidating || next == StateRejected || next == StatePending || next == StateCancelled)
+	case StatePending:
+		valid = (next == StateValidating || next == StateRunning || next == StateRejected || next == StateFailed || next == StateCancelled)
 	case StateValidating:
-		valid = (next == StateApproved || next == StateRejected || next == StateFailed)
+		valid = (next == StateApproved || next == StateRejected || next == StateFailed || next == StateCancelled)
 	case StateApproved:
-		valid = (next == StateExecuting || next == StateFailed)
+		valid = (next == StateExecuting || next == StateRunning || next == StateFailed || next == StateCancelled)
+	case StateRunning:
+		valid = (next == StateExecuting || next == StateVerifying || next == StateSucceeded || next == StateRollingBack || next == StateFailed || next == StateCancelled)
 	case StateExecuting:
-		valid = (next == StateVerifying || next == StateRollingBack || next == StateFailed)
+		valid = (next == StateVerifying || next == StateRollingBack || next == StateFailed || next == StateCancelled)
 	case StateVerifying:
-		valid = (next == StateSucceeded || next == StateRollingBack || next == StateFailed)
+		valid = (next == StateSucceeded || next == StateRollingBack || next == StateFailed || next == StateCancelled)
 	case StateRollingBack:
 		valid = (next == StateRolledBack || next == StateFailed)
-	case StateSucceeded, StateFailed, StateRejected, StateRolledBack:
+	case StateSucceeded, StateFailed, StateRejected, StateRolledBack, StateCancelled:
 		// Terminal states
 		valid = false
 	}

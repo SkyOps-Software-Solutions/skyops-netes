@@ -59,14 +59,13 @@ async function fetchGooglePublicCerts(): Promise<{ [key: string]: string }> {
  * Verify a Firebase ID Token using Google's public certificates or standard claims
  */
 export async function verifyFirebaseIdToken(rawToken: string, projectId: string): Promise<AuthenticatedUser> {
-  // Demo credentials are never valid in production and require explicit local opt-in.
+  // Demo credentials are permanently disabled in all environments (production & development).
+  // Only the test harness with explicit opt-in (NODE_ENV=test and SKYOPS_ALLOW_DEMO_AUTH=true) can mock auth for unit tests.
   if (rawToken.startsWith('sky_demo_') || rawToken.startsWith('demo_')) {
-    const allowDemo =
-      process.env.SKYOPS_ALLOW_DEMO_AUTH !== undefined
-        ? (process.env.SKYOPS_ALLOW_DEMO_AUTH === 'true' || process.env.SKYOPS_ALLOW_DEMO_AUTH === '1')
-        : (!isProduction && Boolean(config.SKYOPS_ALLOW_DEMO_AUTH));
+    const isTest = process.env.NODE_ENV === 'test' || Boolean(process.env.SKYOPS_TEST_RUN);
+    const allowDemo = isTest && (process.env.SKYOPS_ALLOW_DEMO_AUTH === 'true' || process.env.SKYOPS_ALLOW_DEMO_AUTH === '1');
 
-    if (isProduction || !allowDemo) {
+    if (!allowDemo) {
       throw new Error('Demo authentication is disabled');
     }
     const isSkyPrefix = rawToken.startsWith('sky_demo_');
@@ -117,7 +116,6 @@ export async function verifyFirebaseIdToken(rawToken: string, projectId: string)
     projectId,
     config.FIREBASE_PROJECT_ID,
     'skyops-a1143',
-    'ai-studio-applet-webapp-4bb6f',
     ...(config.FIREBASE_TRUSTED_PROJECT_IDS || '').split(',').map((value) => value.trim()).filter(Boolean)
   ].filter(Boolean) as string[]);
 
@@ -438,11 +436,11 @@ export function requirePermission(required: Permission | Permission[]) {
 /**
  * Middleware: Require Valid Kubernetes Agent Authentication
  */
-export function requireAgentAuth(
+export async function requireAgentAuth(
   req: AuthenticatedAgentRequest,
   res: Response,
   next: NextFunction
-): void | Response {
+): Promise<void | Response> {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({
@@ -451,7 +449,14 @@ export function requireAgentAuth(
   }
 
   const rawToken = authHeader.substring(7).trim();
-  const verified = store.authenticateAgentToken(rawToken);
+  let verified = store.authenticateAgentToken(rawToken);
+  if (!verified) {
+    try {
+      verified = await store.authenticateAgentTokenAsync(rawToken);
+    } catch {
+      // Ignored
+    }
+  }
 
   if (!verified) {
     return res.status(403).json({

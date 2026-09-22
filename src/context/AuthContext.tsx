@@ -27,7 +27,6 @@ interface AuthContextType {
   signInWithGoogle: (orgName?: string) => Promise<void>;
   signInWithEmail: (email: string, pass: string) => Promise<void>;
   signUpWithEmail: (email: string, pass: string, orgName: string, displayName?: string) => Promise<void>;
-  signInWithDemo: (email?: string, name?: string, orgName?: string) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   switchOrganization: (orgId: string) => Promise<void>;
@@ -140,29 +139,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await syncUserWithFirestore(fbUser);
         await refreshSession();
       } else {
-        const demoToken = localStorage.getItem('skyops_demo_token');
-        if (demoToken) {
-          try {
-            await refreshSession();
-          } catch (sessionErr) {
-            console.warn('[SkyOps Auth] Failed to restore workspace session:', sessionErr);
-            localStorage.removeItem('skyops_demo_token');
-            setUser(null);
-            setCurrentOrg(null);
-            setOrganizations([]);
-            setMembers([]);
-            setRole('VIEWER');
-          } finally {
-            setLoading(false);
-          }
-        } else {
-          setUser(null);
-          setCurrentOrg(null);
-          setOrganizations([]);
-          setMembers([]);
-          setRole('VIEWER');
-          setLoading(false);
-        }
+        setUser(null);
+        setCurrentOrg(null);
+        setOrganizations([]);
+        setMembers([]);
+        setRole('VIEWER');
+        setLoading(false);
       }
     });
 
@@ -211,33 +193,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signInWithDemo = async (email = 'dhandesaurav52@gmail.com', name = 'Alex Rivera (Staff SRE)', orgName?: string) => {
-    if (import.meta.env.PROD) {
-      throw new Error('Demo authentication is disabled in production environments.');
-    }
-    try {
-      setError(null);
-      setLoading(true);
-      const cleanEmail = email.trim();
-      const cleanName = name.trim();
-      const demoToken = `sky_demo_sre_OWNER_${encodeURIComponent(cleanEmail)}_${encodeURIComponent(cleanName)}`;
-      localStorage.setItem('skyops_demo_token', demoToken);
-      await refreshSession();
-      if (orgName && orgName.trim()) {
-        try {
-          await createOrganization(orgName.trim());
-        } catch (orgErr) {
-          console.warn('Organization auto-creation notice:', orgErr);
-        }
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to initialize demo workspace session');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const signInWithEmail = async (email: string, pass: string) => {
     try {
       setError(null);
@@ -250,21 +205,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
       } catch (fbErr: any) {
-        // If Firebase Email/Password provider is disabled in Firebase Console, fallback to workspace session in dev only
         if (
           fbErr?.code === 'auth/operation-not-allowed' ||
           fbErr?.message?.includes('operation-not-allowed') ||
           fbErr?.message?.includes('auth/operation-not-allowed')
         ) {
-          if (import.meta.env.DEV) {
-            console.info('[SkyOps Auth] Firebase Email/Password is not enabled in Firebase Console. Establishing dev workspace session.');
-            const cleanEmail = email.trim();
-            const cleanName = cleanEmail.split('@')[0] || 'SkyOps Engineer';
-            const demoToken = `sky_demo_sre_OWNER_${encodeURIComponent(cleanEmail)}_${encodeURIComponent(cleanName)}`;
-            localStorage.setItem('skyops_demo_token', demoToken);
-            await refreshSession();
-            return;
-          }
           throw new Error('Email/Password sign-in is not enabled in the Firebase project console. Please sign in with Google or enable Email/Password provider in the Firebase Authentication console.');
         }
         throw fbErr;
@@ -319,29 +264,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
       } catch (fbErr: any) {
-        // If Firebase Email/Password provider is disabled in Firebase Console, fallback to workspace session in dev only
         if (
           fbErr?.code === 'auth/operation-not-allowed' ||
           fbErr?.message?.includes('operation-not-allowed') ||
           fbErr?.message?.includes('auth/operation-not-allowed')
         ) {
-          if (import.meta.env.DEV) {
-            console.info('[SkyOps Auth] Firebase Email/Password is not enabled in Firebase Console. Initializing dev workspace session.');
-            const cleanEmail = email.trim();
-            const cleanName = displayName?.trim() || cleanEmail.split('@')[0] || 'SkyOps Engineer';
-            const demoToken = `sky_demo_sre_OWNER_${encodeURIComponent(cleanEmail)}_${encodeURIComponent(cleanName)}`;
-            localStorage.setItem('skyops_demo_token', demoToken);
-            await refreshSession();
-
-            if (orgName && orgName.trim()) {
-              try {
-                await createOrganization(orgName.trim());
-              } catch (orgErr) {
-                console.warn('Initial organization creation notice:', orgErr);
-              }
-            }
-            return;
-          }
           throw new Error('Email/Password account creation is not enabled in the Firebase project console. Please sign in with Google or enable Email/Password provider in the Firebase Authentication console.');
         }
         throw fbErr;
@@ -368,14 +295,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setError(null);
       await sendPasswordResetEmail(auth, email.trim());
     } catch (err: any) {
-      if (
-        err?.code === 'auth/operation-not-allowed' ||
-        err?.message?.includes('operation-not-allowed') ||
-        err?.message?.includes('auth/operation-not-allowed')
-      ) {
-        console.info('[SkyOps Auth] Password reset requested for demo/local account (email provider not enabled).');
-        return;
-      }
       console.error('Password reset failed:', err);
       setError(err.message || 'Failed to send password reset email');
       throw err;
@@ -389,7 +308,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn('Firebase sign out warning:', err);
     } finally {
       localStorage.removeItem('skyops_active_org_id');
-      localStorage.removeItem('skyops_demo_token');
       setUser(null);
       setFirebaseUser(null);
       setCurrentOrg(null);
@@ -433,7 +351,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signInWithGoogle,
         signInWithEmail,
         signUpWithEmail,
-        signInWithDemo,
         sendPasswordReset,
         signOut,
         switchOrganization,

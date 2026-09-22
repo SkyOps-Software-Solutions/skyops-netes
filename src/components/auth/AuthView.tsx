@@ -28,7 +28,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
   onBackToHome,
   onAuthSuccess
 }) => {
-  const { signInWithEmail, signUpWithEmail, signInWithGoogle, signInWithDemo, sendPasswordReset, error: authError } = useAuth();
+  const { signInWithEmail, signUpWithEmail, signInWithGoogle, sendPasswordReset, error: authError } = useAuth();
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>(initialMode);
 
   // Form states
@@ -51,34 +51,6 @@ export const AuthView: React.FC<AuthViewProps> = ({
     navigator.clipboard.writeText(currentHostname);
     setCopiedDomain(true);
     setTimeout(() => setCopiedDomain(false), 2500);
-  };
-
-  const handleFillTestAccount = () => {
-    if (mode === 'signup') {
-      setOrgName('Acme Site Reliability');
-      setDisplayName('Alex Rivera');
-      setEmail('dhandesaurav52@gmail.com');
-      setPassword('SkyOpsPass2026!');
-    } else {
-      setEmail('dhandesaurav52@gmail.com');
-      setPassword('SkyOpsPass2026!');
-    }
-  };
-
-  const handleQuickDemoAccess = async () => {
-    setLocalError(null);
-    try {
-      setSubmitting(true);
-      const targetEmail = email.trim() || 'dhandesaurav52@gmail.com';
-      const targetName = displayName.trim() || 'Alex Rivera (Staff SRE)';
-      const targetOrg = orgName.trim() || undefined;
-      await signInWithDemo(targetEmail, targetName, targetOrg);
-      if (onAuthSuccess) onAuthSuccess();
-    } catch (err: any) {
-      setLocalError(err.message || 'Demo sign-in failed');
-    } finally {
-      setSubmitting(false);
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -213,40 +185,17 @@ export const AuthView: React.FC<AuthViewProps> = ({
                     <span>{copiedDomain ? 'Copied!' : 'Copy'}</span>
                   </button>
                 </div>
-                <div className="pt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="pt-1 flex items-center justify-between gap-2">
                   <div className="text-[11px] text-emerald-400 flex items-center gap-1.5 font-sans font-medium">
                     <Check className="w-3.5 h-3.5" />
                     <span>Work Email & Password authentication is active below</span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleFillTestAccount();
-                      setLocalError(null);
-                    }}
-                    className="text-[10px] font-mono text-sky-400 hover:text-sky-300 underline underline-offset-2 text-left cursor-pointer"
-                  >
-                    Auto-fill credentials & continue →
-                  </button>
                 </div>
               </div>
             ) : errorMessage ? (
-              <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-800 text-rose-300 text-xs font-mono flex flex-col gap-2">
-                <div className="flex items-start gap-2.5">
-                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                  <div>{errorMessage}</div>
-                </div>
-                {(errorMessage.includes('operation-not-allowed') || errorMessage.includes('auth/operation-not-allowed')) && (
-                  <div className="pt-1">
-                    <button
-                      type="button"
-                      onClick={handleQuickDemoAccess}
-                      className="text-sky-400 hover:text-sky-300 underline font-semibold cursor-pointer text-xs"
-                    >
-                      Click here to enter workspace directly →
-                    </button>
-                  </div>
-                )}
+              <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-800 text-rose-300 text-xs font-mono flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <div>{errorMessage}</div>
               </div>
             ) : null}
 
@@ -351,15 +300,6 @@ export const AuthView: React.FC<AuthViewProps> = ({
                   <label className="block text-xs font-mono font-medium text-zinc-300">
                     Work Email <span className="text-rose-400">*</span>
                   </label>
-                  {import.meta.env.DEV && (
-                    <button
-                      type="button"
-                      onClick={handleFillTestAccount}
-                      className="text-[10px] font-mono text-sky-400 hover:text-sky-300 transition-colors"
-                    >
-                      Auto-fill demo credentials
-                    </button>
-                  )}
                 </div>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-zinc-500 absolute left-3 top-2.5" />
@@ -437,19 +377,6 @@ export const AuthView: React.FC<AuthViewProps> = ({
                   </>
                 )}
               </button>
-
-              {import.meta.env.DEV && mode !== 'forgot' && (
-                <button
-                  type="button"
-                  id="auth-instant-demo-btn"
-                  onClick={handleQuickDemoAccess}
-                  disabled={submitting}
-                  className="w-full py-2 px-3 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 font-mono text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  <Server className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Instant Demo Workspace Access (1-Click Dev)</span>
-                </button>
-              )}
             </form>
 
             {/* Toggle Modes */}

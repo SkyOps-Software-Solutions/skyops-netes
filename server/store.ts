@@ -192,6 +192,14 @@ export class DataStore {
 
         for (const cluster of clusters) {
           this.clusters.set(cluster.id, cluster);
+          try {
+            const clusterResources = await this.persistence.getClusterResources(cluster.id, cluster.orgId);
+            if (clusterResources && clusterResources.length > 0) {
+              this.resources.set(cluster.id, clusterResources);
+            }
+          } catch (rErr) {
+            console.warn(`[DataStore] Notice: Could not hydrate resources for cluster ${cluster.id}:`, rErr);
+          }
         }
 
         for (const inc of incidents) {
@@ -1790,6 +1798,23 @@ export class DataStore {
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
     const entry = this.clusterTokens.get(tokenHash);
     return entry || null;
+  }
+
+  public async authenticateAgentTokenAsync(rawToken: string): Promise<{ clusterId: string; orgId: string } | null> {
+    const memoryMatch = this.authenticateAgentToken(rawToken);
+    if (memoryMatch) return memoryMatch;
+
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    try {
+      const persisted = await this.persistence.getClusterTokenByHash(tokenHash);
+      if (persisted) {
+        this.clusterTokens.set(tokenHash, { clusterId: persisted.clusterId, orgId: persisted.orgId });
+        return { clusterId: persisted.clusterId, orgId: persisted.orgId };
+      }
+    } catch (err: any) {
+      console.warn('[DataStore] Token lookup in persistence notice:', err?.message || err);
+    }
+    return null;
   }
 
   public getActiveAgentToken(clusterId: string): string | null {

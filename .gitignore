@@ -26,5 +26,6 @@ telemetry/
 *service-account*.json
 *credentials*.json
 *serviceAccountKey*.json
+firebase-applet-config.json
 secrets/
 *.secret

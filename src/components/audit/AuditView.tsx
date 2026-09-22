@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
+import { auth } from '../../firebase';
 import { Button, CopyButton } from '../common/UI';
 
 interface AuditEventItem {
@@ -169,7 +170,7 @@ export const AuditView: React.FC = () => {
   const handleExport = async (format: 'csv' | 'json') => {
     try {
       const activeOrgId = localStorage.getItem('skyops_active_org_id') || 'org_default';
-      const token = localStorage.getItem('skyops_demo_token');
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
       
       const query = new URLSearchParams();
       query.set('format', format);
@@ -183,7 +184,7 @@ export const AuditView: React.FC = () => {
       const response = await fetch(url, {
         headers: {
           'x-org-id': activeOrgId,
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {})
         }
       });
 

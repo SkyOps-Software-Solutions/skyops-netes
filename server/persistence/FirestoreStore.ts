@@ -222,8 +222,7 @@ export class FirestoreStore implements IPersistenceStore {
             projectId: this.projectId,
             apiKey:
               process.env.VITE_FIREBASE_API_KEY ||
-              fallbackConfig.apiKey ||
-              'AIzaSyCti1ZOIOIFNVj-TPgHTF2mlbrzBEC-vHc',
+              fallbackConfig.apiKey,
             authDomain:
               process.env.VITE_FIREBASE_AUTH_DOMAIN ||
               fallbackConfig.authDomain ||
@@ -234,8 +233,7 @@ export class FirestoreStore implements IPersistenceStore {
               `${this.projectId}.firebasestorage.app`,
             appId:
               process.env.VITE_FIREBASE_APP_ID ||
-              fallbackConfig.appId ||
-              '1:586158496088:web:28cdaaaa605c5b084ead2d'
+              fallbackConfig.appId
           });
 
     const firestoreInstance =

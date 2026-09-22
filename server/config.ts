@@ -87,7 +87,8 @@ try {
       'skyops-a1143',
     FIREBASE_TRUSTED_PROJECT_IDS:
       process.env.FIREBASE_TRUSTED_PROJECT_IDS ||
-      'skyops-a1143,ai-studio-applet-webapp-4bb6f',
+      fallbackConfig.projectId ||
+      'skyops-a1143',
     CORS_ORIGINS: process.env.CORS_ORIGINS,
     ENABLE_DEV_SIMULATION: process.env.ENABLE_DEV_SIMULATION,
     SKYOPS_ALLOW_DEMO_AUTH: process.env.SKYOPS_ALLOW_DEMO_AUTH,

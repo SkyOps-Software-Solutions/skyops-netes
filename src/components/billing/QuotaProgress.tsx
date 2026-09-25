@@ -9,7 +9,8 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
-  ArrowUpRight
+  ArrowUpRight,
+  Database
 } from 'lucide-react';
 import { OrgBillingOverview } from '../../types/index';
 import { Button } from '../common/UI';
@@ -21,6 +22,8 @@ interface QuotaProgressProps {
 
 export const QuotaProgress: React.FC<QuotaProgressProps> = ({ overview, onUpgrade }) => {
   const { usage, entitlements, plan } = overview;
+
+  const retentionDays = plan.limits.telemetryRetentionDays ?? plan.limits.dataRetentionDays ?? 7;
 
   const quotaItems = [
     {
@@ -51,36 +54,36 @@ export const QuotaProgress: React.FC<QuotaProgressProps> = ({ overview, onUpgrad
       description: 'Tracked Deployments, DaemonSets, and Pod replicas'
     },
     {
-      id: 'members',
-      label: 'Team Seats',
-      current: usage.members.current,
-      limit: usage.members.limit,
-      percentage: usage.members.percentage,
-      icon: <Users className="w-4 h-4 text-emerald-400" />,
-      description: 'Team members with RBAC roles in this workspace'
-    },
-    {
       id: 'aiInvestigations',
-      label: 'Gemini AI Incident RCA',
+      label: 'AI Investigations',
       current: usage.aiInvestigations.current,
       limit: usage.aiInvestigations.limit,
       percentage: usage.aiInvestigations.percentage,
       icon: <Sparkles className="w-4 h-4 text-purple-400" />,
-      description: 'AI-assisted root-cause investigations generated this month'
+      description: 'Gemini AI root-cause diagnostics performed this cycle'
     },
     {
       id: 'remediations',
-      label: 'Controlled Remediations',
+      label: 'Remediation Executions',
       current: usage.remediations.current,
       limit: usage.remediations.limit,
       percentage: usage.remediations.percentage,
       icon: <Zap className="w-4 h-4 text-cyan-400" />,
-      description: 'Autonomous container recovery operations executed'
+      description: 'Controlled and automated remediation runs'
+    },
+    {
+      id: 'retention',
+      label: 'Data Retention',
+      current: retentionDays,
+      limit: retentionDays,
+      percentage: 100,
+      icon: <Database className="w-4 h-4 text-emerald-400" />,
+      description: `${retentionDays} days of historical telemetry & audit retention`
     }
   ];
 
   const anyQuotaExceeded = quotaItems.some(
-    (q) => q.limit !== 999 && q.limit !== 9999 && q.current >= q.limit
+    (q) => q.id !== 'retention' && q.limit !== 999 && q.limit !== 9999 && q.current >= q.limit
   );
 
   return (
@@ -91,7 +94,7 @@ export const QuotaProgress: React.FC<QuotaProgressProps> = ({ overview, onUpgrad
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
             <span>
-              <strong>Quota Limit Reached:</strong> One or more resources have reached 100% of your current plan limit. Upgrade your tier to add more clusters or team seats.
+              <strong>Quota Limit Reached:</strong> One or more resources have reached 100% of your current plan limit. Upgrade your tier to add more clusters or capacity.
             </span>
           </div>
           <Button
@@ -109,9 +112,10 @@ export const QuotaProgress: React.FC<QuotaProgressProps> = ({ overview, onUpgrad
       {/* Quota Progress Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 font-mono text-xs">
         {quotaItems.map((item) => {
+          const isRetention = item.id === 'retention';
           const isUnlimited = item.limit >= 999;
-          const isFull = !isUnlimited && item.current >= item.limit;
-          const isNearFull = !isUnlimited && !isFull && item.percentage >= 80;
+          const isFull = !isRetention && !isUnlimited && item.current >= item.limit;
+          const isNearFull = !isRetention && !isUnlimited && !isFull && item.percentage >= 80;
 
           return (
             <div
@@ -134,10 +138,12 @@ export const QuotaProgress: React.FC<QuotaProgressProps> = ({ overview, onUpgrad
                       ? 'text-rose-400 font-bold'
                       : isNearFull
                       ? 'text-amber-400 font-bold'
+                      : isRetention
+                      ? 'text-emerald-400 font-bold'
                       : 'text-zinc-400'
                   }
                 >
-                  {item.current} / {isUnlimited ? 'Unlimited' : item.limit}
+                  {isRetention ? `${retentionDays} Days` : `${item.current} / ${isUnlimited ? 'Unlimited' : item.limit}`}
                 </span>
               </div>
 
@@ -145,7 +151,9 @@ export const QuotaProgress: React.FC<QuotaProgressProps> = ({ overview, onUpgrad
               <div className="w-full bg-zinc-900 h-2 rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${
-                    isFull
+                    isRetention
+                      ? 'bg-emerald-500'
+                      : isFull
                       ? 'bg-rose-500'
                       : isNearFull
                       ? 'bg-amber-500'
@@ -157,7 +165,8 @@ export const QuotaProgress: React.FC<QuotaProgressProps> = ({ overview, onUpgrad
 
               <div className="flex items-center justify-between text-[11px] text-zinc-500">
                 <span className="line-clamp-1">{item.description}</span>
-                {!isUnlimited && <span>{item.percentage}%</span>}
+                {!isUnlimited && !isRetention && <span>{item.percentage}%</span>}
+                {isRetention && <span className="text-emerald-500/80 font-mono">Guaranteed</span>}
               </div>
             </div>
           );
@@ -238,6 +247,23 @@ export const QuotaProgress: React.FC<QuotaProgressProps> = ({ overview, onUpgrad
             </span>
           </div>
         </div>
+
+        {/* Current Plan Highlights */}
+        {plan.highlights && plan.highlights.length > 0 && (
+          <div className="pt-3 border-t border-zinc-800/80 mt-3">
+            <div className="text-[11px] text-zinc-400 font-semibold mb-2">
+              Features Included in Your {plan.name} Tier:
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-zinc-300">
+              {plan.highlights.map((highlight, idx) => (
+                <div key={idx} className="flex items-center gap-2 text-[11px]">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <span>{highlight}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -24,6 +24,7 @@ import {
   Zap
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
+import { SKYOPS_CONTACT_EMAIL } from '../../config/contact';
 
 export type DocTopic =
   | 'quickstart'
@@ -702,11 +703,11 @@ export const KnowledgeBaseModal: React.FC<KnowledgeBaseModalProps> = ({
             <div className="text-xs text-zinc-500 font-mono uppercase tracking-wider">Official Support Email</div>
             <div className="flex items-center gap-3">
               <a
-                href="mailto:skyopsnetes2000@gmail.com"
+                href={`mailto:${SKYOPS_CONTACT_EMAIL}`}
                 className="text-lg font-mono font-bold text-sky-400 hover:text-sky-300 underline underline-offset-4 flex items-center gap-2"
               >
                 <Mail className="w-5 h-5 text-sky-400" />
-                skyopsnetes2000@gmail.com
+                {SKYOPS_CONTACT_EMAIL}
               </a>
             </div>
             <p className="text-xs text-zinc-400 pt-1">

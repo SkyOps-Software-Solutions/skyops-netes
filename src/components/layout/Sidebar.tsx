@@ -346,7 +346,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {isCollapsed ? (
         <div className="py-3 px-2 border-t border-zinc-800/80 bg-zinc-950/80 flex flex-col items-center gap-2.5">
           <div
-            title={`${user?.name || 'SkyOps Engineer'} (${user?.email || 'sre@skyops.io'})`}
+            title={`${user?.name || 'SkyOps Engineer'} (${user?.email || 'engineer@skyops.internal'})`}
             className="w-8 h-8 rounded-full bg-sky-950 border border-sky-800 flex items-center justify-center text-xs font-mono text-sky-300 font-semibold cursor-default"
           >
             {user?.name?.charAt(0) || 'S'}
@@ -370,7 +370,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {user?.name || 'SkyOps Engineer'}
               </div>
               <div className="text-[10px] font-mono text-zinc-500 truncate">
-                {user?.email || 'sre@skyops.io'}
+                {user?.email || 'engineer@skyops.internal'}
               </div>
             </div>
           </div>

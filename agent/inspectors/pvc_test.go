@@ -2,6 +2,8 @@ package inspectors
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -65,7 +67,15 @@ func TestPVCInspector_DiskPressureEvaluation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	inspector := NewPVCInspector(fakeK8s, []string{"/tmp"}, 85.0)
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "pvc-vol-1"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(tempDir, "pvc-vol-2"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	inspector := NewPVCInspector(fakeK8s, []string{tempDir}, 85.0)
 
 	// Direct evaluation of PVC 1 with normal storage (50% used)
 	inspector.SetStatfsFn(func(path string) (*DiskStat, error) {

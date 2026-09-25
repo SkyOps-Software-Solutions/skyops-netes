@@ -318,6 +318,7 @@ func (p *PVCInspector) locateVolumeMountPath(volumeName, namespace, pvcName stri
 // ToTelemetryObservations converts inspection reports into standardized agent ResourceObservations
 func (p *PVCInspector) ToTelemetryObservations(reports []PVCInspectionReport, clusterID string) []types.ResourceObservation {
 	now := time.Now().UnixMilli()
+	conditionTime := time.UnixMilli(now).UTC().Format(time.RFC3339)
 	observations := make([]types.ResourceObservation, 0, len(reports))
 
 	for _, rep := range reports {
@@ -359,7 +360,7 @@ func (p *PVCInspector) ToTelemetryObservations(reports []PVCInspectionReport, cl
 			conditions = append(conditions, types.ConditionStatus{
 				Type:               "DiskPressure",
 				Status:             "True",
-				LastTransitionTime: now,
+				LastTransitionTime: conditionTime,
 				Reason:             "HighStorageUtilization",
 				Message:            fmt.Sprintf("Disk utilization reached %.1f%%", rep.DiskStat.UsedPercent),
 			})
@@ -368,7 +369,7 @@ func (p *PVCInspector) ToTelemetryObservations(reports []PVCInspectionReport, cl
 			conditions = append(conditions, types.ConditionStatus{
 				Type:               "InodePressure",
 				Status:             "True",
-				LastTransitionTime: now,
+				LastTransitionTime: conditionTime,
 				Reason:             "HighInodeUtilization",
 				Message:            fmt.Sprintf("Inode utilization reached %.1f%%", rep.DiskStat.InodesUsedPercent),
 			})

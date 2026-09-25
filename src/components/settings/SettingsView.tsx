@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Cpu,
   CreditCard,
+  FileText,
   Flame,
   HardDrive,
   Headphones,
@@ -13,6 +14,7 @@ import {
   Key,
   Layers,
   Lock,
+  Mail,
   Play,
   RefreshCw,
   Save,
@@ -33,6 +35,9 @@ import { SystemHealthManager } from './SystemHealthManager';
 import { TeamManager } from './TeamManager';
 import { UsageManager } from './UsageManager';
 import { WebhooksManager } from './WebhooksManager';
+import { ContactManager } from './ContactManager';
+import { InvoicesManager } from './InvoicesManager';
+import { IntegrationsHubManager } from './IntegrationsHubManager';
 
 interface SettingsViewProps {
   clusters: Cluster[];
@@ -40,7 +45,28 @@ interface SettingsViewProps {
   onRefresh: () => void;
 }
 
-type SettingsTab = 'org' | 'team' | 'support' | 'notifications' | 'webhooks' | 'usage' | 'system' | 'testbed';
+export type SettingsTab =
+  | 'org'
+  | 'team'
+  | 'notifications'
+  | 'subscription'
+  | 'usage'
+  | 'invoices'
+  | 'webhooks'
+  | 'integrations'
+  | 'support'
+  | 'contact'
+  | 'system'
+  | 'testbed';
+
+interface TabGroup {
+  category: string;
+  items: Array<{
+    id: SettingsTab;
+    label: string;
+    icon: React.ReactNode;
+  }>;
+}
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIncident, onRefresh }) => {
   const { currentOrg, role, user } = useAuth();
@@ -182,48 +208,95 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
     }
   ];
 
+  const tabGroups: TabGroup[] = [
+    {
+      category: 'GENERAL',
+      items: [
+        { id: 'org', label: 'Organization', icon: <Building2 className="w-3.5 h-3.5" /> },
+        { id: 'team', label: 'Team & Access', icon: <Users className="w-3.5 h-3.5" /> },
+        { id: 'notifications', label: 'Notifications', icon: <Bell className="w-3.5 h-3.5" /> }
+      ]
+    },
+    {
+      category: 'BILLING',
+      items: [
+        { id: 'subscription', label: 'Subscription', icon: <CreditCard className="w-3.5 h-3.5" /> },
+        { id: 'usage', label: 'Usage & Limits', icon: <Activity className="w-3.5 h-3.5" /> },
+        { id: 'invoices', label: 'Invoices', icon: <FileText className="w-3.5 h-3.5" /> }
+      ]
+    },
+    {
+      category: 'INTEGRATIONS',
+      items: [
+        { id: 'webhooks', label: 'Webhooks', icon: <Webhook className="w-3.5 h-3.5" /> },
+        { id: 'integrations', label: 'Integrations', icon: <Layers className="w-3.5 h-3.5" /> }
+      ]
+    },
+    {
+      category: 'SUPPORT',
+      items: [
+        { id: 'support', label: 'Help & Support', icon: <Headphones className="w-3.5 h-3.5" /> },
+        { id: 'contact', label: 'Contact SkyOps', icon: <Mail className="w-3.5 h-3.5" /> }
+      ]
+    },
+    {
+      category: 'SYSTEM',
+      items: [
+        { id: 'system', label: 'System Status', icon: <HeartPulse className="w-3.5 h-3.5" /> }
+      ]
+    },
+    ...(import.meta.env.DEV
+      ? [
+          {
+            category: 'DEV ONLY',
+            items: [
+              { id: 'testbed' as SettingsTab, label: 'Failure QA Testbed', icon: <Zap className="w-3.5 h-3.5 text-amber-400" /> }
+            ]
+          }
+        ]
+      : [])
+  ];
+
   return (
-    <div className="p-8 space-y-6 max-w-7xl mx-auto">
-      {/* Header */}
+    <div className="p-6 sm:p-8 space-y-6 max-w-7xl mx-auto">
+      {/* Page Header */}
       <div className="border-b border-zinc-800/80 pb-5">
         <h1 className="text-xl font-bold text-zinc-100 tracking-tight flex items-center gap-2.5 font-mono">
-          Enterprise Settings & Infrastructure Management
+          SkyOps Workspace Settings & Governance
         </h1>
         <p className="text-xs font-mono text-zinc-400 mt-1">
-          Tenant organization profile, RBAC members, outbound webhooks, usage quotas, and platform observability.
+          Manage workspace profile, RBAC access, commercial subscriptions, usage quotas, integrations, and support channels.
         </p>
 
-        {/* Tab Navigation */}
-        <div className="flex items-center gap-2 mt-5 border-b border-zinc-800 -mb-5 pb-px overflow-x-auto no-scrollbar">
-          {[
-            { id: 'org', label: 'Organization & Policies', icon: <Building2 className="w-3.5 h-3.5" /> },
-            { id: 'team', label: 'Team Members & RBAC', icon: <Users className="w-3.5 h-3.5" /> },
-            { id: 'support', label: 'Enterprise Helpdesk', icon: <Headphones className="w-3.5 h-3.5" /> },
-            { id: 'notifications', label: 'Notifications', icon: <Bell className="w-3.5 h-3.5" /> },
-            { id: 'webhooks', label: 'Webhooks & Integrations', icon: <Webhook className="w-3.5 h-3.5" /> },
-            { id: 'usage', label: 'Subscription & Billing', icon: <CreditCard className="w-3.5 h-3.5" /> },
-            { id: 'system', label: 'System Health Probes', icon: <HeartPulse className="w-3.5 h-3.5" /> },
-            ...(import.meta.env.DEV
-              ? [{ id: 'testbed', label: 'Failure QA Testbed', icon: <Zap className="w-3.5 h-3.5" /> }]
-              : [])
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setActiveTab(t.id as SettingsTab)}
-              className={`px-3.5 py-2 font-mono text-xs flex items-center gap-2 border-b-2 transition-colors cursor-pointer whitespace-nowrap ${
-                activeTab === t.id
-                  ? 'border-sky-500 text-sky-400 font-semibold bg-sky-950/20 rounded-t'
-                  : 'border-transparent text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
-              }`}
-            >
-              {t.icon}
-              <span>{t.label}</span>
-            </button>
+        {/* Categorized Tab Navigation */}
+        <div className="mt-6 flex flex-wrap gap-x-6 gap-y-3 border-b border-zinc-800 -mb-5 pb-3">
+          {tabGroups.map((group) => (
+            <div key={group.category} className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-500 mr-1">
+                {group.category}
+              </span>
+              <div className="flex items-center gap-1 bg-zinc-950/80 p-0.5 rounded-lg border border-zinc-800/60">
+                {group.items.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className={`px-3 py-1.5 font-mono text-xs flex items-center gap-1.5 rounded-md transition-all cursor-pointer whitespace-nowrap ${
+                      activeTab === item.id
+                        ? 'bg-sky-600 text-white font-semibold shadow-sm'
+                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
+                    }`}
+                  >
+                    {item.icon}
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </div>
 
-      {/* Tab 1: Organization & Security Policies */}
+      {/* Tab: Organization Profile & Security Policies */}
       {activeTab === 'org' && (
         <div className="space-y-6">
           {orgSuccessMsg && (
@@ -360,25 +433,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
         </div>
       )}
 
-      {/* Tab 2: Team Members & RBAC */}
+      {/* Tab: Team Members & RBAC */}
       {activeTab === 'team' && <TeamManager />}
-
-      {/* Tab 3: Enterprise Support & SLAs */}
-      {activeTab === 'support' && <SupportManager clusters={safeClusters} />}
 
       {/* Tab: Incident Email Notifications */}
       {activeTab === 'notifications' && <NotificationsManager />}
 
-      {/* Tab 4: Webhooks & Integrations */}
+      {/* Tab: Subscription & Billing */}
+      {(activeTab === 'subscription' || activeTab === 'usage') && <UsageManager />}
+
+      {/* Tab: Invoices */}
+      {activeTab === 'invoices' && <InvoicesManager />}
+
+      {/* Tab: Webhooks */}
       {activeTab === 'webhooks' && <WebhooksManager />}
 
-      {/* Tab 5: Usage & Quotas */}
-      {activeTab === 'usage' && <UsageManager />}
+      {/* Tab: Integrations Hub */}
+      {activeTab === 'integrations' && (
+        <IntegrationsHubManager onNavigateToWebhooks={() => setActiveTab('webhooks')} />
+      )}
 
-      {/* Tab 6: Platform Self-Observability Probes */}
+      {/* Tab: Support & Ticketing */}
+      {activeTab === 'support' && <SupportManager clusters={safeClusters} />}
+
+      {/* Tab: Contact SkyOps */}
+      {activeTab === 'contact' && <ContactManager />}
+
+      {/* Tab: System Health Probes */}
       {activeTab === 'system' && <SystemHealthManager />}
 
-      {/* Tab 7: QA Scenario Testbed (Dev Only) */}
+      {/* Tab: QA Scenario Testbed (Dev Only) */}
       {import.meta.env.DEV && activeTab === 'testbed' && (
         <div className="p-6 rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800/80 pb-3">

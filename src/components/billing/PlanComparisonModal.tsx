@@ -9,10 +9,13 @@ import {
   AlertCircle,
   Clock,
   X,
-  Loader2
+  Loader2,
+  Mail
 } from 'lucide-react';
 import { BillingInterval, Plan, PlanId } from '../../types/index';
-import { PLANS_LIST, BILLING_INTERVALS, PLANS } from '../../config/plans';
+import { PLANS_LIST, BILLING_INTERVALS, PLANS, getBillingIntervalLabel } from '../../config/plans';
+import { getEnterpriseMailtoUrl } from '../../config/contact';
+import { useAuth } from '../../context/AuthContext';
 import { Button } from '../common/UI';
 import { api } from '../../api/client';
 
@@ -21,6 +24,9 @@ interface PlanComparisonModalProps {
   onClose: () => void;
   currentPlanId?: PlanId;
   currentInterval?: BillingInterval;
+  orgName?: string;
+  clusterCount?: number;
+  nodeCount?: number;
   onSelectPlan?: (planId: PlanId, interval: BillingInterval) => Promise<void>;
   onPlanChanged?: () => void;
   loading?: boolean;
@@ -31,13 +37,33 @@ export const PlanComparisonModal: React.FC<PlanComparisonModalProps> = ({
   onClose,
   currentPlanId = 'FREE',
   currentInterval = 'MONTHLY',
+  orgName,
+  clusterCount,
+  nodeCount,
   onSelectPlan,
   onPlanChanged,
   loading = false
 }) => {
+  const { currentOrg } = useAuth();
   const [selectedInterval, setSelectedInterval] = useState<BillingInterval>(currentInterval || 'MONTHLY');
   const [confirmPlan, setConfirmPlan] = useState<Plan | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // Close on Escape key
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (confirmPlan) {
+          setConfirmPlan(null);
+        } else {
+          onClose();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, confirmPlan, onClose]);
 
   if (!isOpen) return null;
 
@@ -47,7 +73,13 @@ export const PlanComparisonModal: React.FC<PlanComparisonModalProps> = ({
       return; // Already on this plan and interval
     }
     if (plan.id === 'ENTERPRISE') {
-      window.open('mailto:sales@skyops.dev?subject=Enterprise%20Tier%20Inquiry', '_blank');
+      const enterpriseUrl = getEnterpriseMailtoUrl({
+        organization: orgName || currentOrg?.name,
+        currentPlan: currentPlanId,
+        clusterCount,
+        nodeCount
+      });
+      window.location.href = enterpriseUrl;
       return;
     }
     setConfirmPlan(plan);
@@ -76,59 +108,79 @@ export const PlanComparisonModal: React.FC<PlanComparisonModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
-      <div className="relative w-full max-w-6xl bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl p-6 sm:p-8 my-8 text-zinc-100 font-sans">
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="absolute top-5 right-5 text-zinc-400 hover:text-zinc-100 p-1.5 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer"
-        >
-          <X className="w-5 h-5" />
-        </button>
-
-        {/* Modal Header */}
-        <div className="text-center max-w-2xl mx-auto mb-8">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-950/60 border border-sky-800/40 text-sky-400 text-xs font-mono font-medium mb-3">
-            <Sparkles className="w-3.5 h-3.5" /> SkyOps Subscription Plans
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md overflow-hidden"
+    >
+      <div className="relative w-full max-w-6xl bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl text-zinc-100 font-sans flex flex-col max-h-[94vh] sm:max-h-[92vh] overflow-hidden">
+        {/* Pinned Sticky Header Bar with prominent Close Button */}
+        <div className="sticky top-0 z-20 px-5 sm:px-6 py-3.5 border-b border-zinc-800/90 bg-zinc-950/95 backdrop-blur-md flex items-center justify-between gap-4 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-sky-950/80 border border-sky-800/50 text-sky-400 text-xs font-mono font-medium shrink-0">
+              <Sparkles className="w-3.5 h-3.5" /> SkyOps Plans
+            </div>
+            <h2 className="text-sm sm:text-base font-bold tracking-tight text-white truncate">
+              Scale your Kubernetes Fleet with Confidence
+            </h2>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
-            Scale your Kubernetes Fleet with Confidence
-          </h2>
-          <p className="text-sm text-zinc-400 mt-2">
-            Select a billing duration and tier tailored to your team's cluster scale, telemetry retention SLA, and AI incident recovery needs.
-          </p>
 
-          {/* Billing Duration Interval Switcher */}
-          <div className="mt-6 inline-flex p-1 rounded-xl bg-zinc-900 border border-zinc-800 shadow-inner">
-            {BILLING_INTERVALS.map((int) => {
-              const savings = PLANS.BUSINESS.pricing[int.id]?.savingsPercentage || 0;
-              return (
-                <button
-                  key={int.id}
-                  onClick={() => setSelectedInterval(int.id)}
-                  className={`relative px-3.5 py-2 text-xs font-medium rounded-lg transition-all cursor-pointer ${
-                    selectedInterval === int.id
-                      ? 'bg-sky-600 text-white shadow-md'
-                      : 'text-zinc-400 hover:text-zinc-200'
-                  }`}
-                >
-                  <span>{int.label}</span>
-                  {savings > 0 && (
-                    <span
-                      className={`ml-1.5 px-1.5 py-0.5 text-[10px] font-bold rounded-full uppercase ${
-                        selectedInterval === int.id
-                          ? 'bg-sky-700/80 text-white'
-                          : 'bg-emerald-950 text-emerald-400 border border-emerald-800/50'
-                      }`}
-                    >
-                      Save {savings}%
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Prominent, accessible Close Button */}
+            <button
+              onClick={onClose}
+              aria-label="Close modal"
+              title="Close (Esc)"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-white hover:bg-zinc-800 transition-all cursor-pointer shadow-sm group"
+            >
+              <span className="text-[11px] font-mono text-zinc-400 group-hover:text-zinc-200">Esc</span>
+              <X className="w-4 h-4 text-zinc-400 group-hover:text-white" />
+            </button>
           </div>
         </div>
+
+        {/* Scrollable Modal Content */}
+        <div className="overflow-y-auto px-5 sm:px-6 py-5 space-y-6 flex-1 min-h-0">
+          {/* Subheader and Billing Interval Switcher */}
+          <div className="text-center max-w-2xl mx-auto space-y-3">
+            <p className="text-xs sm:text-sm text-zinc-400">
+              Select a billing duration and tier tailored to your team's cluster scale, telemetry retention SLA, and AI incident recovery needs.
+            </p>
+
+            {/* Billing Duration Interval Switcher */}
+            <div className="inline-flex p-1 rounded-xl bg-zinc-900 border border-zinc-800 shadow-inner flex-wrap justify-center gap-1">
+              {BILLING_INTERVALS.map((int) => {
+                const savings = PLANS.BUSINESS.pricing[int.id]?.savingsPercentage || 0;
+                return (
+                  <button
+                    key={int.id}
+                    onClick={() => setSelectedInterval(int.id)}
+                    className={`relative px-3.5 py-2 text-xs font-medium rounded-lg transition-all cursor-pointer ${
+                      selectedInterval === int.id
+                        ? 'bg-sky-600 text-white shadow-md'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    <span>{int.label}</span>
+                    {savings > 0 && (
+                      <span
+                        className={`ml-1.5 px-1.5 py-0.5 text-[10px] font-bold rounded-full uppercase ${
+                          selectedInterval === int.id
+                            ? 'bg-sky-700/80 text-white'
+                            : 'bg-emerald-950 text-emerald-400 border border-emerald-800/50'
+                        }`}
+                      >
+                        Save {savings}%
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
         {actionError && (
           <div className="mb-6 p-4 rounded-xl bg-rose-950/50 border border-rose-800 text-rose-300 text-xs font-mono flex items-center gap-2">
@@ -183,9 +235,14 @@ export const PlanComparisonModal: React.FC<PlanComparisonModalProps> = ({
                   <p className="text-xs text-zinc-400 mt-1 line-clamp-2">{plan.description}</p>
 
                   <div className="mt-4 pt-4 border-t border-zinc-800/80">
-                    {pricing.totalPrice === 0 ? (
+                    {plan.id === 'ENTERPRISE' ? (
+                      <div className="flex flex-col">
+                        <span className="text-2xl font-extrabold text-white">Custom pricing</span>
+                        <span className="text-xs text-zinc-400 mt-1">Tailored fleet capacity & custom SLA</span>
+                      </div>
+                    ) : pricing.totalPrice === 0 ? (
                       <div className="flex items-baseline gap-1">
-                        <span className="text-3xl font-extrabold text-white">Free</span>
+                        <span className="text-3xl font-extrabold text-white">₹0</span>
                         <span className="text-xs text-zinc-400">/ forever</span>
                       </div>
                     ) : (
@@ -198,7 +255,7 @@ export const PlanComparisonModal: React.FC<PlanComparisonModalProps> = ({
                           <span className="text-xs text-zinc-400">/ month</span>
                         </div>
                         <div className="text-[11px] font-mono text-zinc-400 mt-1">
-                          Billed ₹{pricing.totalPrice.toLocaleString('en-IN')} {selectedInterval.toLowerCase()}
+                          Billed ₹{pricing.totalPrice.toLocaleString('en-IN')} ({getBillingIntervalLabel(selectedInterval)})
                         </div>
                       </div>
                     )}
@@ -210,36 +267,42 @@ export const PlanComparisonModal: React.FC<PlanComparisonModalProps> = ({
                   <div className="flex items-center gap-2 text-zinc-300 font-medium">
                     <Check className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                     <span>
-                      <strong>{plan.limits.clusters >= 999 ? 'Unlimited' : plan.limits.clusters}</strong>{' '}
+                      <strong>{plan.limits.clusters === -1 ? 'Custom / Unlimited' : plan.limits.clusters}</strong>{' '}
                       Kubernetes Cluster{plan.limits.clusters === 1 ? '' : 's'}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-zinc-300 font-medium">
                     <Check className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                     <span>
-                      <strong>{plan.limits.nodes >= 9999 ? 'Unlimited' : plan.limits.nodes}</strong> Monitored Nodes
+                      <strong>{plan.limits.nodes === -1 ? 'Custom / Unlimited' : plan.limits.nodes}</strong> Monitored Nodes
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-zinc-300 font-medium">
                     <Check className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                     <span>
-                      <strong>{plan.limits.dataRetentionDays} Days</strong> Telemetry Retention
+                      <strong>{plan.limits.workloads === -1 ? 'Custom Capacity' : plan.limits.workloads.toLocaleString('en-IN')}</strong> Workload Pods
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-zinc-300 font-medium">
                     <Check className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                     <span>
-                      <strong>{plan.limits.members >= 999 ? 'Unlimited' : plan.limits.members}</strong> Team Seats
+                      <strong>{plan.limits.members === -1 ? 'Unlimited' : plan.limits.members}</strong> Team Seat{plan.limits.members === 1 ? '' : 's'}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-zinc-300 font-medium">
                     <Check className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                     <span>
-                      {plan.limits.aiInvestigationsMonthly === 0 ? (
-                        <span className="text-zinc-500">No Gemini RCA</span>
+                      <strong>{plan.limits.telemetryRetentionDays ?? plan.limits.dataRetentionDays} Days</strong> Data Retention
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-zinc-300 font-medium">
+                    <Check className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                    <span>
+                      {plan.limits.aiInvestigationsMonthly === -1 ? (
+                        <span><strong>Unlimited</strong> AI Investigations</span>
                       ) : (
                         <span>
-                          <strong>{plan.limits.aiInvestigationsMonthly >= 9999 ? 'Unlimited' : plan.limits.aiInvestigationsMonthly}</strong> Gemini RCA / mo
+                          <strong>{plan.limits.aiInvestigationsMonthly}</strong> AI Investigations / mo
                         </span>
                       )}
                     </span>
@@ -247,17 +310,31 @@ export const PlanComparisonModal: React.FC<PlanComparisonModalProps> = ({
                   <div className="flex items-center gap-2 text-zinc-300 font-medium">
                     <Check className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                     <span>
-                      {plan.features.automatedRemediation ? (
-                        <span>Controlled Remediations ({plan.limits.remediationsMonthly >= 9999 ? 'Unlimited' : plan.limits.remediationsMonthly}/mo)</span>
+                      {plan.limits.remediationsMonthly === 0 ? (
+                        <span className="text-zinc-400">0 Automated Remediations</span>
+                      ) : plan.limits.remediationsMonthly === -1 ? (
+                        <span><strong>Custom</strong> Automated Remediations</span>
                       ) : (
-                        <span className="text-zinc-500">Remediations Disabled</span>
+                        <span><strong>{plan.limits.remediationsMonthly}</strong> Remediation Executions / mo</span>
                       )}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-zinc-300 font-medium">
                     <Check className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                     <span>
-                      {plan.features.webhooks ? 'Slack & Custom Webhooks' : <span className="text-zinc-500">No Webhooks</span>}
+                      {plan.features.webhooks ? 'Webhooks & Integrations' : <span className="text-zinc-500">No Webhooks</span>}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-zinc-300 font-medium">
+                    <Check className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                    <span className="text-sky-300 font-semibold">
+                      {plan.id === 'FREE'
+                        ? 'Community Support'
+                        : plan.id === 'PRO'
+                        ? 'Standard Support'
+                        : plan.id === 'BUSINESS'
+                        ? 'Priority Support'
+                        : 'Dedicated Support & SLA'}
                     </span>
                   </div>
                 </div>
@@ -279,13 +356,13 @@ export const PlanComparisonModal: React.FC<PlanComparisonModalProps> = ({
                       disabled={loading}
                       className="w-full justify-center text-xs font-mono bg-sky-600 hover:bg-sky-500"
                     >
-                      Switch to {selectedInterval}
+                      Switch to {getBillingIntervalLabel(selectedInterval)}
                     </Button>
                   ) : plan.id === 'ENTERPRISE' ? (
                     <Button
                       variant="outline"
                       onClick={() => handleChoosePlan(plan)}
-                      className="w-full justify-center text-xs font-mono border-zinc-700 hover:border-zinc-500"
+                      className="w-full justify-center text-xs font-mono border-sky-600/70 text-sky-300 hover:bg-sky-950/40"
                     >
                       Contact Sales
                     </Button>
@@ -313,8 +390,31 @@ export const PlanComparisonModal: React.FC<PlanComparisonModalProps> = ({
             );
           })}
         </div>
+      </div>
 
-        {/* Confirmation Modal */}
+      {/* Pinned Modal Footer */}
+      <div className="px-5 sm:px-6 py-3 border-t border-zinc-800/90 bg-zinc-950/95 backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-mono text-zinc-400 shrink-0">
+        <div className="flex items-center gap-2">
+          <span>Need custom enterprise fleet terms, custom SLA, or invoice billing?</span>
+          <button
+            onClick={() => handleChoosePlan(PLANS.ENTERPRISE)}
+            className="text-sky-400 hover:text-sky-300 font-semibold underline underline-offset-2 cursor-pointer"
+          >
+            Contact Sales
+          </button>
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onClose}
+          className="text-xs font-mono border-zinc-700 hover:bg-zinc-900"
+        >
+          Close
+        </Button>
+      </div>
+
+      {/* Confirmation Modal */}
         {confirmPlan && (
           <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
             <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-4 font-sans">
@@ -333,7 +433,7 @@ export const PlanComparisonModal: React.FC<PlanComparisonModalProps> = ({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-zinc-400">Billing Duration:</span>
-                  <span className="font-bold text-sky-400">{selectedInterval}</span>
+                  <span className="font-bold text-sky-400">{getBillingIntervalLabel(selectedInterval)}</span>
                 </div>
                 <div className="flex justify-between border-t border-zinc-800/80 pt-2">
                   <span className="text-zinc-400">Total Billed Today:</span>

@@ -6,13 +6,14 @@ import {
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
+import { SKYOPS_CONTACT_EMAIL } from '../../config/contact';
 
 export const NotificationsManager: React.FC = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [incidentEmailEnabled, setIncidentEmailEnabled] = useState(false);
-  const [sender, setSender] = useState('SkyOps <skyopsnetes2000@gmail.com>');
+  const [sender, setSender] = useState(`SkyOps <${SKYOPS_CONTACT_EMAIL}>`);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
   const fetchSettings = async () => {

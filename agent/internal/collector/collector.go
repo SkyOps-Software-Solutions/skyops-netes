@@ -371,8 +371,18 @@ func (c *Collector) collectFromKubernetes(ctx context.Context) {
 	}()
 
 	var poolObservations []ResourceObservation
+	var deploymentObservations []ResourceObservation
+	var helmObservations []ResourceObservation
+
 	for res := range resultChan {
 		collectionStatus[res.category] = res.stat
+		switch res.category {
+		case "deployments":
+			deploymentObservations = res.obs
+		case "helm":
+			helmObservations = res.obs
+		}
+
 		for _, obs := range res.obs {
 			c.RecordObservation(obs)
 		}

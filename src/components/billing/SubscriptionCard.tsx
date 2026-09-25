@@ -10,10 +10,12 @@ import {
   CheckCircle2,
   Clock,
   Zap,
-  Loader2
+  Loader2,
+  Headphones
 } from 'lucide-react';
 import { OrgBillingOverview } from '../../types/index';
 import { Button } from '../common/UI';
+import { getBillingIntervalLabel, formatINR } from '../../config/plans';
 
 interface SubscriptionCardProps {
   overview: OrgBillingOverview;
@@ -35,6 +37,15 @@ export const SubscriptionCard: React.FC<SubscriptionCardProps> = ({
   const [showConfirmCancel, setShowConfirmCancel] = useState(false);
 
   const { subscription, plan, isTrial, trialDaysRemaining } = overview;
+
+  const intervalPricing = plan.pricing?.[subscription.billingInterval];
+  const currentPriceText = subscription.planId === 'FREE'
+    ? '₹0'
+    : subscription.planId === 'ENTERPRISE'
+    ? 'Custom pricing'
+    : intervalPricing
+    ? `${formatINR(intervalPricing.totalPrice)} / ${getBillingIntervalLabel(subscription.billingInterval).toLowerCase()}`
+    : '₹0';
 
   const handleCancelClick = async () => {
     try {
@@ -72,6 +83,11 @@ export const SubscriptionCard: React.FC<SubscriptionCardProps> = ({
               {plan.name} Tier
             </h3>
 
+            {/* Current Price Pill */}
+            <span className="px-2.5 py-0.5 rounded-full bg-zinc-900 border border-zinc-700/80 text-zinc-200 text-xs font-mono font-semibold">
+              {currentPriceText}
+            </span>
+
             {/* Status Pill */}
             {subscription.status === 'ACTIVE' && (
               <span className="px-2.5 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-700/60 text-emerald-400 text-xs font-mono font-semibold flex items-center gap-1">
@@ -97,7 +113,7 @@ export const SubscriptionCard: React.FC<SubscriptionCardProps> = ({
             {/* Billing Interval Pill */}
             {subscription.planId !== 'FREE' && (
               <span className="px-2.5 py-0.5 rounded-full bg-zinc-800/80 border border-zinc-700/60 text-zinc-300 text-xs font-mono">
-                {subscription.billingInterval} Duration
+                {getBillingIntervalLabel(subscription.billingInterval)}
               </span>
             )}
 
@@ -195,23 +211,46 @@ export const SubscriptionCard: React.FC<SubscriptionCardProps> = ({
       )}
 
       {/* Period & SLA Metadata */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono text-xs pt-2 border-t border-zinc-800/80">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 font-mono text-xs pt-2 border-t border-zinc-800/80">
         <div className="p-3 bg-zinc-950/60 rounded-xl border border-zinc-800/60">
-          <span className="text-zinc-500 block text-[10px] uppercase">Current Billing Cycle</span>
+          <span className="text-zinc-500 block text-[10px] uppercase">Billing Cycle</span>
           <span className="text-zinc-200 font-semibold mt-1 block">
-            {subscription.planId === 'FREE' ? 'Standard Perpetual' : `Renews ${renewalDate}`}
+            {subscription.planId === 'FREE' ? 'Permanent Free' : `Renews ${renewalDate}`}
+          </span>
+          <span className="text-[10px] text-zinc-500 mt-0.5 block">
+            {getBillingIntervalLabel(subscription.billingInterval)}
           </span>
         </div>
         <div className="p-3 bg-zinc-950/60 rounded-xl border border-zinc-800/60">
           <span className="text-zinc-500 block text-[10px] uppercase">Telemetry Retention SLA</span>
           <span className="text-sky-400 font-semibold mt-1 block">
-            {plan.limits.telemetryRetentionDays} Days Guaranteed
+            {plan.limits.telemetryRetentionDays ?? plan.limits.dataRetentionDays} Days Guaranteed
           </span>
+          <span className="text-[10px] text-zinc-500 mt-0.5 block">Historical metrics & events</span>
+        </div>
+        <div className="p-3 bg-zinc-950/60 rounded-xl border border-zinc-800/60">
+          <span className="text-zinc-500 block text-[10px] uppercase">Support Level</span>
+          <span className="text-zinc-200 font-semibold mt-1 block flex items-center gap-1">
+            <Headphones className="w-3.5 h-3.5 text-sky-400" />
+            {plan.id === 'FREE'
+              ? 'Community Support'
+              : plan.id === 'PRO'
+              ? 'Standard Support'
+              : plan.id === 'BUSINESS'
+              ? 'Priority Support'
+              : 'Dedicated Support & SLA'}
+          </span>
+          <span className="text-[10px] text-zinc-500 mt-0.5 block">skyopsnetes2000@gmail.com</span>
         </div>
         <div className="p-3 bg-zinc-950/60 rounded-xl border border-zinc-800/60">
           <span className="text-zinc-500 block text-[10px] uppercase">AI & Autonomous Ops</span>
           <span className="text-emerald-400 font-semibold mt-1 block">
-            {plan.features.autonomousRemediation ? 'Remediations Enabled' : 'Diagnostic Only'}
+            {plan.features.automatedRemediation && plan.features.automatedRemediation !== 'disabled'
+              ? 'Automated Remediations'
+              : 'Diagnostic RCA Only'}
+          </span>
+          <span className="text-[10px] text-zinc-500 mt-0.5 block">
+            {plan.limits.aiInvestigationsMonthly === -1 ? 'Unlimited' : `${plan.limits.aiInvestigationsMonthly}/mo`} AI analyses
           </span>
         </div>
       </div>
@@ -225,7 +264,7 @@ export const SubscriptionCard: React.FC<SubscriptionCardProps> = ({
               Cancel SkyOps Subscription?
             </h4>
             <p className="text-xs text-zinc-300 leading-relaxed font-mono">
-              Your subscription will remain active until <strong>{renewalDate}</strong>. After this date, your workspace will revert to the Free tier limits (1 cluster, 5 nodes, 3-day retention).
+              Your subscription will remain active until <strong>{renewalDate}</strong>. After this date, your workspace will revert to the Free tier limits (1 cluster, 5 nodes, 100 workloads, 7-day data retention, 20 AI investigations/month).
             </p>
             <div className="flex items-center justify-end gap-3 pt-2">
               <Button

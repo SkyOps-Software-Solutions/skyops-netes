@@ -126,17 +126,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside
-      className={`bg-zinc-950 border-r border-zinc-800/80 flex flex-col shrink-0 h-screen select-none transition-all duration-200 ease-in-out ${
+      className={`bg-[#030712]/95 border-r border-sky-500/15 flex flex-col shrink-0 h-screen select-none transition-all duration-200 ease-in-out backdrop-blur-md z-30 ${
         isCollapsed ? 'w-16' : 'w-64'
       }`}
     >
       {/* Brand Header */}
       {isCollapsed ? (
-        <div className="py-3 px-2 border-b border-zinc-800/80 flex flex-col items-center justify-center gap-2">
+        <div className="py-3 px-2 border-b border-sky-500/15 flex flex-col items-center justify-center gap-2">
           <button
             onClick={onToggleCollapse}
             title="Pull navigation (Expand sidebar)"
-            className="w-8 h-8 rounded-lg bg-sky-600 hover:bg-sky-500 flex items-center justify-center text-white font-mono font-bold text-xs shadow-md transition-colors cursor-pointer"
+            className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-400 via-sky-600 to-blue-700 hover:from-sky-300 hover:to-blue-600 flex items-center justify-center text-white font-mono font-bold text-xs shadow-[0_0_12px_-2px_rgba(14,165,233,0.5)] transition-all cursor-pointer"
           >
             SK
           </button>
@@ -144,33 +144,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               onClick={onToggleCollapse}
               title="Pull navigation (Expand sidebar)"
-              className="p-1 text-zinc-400 hover:text-sky-400 hover:bg-zinc-900 rounded-md transition-colors cursor-pointer"
+              className="p-1 text-zinc-400 hover:text-sky-300 hover:bg-sky-950/30 rounded-md transition-colors cursor-pointer"
             >
               <PanelLeftOpen className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
       ) : (
-        <div className="px-5 py-4 border-b border-zinc-800/80 flex items-center justify-between">
+        <div className="px-5 py-4 border-b border-sky-500/15 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded bg-sky-600 flex items-center justify-center text-white font-mono font-bold text-sm shadow-md">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-400 via-sky-600 to-blue-700 flex items-center justify-center text-white font-mono font-bold text-xs shadow-[0_0_14px_-2px_rgba(14,165,233,0.5)] border border-sky-300/30">
               SK
             </div>
             <div>
-              <div className="font-bold text-sm text-zinc-100 tracking-tight flex items-center gap-1.5">
+              <div className="font-bold text-sm text-white tracking-tight flex items-center gap-1.5">
                 SkyOps
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-950/60 text-sky-300 border border-sky-800/60">
                   {AGENT_VERSION}
                 </span>
               </div>
-              <div className="text-[10px] font-mono text-zinc-500">K8s Incident Platform</div>
+              <div className="text-[10px] font-mono text-zinc-400 flex items-center gap-1">
+                <span>Infrastructure Control</span>
+              </div>
             </div>
           </div>
           {onToggleCollapse && (
             <button
               onClick={onToggleCollapse}
               title="Push navigation (Collapse sidebar)"
-              className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-900 transition-colors cursor-pointer"
+              className="p-1.5 rounded-md text-zinc-400 hover:text-sky-300 hover:bg-sky-950/30 transition-colors cursor-pointer"
             >
               <PanelLeftClose className="w-4 h-4" />
             </button>
@@ -180,23 +182,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Tenant / Organization Switcher */}
       {isCollapsed ? (
-        <div className="px-2 py-3 border-b border-zinc-800/60 flex justify-center">
+        <div className="px-2 py-3 border-b border-sky-500/10 flex justify-center">
           <button
             onClick={onToggleCollapse}
             title={`Tenant: ${currentOrg?.name || 'Workspace'} (${role}) - Click to expand`}
-            className="w-10 h-10 flex items-center justify-center rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-sky-300 transition-colors cursor-pointer"
+            className="w-10 h-10 flex items-center justify-center rounded-lg bg-[#081024] hover:bg-[#0c1938] border border-sky-500/20 text-zinc-400 hover:text-sky-300 transition-colors cursor-pointer"
           >
             <Building2 className="w-4 h-4" />
           </button>
         </div>
       ) : (
-        <div className="px-3 py-3 border-b border-zinc-800/60 relative">
+        <div className="px-3 py-3 border-b border-sky-500/10 relative">
           <button
             onClick={() => setIsOrgDropdownOpen(!isOrgDropdownOpen)}
-            className="w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 transition-colors text-left cursor-pointer"
+            className="w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg bg-[#081024]/80 hover:bg-[#0c1938] border border-sky-500/20 hover:border-sky-500/40 transition-all text-left cursor-pointer"
           >
             <div className="flex items-center gap-2 overflow-hidden">
-              <Building2 className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+              <Building2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
               <div className="truncate">
                 <div className="text-zinc-200 font-medium truncate">{currentOrg?.name || 'My Organization'}</div>
                 <div className="text-[10px] font-mono text-zinc-500 uppercase">{role}</div>
@@ -207,8 +209,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* Dropdown Menu */}
           {isOrgDropdownOpen && (
-            <div className="absolute top-full left-3 right-3 mt-1 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl py-1 z-30">
-              <div className="px-3 py-1.5 text-[10px] font-mono text-zinc-500 uppercase">Switch Organization</div>
+            <div className="absolute top-full left-3 right-3 mt-1 bg-[#060c1c] border border-sky-500/30 rounded-lg shadow-2xl py-1 z-40 backdrop-blur-xl">
+              <div className="px-3 py-1.5 text-[10px] font-mono text-sky-400/80 uppercase tracking-wider">Switch Organization</div>
               {organizations.map((org) => (
                 <button
                   key={org.id}
@@ -216,18 +218,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     switchOrganization(org.id);
                     setIsOrgDropdownOpen(false);
                   }}
-                  className="w-full px-3 py-1.5 text-xs text-left hover:bg-zinc-800 text-zinc-200 flex items-center justify-between cursor-pointer"
+                  className="w-full px-3 py-1.5 text-xs text-left hover:bg-sky-950/50 text-zinc-200 flex items-center justify-between cursor-pointer transition-colors"
                 >
                   <span className="truncate">{org.name}</span>
                   {org.id === currentOrg?.id && <CheckCircle2 className="w-3 h-3 text-sky-400" />}
                 </button>
               ))}
 
-              <div className="border-t border-zinc-800 mt-1 pt-1">
+              <div className="border-t border-sky-500/15 mt-1 pt-1">
                 {!isCreatingOrg ? (
                   <button
                     onClick={() => setIsCreatingOrg(true)}
-                    className="w-full px-3 py-1.5 text-xs text-left text-sky-400 hover:bg-zinc-800 flex items-center gap-1.5 cursor-pointer"
+                    className="w-full px-3 py-1.5 text-xs text-left text-sky-400 hover:bg-sky-950/50 flex items-center gap-1.5 cursor-pointer transition-colors"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>New Organization</span>
@@ -239,20 +241,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       placeholder="Organization name"
                       value={newOrgName}
                       onChange={(e) => setNewOrgName(e.target.value)}
-                      className="w-full px-2 py-1 text-xs bg-zinc-950 border border-zinc-700 rounded text-zinc-100 focus:outline-none focus:border-sky-500 mb-1.5 font-mono"
+                      className="w-full px-2 py-1 text-xs bg-[#030712] border border-sky-500/40 rounded text-zinc-100 focus:outline-none focus:border-sky-400 mb-1.5 font-mono"
                       autoFocus
                     />
                     <div className="flex gap-1">
                       <button
                         type="submit"
-                        className="px-2 py-0.5 text-xs bg-sky-600 hover:bg-sky-500 text-white rounded font-mono"
+                        className="px-2 py-0.5 text-xs bg-sky-600 hover:bg-sky-500 text-white rounded font-mono cursor-pointer"
                       >
                         Save
                       </button>
                       <button
                         type="button"
                         onClick={() => setIsCreatingOrg(false)}
-                        className="px-2 py-0.5 text-xs bg-zinc-800 text-zinc-400 rounded font-mono"
+                        className="px-2 py-0.5 text-xs bg-zinc-800 text-zinc-400 rounded font-mono cursor-pointer"
                       >
                         Cancel
                       </button>
@@ -268,7 +270,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Main Navigation */}
       <div className={`py-4 flex-1 space-y-1 overflow-y-auto no-scrollbar ${isCollapsed ? 'px-2' : 'px-3'}`}>
         {!isCollapsed && (
-          <div className="px-3 py-1 text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Navigation</div>
+          <div className="px-3 py-1 text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Mission Navigation</div>
         )}
         {navItems.map((item) => {
           const isActive = activeTab === item.id;
@@ -278,15 +280,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 key={item.id}
                 onClick={() => onSelectTab(item.id)}
                 title={`${item.label}${typeof item.badge === 'number' && item.badge > 0 ? ` (${item.badge} active)` : ''}`}
-                className={`relative flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                className={`relative flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-xs font-medium transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-sky-950/70 text-sky-300 border border-sky-800/80 shadow-xs'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 border border-transparent'
+                    ? 'bg-sky-950/80 text-sky-300 border border-sky-500/40 shadow-[0_0_15px_-3px_rgba(14,165,233,0.3)]'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-sky-950/20 border border-transparent'
                 }`}
               >
                 {item.icon}
                 {typeof item.badge === 'number' && item.badge > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] font-bold font-mono flex items-center justify-center border border-zinc-950">
+                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] font-bold font-mono flex items-center justify-center border border-zinc-950 shadow-[0_0_8px_rgba(225,29,72,0.8)] animate-pulse">
                     {item.badge}
                   </span>
                 )}
@@ -298,18 +300,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               key={item.id}
               onClick={() => onSelectTab(item.id)}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                 isActive
-                  ? 'bg-sky-950/60 text-sky-300 border border-sky-800/60 font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 border border-transparent'
+                  ? 'electric-active-tab border border-sky-500/30 font-semibold'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-sky-950/20 border border-transparent'
               }`}
             >
               <div className="flex items-center gap-2.5">
-                {item.icon}
+                <span className={isActive ? 'text-sky-300' : 'text-zinc-400'}>{item.icon}</span>
                 <span>{item.label}</span>
               </div>
               {typeof item.badge === 'number' && item.badge > 0 && (
-                <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-900/80 text-rose-300 border border-rose-700/60">
+                <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-950/90 text-rose-300 border border-rose-600/70 shadow-[0_0_8px_rgba(225,29,72,0.5)] animate-pulse">
                   {item.badge}
                 </span>
               )}
@@ -323,7 +325,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               onClick={onOpenAddCluster}
               title="Connect Cluster"
-              className="w-10 h-10 flex items-center justify-center rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-sky-400 hover:text-sky-300 transition-colors cursor-pointer"
+              className="w-10 h-10 flex items-center justify-center rounded-lg bg-[#081024] hover:bg-[#0e1c3e] border border-sky-500/25 text-sky-400 hover:text-sky-300 transition-colors cursor-pointer shadow-xs"
             >
               <Plus className="w-4 h-4" />
             </button>
@@ -333,7 +335,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="px-3 py-1 text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Quick Actions</div>
             <button
               onClick={onOpenAddCluster}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-zinc-300 hover:text-white bg-zinc-900 hover:bg-zinc-800/90 border border-zinc-800 transition-colors cursor-pointer"
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-sky-200 hover:text-white bg-gradient-to-r from-sky-950/60 to-blue-950/40 hover:from-sky-900/60 hover:to-blue-900/40 border border-sky-500/25 hover:border-sky-500/45 transition-all cursor-pointer shadow-xs"
             >
               <Plus className="w-3.5 h-3.5 text-sky-400" />
               <span>Connect Cluster</span>
@@ -344,10 +346,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* User Footer & Sign Out Action */}
       {isCollapsed ? (
-        <div className="py-3 px-2 border-t border-zinc-800/80 bg-zinc-950/80 flex flex-col items-center gap-2.5">
+        <div className="py-3 px-2 border-t border-sky-500/15 bg-[#02050f]/80 flex flex-col items-center gap-2.5">
           <div
             title={`${user?.name || 'SkyOps Engineer'} (${user?.email || 'sre@skyops.io'})`}
-            className="w-8 h-8 rounded-full bg-sky-950 border border-sky-800 flex items-center justify-center text-xs font-mono text-sky-300 font-semibold cursor-default"
+            className="w-8 h-8 rounded-full bg-sky-950 border border-sky-500/40 flex items-center justify-center text-xs font-mono text-sky-300 font-semibold cursor-default shadow-xs"
           >
             {user?.name?.charAt(0) || 'S'}
           </div>
@@ -360,9 +362,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
       ) : (
-        <div className="px-3 py-3 border-t border-zinc-800/80 bg-zinc-950/80 flex items-center justify-between gap-2">
+        <div className="px-3 py-3 border-t border-sky-500/15 bg-[#02050f]/80 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2.5 overflow-hidden min-w-0">
-            <div className="w-7 h-7 rounded-full bg-sky-950 border border-sky-800 flex items-center justify-center text-xs font-mono text-sky-300 font-semibold shrink-0">
+            <div className="w-7 h-7 rounded-full bg-sky-950 border border-sky-500/40 flex items-center justify-center text-xs font-mono text-sky-300 font-semibold shrink-0 shadow-xs">
               {user?.name?.charAt(0) || 'S'}
             </div>
             <div className="truncate">

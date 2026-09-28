@@ -277,13 +277,13 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
       {/* ========================================================================= */}
       {/* 1. INCIDENT HEADER */}
       {/* ========================================================================= */}
-      <div className="p-5 rounded-xl bg-linear-to-r from-zinc-900 via-zinc-900/90 to-zinc-950 border border-zinc-800/80 shadow-xs space-y-4">
+      <div className="p-6 rounded-2xl storm-card border-sky-500/20 shadow-xl space-y-4">
         {/* Top Action Bar */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-start sm:items-center gap-3">
             <button
               onClick={onBack}
-              className="p-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer shrink-0 mt-0.5 sm:mt-0"
+              className="p-2 rounded-lg bg-[#050b18] border border-sky-500/20 text-zinc-400 hover:text-sky-300 hover:bg-sky-950/40 hover:border-sky-500/40 transition-colors cursor-pointer shrink-0 mt-0.5 sm:mt-0 shadow-xs"
               title="Back to Incidents List"
             >
               <ArrowLeft className="w-4 h-4" />
@@ -291,7 +291,7 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xl font-bold font-mono text-sky-400">{incident.id}</span>
-                <span className="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-zinc-800 text-zinc-300 border border-zinc-700">
+                <span className="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-sky-950/60 text-sky-300 border border-sky-800/60">
                   {priority}
                 </span>
                 <SeverityBadge severity={incident.severity} size="sm" />
@@ -315,7 +315,7 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
                   )
                 )}
               </div>
-              <h1 className="text-base font-semibold text-zinc-100 mt-1.5 leading-snug">{incident.title}</h1>
+              <h1 className="text-base font-semibold text-white mt-1.5 leading-snug">{incident.title}</h1>
               <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-zinc-400 mt-1">
                 <span>
                   Cluster: <strong className="text-zinc-200">{incident.clusterName}</strong>

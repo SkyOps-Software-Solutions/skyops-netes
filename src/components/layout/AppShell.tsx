@@ -242,7 +242,10 @@ export const AppShell: React.FC<AppShellProps> = ({
   ).length;
 
   return (
-    <div className="flex h-screen bg-zinc-950 text-zinc-100 antialiased overflow-hidden font-sans">
+    <div className="flex h-screen storm-bg-canvas text-zinc-100 antialiased overflow-hidden font-sans relative">
+      {/* Subtle atmospheric lightning aura glow */}
+      <div className="absolute inset-0 pointer-events-none storm-atmospheric-overlay z-0" />
+
       {/* Navigation Sidebar */}
       <Sidebar
         activeTab={activeTab}
@@ -255,17 +258,22 @@ export const AppShell: React.FC<AppShellProps> = ({
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-zinc-950">
+      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto relative z-10">
         {/* Top Operational Bar */}
-        <header className="h-12 border-b border-zinc-800/80 px-4 sm:px-6 flex items-center justify-between shrink-0 bg-zinc-950/80 backdrop-blur-xs">
+        <header className="h-12 border-b border-sky-500/15 px-4 sm:px-6 flex items-center justify-between shrink-0 bg-[#030712]/85 backdrop-blur-md sticky top-0 z-20 shadow-xs">
           <div className="flex items-center gap-3 text-xs font-mono text-zinc-400">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Central Ingestion API: <strong className="text-zinc-200">Online</strong>
+            <span className="flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+              <span className="text-zinc-400">Ingestion:</span>
+              <strong className="text-emerald-400 font-semibold tracking-wide">ONLINE</strong>
             </span>
             <span className="text-zinc-700 hidden md:inline">|</span>
-            <span className="hidden md:inline">
-              Tenant: <strong className="text-sky-400">{currentOrg?.name || 'Workspace'}</strong>
+            <span className="hidden md:flex items-center gap-1.5">
+              <span className="text-zinc-500">Tenant:</span>
+              <strong className="text-sky-300 font-semibold">{currentOrg?.name || 'Workspace'}</strong>
             </span>
           </div>
 
@@ -273,20 +281,20 @@ export const AppShell: React.FC<AppShellProps> = ({
             <button
               id="topbar-docs-btn"
               onClick={() => handleOpenDoc('quickstart')}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-sky-300 border border-zinc-800 transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#0a1226]/80 hover:bg-[#0f1b38] text-zinc-300 hover:text-sky-300 border border-sky-500/20 hover:border-sky-500/40 transition-all cursor-pointer shadow-xs"
               title="SkyOps Technical Reference & Documentation"
             >
               <BookOpen className="w-3.5 h-3.5 text-sky-400" />
-              <span>Docs</span>
+              <span>Reference Docs</span>
             </button>
-            <span className="text-zinc-700 hidden sm:inline">|</span>
-            <span className="text-emerald-400 hidden sm:flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <span className="text-zinc-800 hidden sm:inline">|</span>
+            <span className="text-emerald-400 hidden sm:flex items-center gap-1.5 text-[11px]">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
               Autonomous Engine Active
             </span>
-            <span className="text-zinc-700 hidden sm:inline">|</span>
-            <span>
-              SkyOps Agent: <strong className="text-zinc-200">{AGENT_VERSION}</strong>
+            <span className="text-zinc-800 hidden sm:inline">|</span>
+            <span className="text-[11px] text-zinc-400">
+              Agent <strong className="text-sky-300">{AGENT_VERSION}</strong>
             </span>
           </div>
         </header>

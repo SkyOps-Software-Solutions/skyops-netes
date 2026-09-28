@@ -218,54 +218,56 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
   return (
     <div className="p-6 lg:p-8 space-y-8 max-w-7xl mx-auto font-sans text-zinc-100">
       {/* 1. Global Command Center Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-800/80 pb-5">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-sky-500/15 pb-5">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight text-white font-mono flex items-center gap-2">
-              <Shield className="w-6 h-6 text-sky-400" />
-              <span>SkyOps Command Center</span>
+            <h1 className="text-2xl font-bold tracking-tight text-white font-mono flex items-center gap-2.5">
+              <span className="p-1.5 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-400 shadow-[0_0_12px_rgba(14,165,233,0.3)]">
+                <Shield className="w-5 h-5" />
+              </span>
+              <span>Command Center</span>
             </h1>
             <span
-              className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-bold flex items-center gap-1.5 border ${
+              className={`px-2.5 py-1 rounded-md text-xs font-mono font-bold flex items-center gap-2 border shadow-xs ${
                 overallGlobalStatus === 'HEALTHY'
-                  ? 'bg-emerald-950/70 text-emerald-300 border-emerald-800'
+                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40 shadow-[0_0_12px_rgba(52,211,153,0.25)]'
                   : overallGlobalStatus === 'WARNING'
-                  ? 'bg-amber-950/70 text-amber-300 border-amber-800'
-                  : 'bg-rose-950/80 text-rose-300 border-rose-800 animate-pulse'
+                  ? 'bg-amber-950/80 text-amber-300 border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.25)]'
+                  : 'bg-rose-950/90 text-rose-300 border-rose-500/50 shadow-[0_0_15px_rgba(244,63,94,0.35)] animate-pulse'
               }`}
             >
               <span
                 className={`w-2 h-2 rounded-full ${
                   overallGlobalStatus === 'HEALTHY'
-                    ? 'bg-emerald-400'
+                    ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]'
                     : overallGlobalStatus === 'WARNING'
-                    ? 'bg-amber-400'
-                    : 'bg-rose-500'
+                    ? 'bg-amber-400 shadow-[0_0_8px_#fbbf24]'
+                    : 'bg-rose-400 shadow-[0_0_8px_#f43f5e]'
                 }`}
               />
-              SYSTEM {overallGlobalStatus}
+              MISSION: {overallGlobalStatus}
             </span>
           </div>
-          <p className="text-xs font-mono text-zinc-400 mt-1">
-            Global fleet control: multi-cluster operations, real-time node pressure, and incident triage
+          <p className="text-xs font-mono text-zinc-400 mt-1.5 flex items-center gap-2">
+            <span>Deterministic Kubernetes telemetry • Real-time node pressure radar • Incident remediation</span>
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
           {/* Cluster filter selector */}
-          <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1 text-xs font-mono">
-            <Server className="w-3.5 h-3.5 text-zinc-400" />
+          <div className="flex items-center gap-2 bg-[#081024] border border-sky-500/25 rounded-lg px-3 py-1.5 text-xs font-mono shadow-xs">
+            <Server className="w-3.5 h-3.5 text-sky-400" />
             <select
               value={clusterFilter}
               onChange={(e) => setClusterFilter(e.target.value)}
               className="bg-transparent text-zinc-200 focus:outline-none cursor-pointer pr-2"
               title="Filter overview by cluster"
             >
-              <option value="all" className="bg-zinc-900 text-zinc-100">
-                All Clusters ({safeClusters.length})
+              <option value="all" className="bg-[#050b18] text-zinc-100">
+                All Fleet Clusters ({safeClusters.length})
               </option>
               {safeClusters.map((c) => (
-                <option key={c.id} value={c.id} className="bg-zinc-900 text-zinc-100">
+                <option key={c.id} value={c.id} className="bg-[#050b18] text-zinc-100">
                   {c.name}
                 </option>
               ))}
@@ -277,9 +279,10 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
             size="sm"
             onClick={onRefresh}
             disabled={loading}
-            icon={<RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-sky-400' : ''}`} />}
+            icon={<RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-sky-400' : 'text-zinc-400'}`} />}
+            className="border-sky-500/20 hover:border-sky-500/40 bg-[#081024]/60 hover:bg-[#0c1836] text-zinc-300"
           >
-            {loading ? 'Refreshing...' : 'Refresh Fleet'}
+            {loading ? 'Synchronizing...' : 'Refresh Fleet'}
           </Button>
 
           <Button
@@ -287,6 +290,7 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
             size="sm"
             onClick={onOpenAddCluster}
             icon={<Plus className="w-3.5 h-3.5" />}
+            className="bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 border-sky-400/40 shadow-[0_0_15px_-3px_rgba(14,165,233,0.4)]"
           >
             Connect Cluster
           </Button>
@@ -295,12 +299,12 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
 
       {/* Prominent Empty State if NO clusters exist */}
       {safeClusters.length === 0 && (
-        <div className="p-8 rounded-2xl bg-zinc-900/60 border border-zinc-800 text-center space-y-4 shadow-xl">
-          <div className="w-14 h-14 rounded-2xl bg-sky-950/60 border border-sky-800/50 flex items-center justify-center mx-auto text-sky-400">
+        <div className="p-8 rounded-2xl storm-card text-center space-y-4 shadow-2xl">
+          <div className="w-14 h-14 rounded-2xl bg-sky-950/60 border border-sky-500/30 flex items-center justify-center mx-auto text-sky-400 shadow-[0_0_20px_-3px_rgba(14,165,233,0.3)]">
             <Server className="w-7 h-7" />
           </div>
           <div className="space-y-1.5 max-w-md mx-auto">
-            <h2 className="text-lg font-bold text-zinc-100 font-mono">No Kubernetes Clusters Connected</h2>
+            <h2 className="text-lg font-bold text-white font-mono">No Kubernetes Clusters Connected</h2>
             <p className="text-xs text-zinc-400 font-mono leading-relaxed">
               Connect your first Kubernetes cluster with the SkyOps Agent to begin streaming real-time telemetry, monitoring resource pressure, and orchestrating remediation.
             </p>
@@ -311,7 +315,7 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
               size="md"
               onClick={onOpenAddCluster}
               icon={<Plus className="w-4 h-4" />}
-              className="font-mono text-xs px-6 py-2"
+              className="font-mono text-xs px-6 py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 shadow-[0_0_15px_-3px_rgba(14,165,233,0.4)]"
             >
               Connect Cluster
             </Button>
@@ -320,33 +324,33 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
       )}
 
       {/* 2. Global Status & Vital Fleet KPI Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
         {/* Total Clusters */}
-        <div className="p-4 rounded-xl bg-zinc-900/70 border border-zinc-800/80 flex flex-col justify-between">
+        <div className="p-4 rounded-xl storm-kpi-card flex flex-col justify-between">
           <div className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider flex items-center justify-between">
-            <span>Clusters</span>
-            <Server className="w-3.5 h-3.5 text-zinc-500" />
+            <span>Fleet Clusters</span>
+            <Server className="w-3.5 h-3.5 text-sky-400/80" />
           </div>
           <div className="text-2xl font-bold font-mono text-white mt-2">
             {metrics?.totalClusters ?? safeClusters.length}
           </div>
-          <div className="text-[10px] font-mono text-zinc-500 mt-1 flex items-center gap-1.5">
-            <span className="text-emerald-400">{metrics?.healthyClusters ?? 0} healthy</span>
-            <span>•</span>
-            <span className="text-rose-400">{metrics?.criticalClusters ?? 0} crit</span>
+          <div className="text-[10px] font-mono text-zinc-400 mt-1 flex items-center gap-1.5">
+            <span className="text-emerald-400 font-medium">{metrics?.healthyClusters ?? 0} healthy</span>
+            <span className="text-zinc-600">•</span>
+            <span className="text-rose-400 font-medium">{metrics?.criticalClusters ?? 0} crit</span>
           </div>
         </div>
 
         {/* Nodes Online */}
-        <div className="p-4 rounded-xl bg-zinc-900/70 border border-zinc-800/80 flex flex-col justify-between">
+        <div className="p-4 rounded-xl storm-kpi-card flex flex-col justify-between">
           <div className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider flex items-center justify-between">
-            <span>Nodes</span>
-            <Cpu className="w-3.5 h-3.5 text-zinc-500" />
+            <span>Cluster Nodes</span>
+            <Cpu className="w-3.5 h-3.5 text-sky-400/80" />
           </div>
           <div className="text-2xl font-bold font-mono text-zinc-100 mt-2">
             {metrics?.totalNodes ?? allNodes.length}
           </div>
-          <div className="text-[10px] font-mono text-zinc-500 mt-1 flex items-center gap-1">
+          <div className="text-[10px] font-mono text-zinc-400 mt-1 flex items-center gap-1">
             {pressureNodes.length > 0 ? (
               <span className="text-amber-400 font-bold">{pressureNodes.length} with pressure</span>
             ) : (
@@ -357,22 +361,22 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
 
         {/* Total Pods & Failing Count */}
         <div
-          className={`p-4 rounded-xl border flex flex-col justify-between ${
+          className={`p-4 rounded-xl flex flex-col justify-between ${
             crashingPods.length > 0
-              ? 'bg-rose-950/20 border-rose-900/50 text-rose-300'
-              : 'bg-zinc-900/70 border-zinc-800/80 text-zinc-300'
+              ? 'storm-critical-card'
+              : 'storm-kpi-card'
           }`}
         >
           <div className="text-[11px] font-mono uppercase tracking-wider flex items-center justify-between">
-            <span className={crashingPods.length > 0 ? 'text-rose-400' : 'text-zinc-400'}>Pods</span>
-            <Boxes className="w-3.5 h-3.5" />
+            <span className={crashingPods.length > 0 ? 'text-rose-300 font-bold' : 'text-zinc-400'}>Tracked Pods</span>
+            <Boxes className={`w-3.5 h-3.5 ${crashingPods.length > 0 ? 'text-rose-400' : 'text-sky-400/80'}`} />
           </div>
           <div className="text-2xl font-bold font-mono text-white mt-2">
             {metrics?.totalPods ?? allPods.length}
           </div>
           <div className="text-[10px] font-mono mt-1">
             {crashingPods.length > 0 ? (
-              <span className="text-rose-400 font-bold">{crashingPods.length} failing / crashing</span>
+              <span className="text-rose-300 font-bold animate-pulse">{crashingPods.length} failing / crashing</span>
             ) : (
               <span className="text-emerald-400">0 crashing</span>
             )}
@@ -380,15 +384,15 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
         </div>
 
         {/* Workloads */}
-        <div className="p-4 rounded-xl bg-zinc-900/70 border border-zinc-800/80 flex flex-col justify-between">
+        <div className="p-4 rounded-xl storm-kpi-card flex flex-col justify-between">
           <div className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider flex items-center justify-between">
-            <span>Workloads</span>
-            <Layers className="w-3.5 h-3.5 text-zinc-500" />
+            <span>Controllers</span>
+            <Layers className="w-3.5 h-3.5 text-sky-400/80" />
           </div>
           <div className="text-2xl font-bold font-mono text-zinc-100 mt-2">
             {metrics?.totalWorkloads ?? allWorkloads.length}
           </div>
-          <div className="text-[10px] font-mono text-zinc-500 mt-1">
+          <div className="text-[10px] font-mono text-zinc-400 mt-1">
             {degradedWorkloads.length > 0 ? (
               <span className="text-amber-400 font-semibold">{degradedWorkloads.length} degraded</span>
             ) : (
@@ -399,30 +403,30 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
 
         {/* Active Incidents */}
         <div
-          className={`p-4 rounded-xl border flex flex-col justify-between ${
+          className={`p-4 rounded-xl flex flex-col justify-between ${
             openIncidents.length > 0
-              ? 'bg-purple-950/25 border-purple-800/60 text-purple-300'
-              : 'bg-zinc-900/70 border-zinc-800/80'
+              ? 'storm-ai-card'
+              : 'storm-kpi-card'
           }`}
         >
-          <div className="text-[11px] font-mono uppercase tracking-wider flex items-center justify-between text-purple-400">
-            <span>Open Incidents</span>
-            <AlertTriangle className="w-3.5 h-3.5" />
+          <div className="text-[11px] font-mono uppercase tracking-wider flex items-center justify-between text-purple-300">
+            <span>Incident Radar</span>
+            <AlertTriangle className="w-3.5 h-3.5 text-purple-400" />
           </div>
           <div className="text-2xl font-bold font-mono text-white mt-2">
             {openIncidents.length}
           </div>
           <div className="text-[10px] font-mono text-zinc-400 mt-1 flex items-center gap-1.5">
-            <span className="text-rose-400">{criticalIncidents.length} crit</span>
-            <span>•</span>
-            <span className="text-amber-400">{highIncidents.length} high</span>
+            <span className="text-rose-400 font-medium">{criticalIncidents.length} crit</span>
+            <span className="text-zinc-600">•</span>
+            <span className="text-amber-400 font-medium">{highIncidents.length} high</span>
           </div>
         </div>
 
         {/* Agent Telemetry Pulse */}
-        <div className="p-4 rounded-xl bg-zinc-900/70 border border-zinc-800/80 flex flex-col justify-between">
+        <div className="p-4 rounded-xl storm-kpi-card flex flex-col justify-between">
           <div className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider flex items-center justify-between">
-            <span>Agent Link</span>
+            <span>Telemetry Link</span>
             <Activity className="w-3.5 h-3.5 text-emerald-400" />
           </div>
           <div className="text-2xl font-bold font-mono text-emerald-400 mt-2 flex items-center gap-2">
@@ -431,13 +435,16 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
               / {safeClusters.length}
             </span>
           </div>
-          <div className="text-[10px] font-mono text-zinc-500 mt-1">
+          <div className="text-[10px] font-mono text-zinc-400 mt-1">
             {metrics?.offlineAgents ? (
-              <span className="text-rose-400">{metrics.offlineAgents} agent(s) offline</span>
+              <span className="text-rose-400 font-medium">{metrics.offlineAgents} agent(s) offline</span>
             ) : (
-              <span className="text-emerald-400 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Telemetry live
+              <span className="text-emerald-400 flex items-center gap-1.5">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+                </span>
+                Stream live
               </span>
             )}
           </div>
@@ -446,17 +453,17 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
 
       {/* 3. Operational Attention Banner if Failing Resources or Critical Incidents */}
       {(crashingPods.length > 0 || degradedWorkloads.length > 0 || criticalIncidents.length > 0) && (
-        <div className="p-4 rounded-xl bg-rose-950/30 border border-rose-800/60 font-mono text-xs space-y-3">
-          <div className="flex items-center justify-between border-b border-rose-900/50 pb-2.5">
+        <div className="p-4 rounded-xl storm-critical-card font-mono text-xs space-y-3">
+          <div className="flex items-center justify-between border-b border-rose-500/30 pb-2.5">
             <div className="flex items-center gap-2 text-rose-300 font-bold">
               <ShieldAlert className="w-4 h-4 text-rose-400 animate-pulse" />
               <span>
-                IMMEDIATE OPERATOR ATTENTION REQUIRED • {crashingPods.length} FAILING PODS •{' '}
+                OPERATIONAL STORM ALERT • {crashingPods.length} FAILING PODS •{' '}
                 {criticalIncidents.length} CRITICAL INCIDENTS
               </span>
             </div>
-            <span className="text-[11px] text-rose-400/80 hidden sm:inline">
-              Automated correlation active
+            <span className="text-[11px] text-rose-300/80 hidden sm:inline">
+              Automated telemetry correlation active
             </span>
           </div>
 
@@ -464,11 +471,11 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
             {crashingPods.slice(0, 4).map((p) => (
               <div
                 key={p.id}
-                className="p-2.5 rounded-lg bg-zinc-950/80 border border-rose-900/40 flex items-center justify-between gap-3"
+                className="p-3 rounded-lg bg-[#070b16]/90 border border-rose-500/30 flex items-center justify-between gap-3 shadow-xs"
               >
                 <div className="truncate">
                   <div className="font-bold text-rose-300 truncate">{p.name}</div>
-                  <div className="text-[10px] text-zinc-500">
+                  <div className="text-[10px] text-zinc-400 mt-0.5">
                     {p.namespace} • <span className="text-rose-400 font-semibold">{p.status}</span> •{' '}
                     {p.containers?.reduce((acc, c) => acc + (c.restartCount || 0), 0) || 0} restarts
                   </div>
@@ -476,9 +483,9 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
                 {p.clusterId && (
                   <button
                     onClick={() => onSelectCluster(p.clusterId)}
-                    className="px-2 py-1 rounded bg-rose-950 text-rose-200 border border-rose-800 text-[10px] hover:bg-rose-900 transition-colors shrink-0"
+                    className="px-2.5 py-1 rounded bg-rose-950/80 text-rose-200 border border-rose-700/60 text-[10px] hover:bg-rose-900 transition-colors shrink-0 cursor-pointer"
                   >
-                    Inspect in Cluster →
+                    Inspect →
                   </button>
                 )}
               </div>
@@ -492,13 +499,13 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
         {/* Left Column (7 cols): Connected Clusters Fleet */}
         <div className="lg:col-span-7 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-zinc-200 font-mono uppercase tracking-wider flex items-center gap-2">
+            <h2 className="text-sm font-bold text-white font-mono uppercase tracking-wider flex items-center gap-2">
               <Server className="w-4 h-4 text-sky-400" />
-              <span>Kubernetes Fleet Status ({safeClusters.length})</span>
+              <span>Fleet Matrix ({safeClusters.length})</span>
             </h2>
             <button
               onClick={onOpenAddCluster}
-              className="text-xs font-mono text-sky-400 hover:text-sky-300 flex items-center gap-1"
+              className="text-xs font-mono text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer transition-colors"
             >
               <span>+ Connect New</span>
             </button>
@@ -511,7 +518,7 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
               action={{ label: 'Connect Cluster', onClick: onOpenAddCluster }}
             />
           ) : (
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-800/80">
+            <div className="storm-card rounded-xl overflow-hidden divide-y divide-sky-500/10">
               {safeClusters.map((cluster) => {
                 const clusterPods = allPods.filter((p) => p.clusterId === cluster.id);
                 const clusterCrashing = clusterPods.filter(
@@ -528,15 +535,15 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
                   <div
                     key={cluster.id}
                     onClick={() => onSelectCluster(cluster.id)}
-                    className="p-4 hover:bg-zinc-850/60 transition-colors cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-mono text-xs"
+                    className="p-4 hover:bg-sky-950/25 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-mono text-xs group"
                   >
                     <div className="space-y-1.5 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-sm text-zinc-100 font-mono truncate">
+                        <span className="font-bold text-sm text-zinc-100 font-mono truncate group-hover:text-sky-300 transition-colors">
                           {cluster.name}
                         </span>
                         {cluster.isSimulated && (
-                          <span className="text-[9px] font-mono bg-zinc-800 text-zinc-400 px-1 rounded border border-zinc-700">
+                          <span className="text-[9px] font-mono bg-sky-950/60 text-sky-300 px-1.5 py-0.5 rounded border border-sky-800/60">
                             TEST
                           </span>
                         )}
@@ -582,7 +589,7 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
                           Heartbeat: {formatTimeAgo(cluster.lastHeartbeat || cluster.lastHeartbeatAt)}
                         </div>
                       </div>
-                      <ChevronRight className="w-4 h-4 text-zinc-600" />
+                      <ChevronRight className="w-4 h-4 text-zinc-600 group-hover:text-sky-400 transition-colors" />
                     </div>
                   </div>
                 );
@@ -594,19 +601,19 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
         {/* Right Column (5 cols): Active Incident Triage Feed */}
         <div className="lg:col-span-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-zinc-200 font-mono uppercase tracking-wider flex items-center gap-2">
+            <h2 className="text-sm font-bold text-white font-mono uppercase tracking-wider flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-400" />
               <span>Incident Radar ({displayedIncidents.length})</span>
             </h2>
           </div>
 
           {/* Sub-tabs for incident filtering */}
-          <div className="flex items-center gap-1 border-b border-zinc-800 pb-2 text-xs font-mono">
+          <div className="flex items-center gap-1 border-b border-sky-500/15 pb-2 text-xs font-mono">
             <button
               onClick={() => setActiveIncidentTab('all')}
-              className={`px-2.5 py-1 rounded transition-colors ${
+              className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
                 activeIncidentTab === 'all'
-                  ? 'bg-zinc-800 text-zinc-100 font-bold'
+                  ? 'bg-sky-950/80 text-sky-200 border border-sky-500/40 font-bold'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
@@ -614,9 +621,9 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
             </button>
             <button
               onClick={() => setActiveIncidentTab('critical')}
-              className={`px-2.5 py-1 rounded transition-colors ${
+              className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
                 activeIncidentTab === 'critical'
-                  ? 'bg-rose-950 text-rose-300 font-bold border border-rose-800'
+                  ? 'bg-rose-950/80 text-rose-300 font-bold border border-rose-500/50'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
@@ -624,9 +631,9 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
             </button>
             <button
               onClick={() => setActiveIncidentTab('high')}
-              className={`px-2.5 py-1 rounded transition-colors ${
+              className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
                 activeIncidentTab === 'high'
-                  ? 'bg-amber-950 text-amber-300 font-bold border border-amber-800'
+                  ? 'bg-amber-950/80 text-amber-300 font-bold border border-amber-500/50'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
@@ -634,9 +641,9 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
             </button>
             <button
               onClick={() => setActiveIncidentTab('in_progress')}
-              className={`px-2.5 py-1 rounded transition-colors ${
+              className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
                 activeIncidentTab === 'in_progress'
-                  ? 'bg-purple-950 text-purple-300 font-bold border border-purple-800'
+                  ? 'bg-purple-950/80 text-purple-300 font-bold border border-purple-500/50'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
@@ -645,7 +652,7 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
           </div>
 
           {displayedIncidents.length === 0 ? (
-            <div className="p-8 border border-zinc-800/80 rounded-xl bg-zinc-900/30 text-center font-mono text-xs">
+            <div className="p-8 border border-sky-500/15 rounded-xl storm-card text-center font-mono text-xs">
               <ShieldCheck className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
               <div className="font-bold text-zinc-200">No active incidents in this filter</div>
               <div className="text-zinc-500 mt-1">
@@ -653,23 +660,23 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
               </div>
             </div>
           ) : (
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-800/70 font-mono text-xs">
+            <div className="storm-card rounded-xl overflow-hidden divide-y divide-sky-500/10 font-mono text-xs">
               {displayedIncidents.slice(0, 6).map((inc) => (
                 <div
                   key={inc.id}
                   onClick={() => onSelectIncident(inc.id)}
-                  className="p-3.5 hover:bg-zinc-850/60 transition-colors cursor-pointer space-y-2"
+                  className="p-3.5 hover:bg-sky-950/25 transition-all cursor-pointer space-y-2 group"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-sky-400">{inc.id}</span>
+                      <span className="font-bold text-sky-400 group-hover:text-sky-300">{inc.id}</span>
                       <SeverityBadge severity={inc.severity} size="sm" />
                       <StatusBadge status={inc.status} size="sm" />
                     </div>
                     <span className="text-[10px] text-zinc-500">{formatTimeAgo(inc.lastSeenAt)}</span>
                   </div>
 
-                  <div className="font-semibold text-zinc-200 truncate">{inc.title}</div>
+                  <div className="font-semibold text-zinc-200 truncate group-hover:text-white transition-colors">{inc.title}</div>
 
                   <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 truncate">
                     <span className="text-zinc-500">cluster:</span>
@@ -689,10 +696,10 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
 
       {/* 5. Fleet Infrastructure Health & Pressure Breakdown */}
       <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800/80 pb-3">
-          <h2 className="text-sm font-bold text-zinc-200 font-mono uppercase tracking-wider flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-sky-500/15 pb-3">
+          <h2 className="text-sm font-bold text-white font-mono uppercase tracking-wider flex items-center gap-2">
             <Activity className="w-4 h-4 text-sky-400" />
-            <span>Infrastructure Resource Pressure & Node Diagnostics</span>
+            <span>Resource Pressure & Node Diagnostics</span>
           </h2>
           <div className="text-xs font-mono text-zinc-400">
             Evaluating {filteredNodes.length} nodes across {safeClusters.length} clusters
@@ -701,9 +708,9 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs">
           {/* Node Health Card */}
-          <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 space-y-3">
+          <div className="p-4 rounded-xl storm-card space-y-3">
             <div className="flex items-center justify-between text-zinc-300">
-              <span className="font-bold text-sm flex items-center gap-2">
+              <span className="font-bold text-sm flex items-center gap-2 text-white">
                 <Cpu className="w-4 h-4 text-sky-400" />
                 Node Availability
               </span>
@@ -732,11 +739,11 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
           </div>
 
           {/* Pod Failure Diagnostics Card */}
-          <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 space-y-3">
+          <div className="p-4 rounded-xl storm-card space-y-3">
             <div className="flex items-center justify-between text-zinc-300">
-              <span className="font-bold text-sm flex items-center gap-2">
+              <span className="font-bold text-sm flex items-center gap-2 text-white">
                 <Boxes className="w-4 h-4 text-violet-400" />
-                Pod Health Diagnostics
+                Pod Diagnostics
               </span>
               <span className="text-[11px] text-zinc-500">{filteredPods.length} Total</span>
             </div>
@@ -763,11 +770,11 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
           </div>
 
           {/* Workload Controllers Card */}
-          <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 space-y-3">
+          <div className="p-4 rounded-xl storm-card space-y-3">
             <div className="flex items-center justify-between text-zinc-300">
-              <span className="font-bold text-sm flex items-center gap-2">
+              <span className="font-bold text-sm flex items-center gap-2 text-white">
                 <Layers className="w-4 h-4 text-emerald-400" />
-                Workload Controllers
+                Controllers & Storage
               </span>
               <span className="text-[11px] text-zinc-500">{filteredWorkloads.length} Total</span>
             </div>
@@ -785,9 +792,9 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
                 </strong>
               </div>
               <div className="flex justify-between text-zinc-400">
-                <span>Storage / PVC Bound:</span>
+                <span>PVC Volumes:</span>
                 <span className="text-zinc-300">
-                  {safeResources.filter((r) => r.kind === 'PersistentVolumeClaim').length} PVCs Tracked
+                  {safeResources.filter((r) => r.kind === 'PersistentVolumeClaim').length} Tracked
                 </span>
               </div>
             </div>
@@ -797,12 +804,12 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
 
       {/* 6. Recent Audit & Activity Stream */}
       <div className="space-y-3">
-        <h2 className="text-sm font-bold text-zinc-200 font-mono uppercase tracking-wider flex items-center gap-2">
+        <h2 className="text-sm font-bold text-white font-mono uppercase tracking-wider flex items-center gap-2">
           <Activity className="w-4 h-4 text-sky-400" />
           <span>Operational Audit & Incident Event Stream</span>
         </h2>
 
-        <div className="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4">
+        <div className="storm-card rounded-xl p-4">
           {safeActivity.length === 0 ? (
             <div className="text-xs font-mono text-zinc-500 py-2">
               No audit events recorded in this session.
@@ -812,17 +819,17 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
               {safeActivity.slice(0, 8).map((act) => (
                 <div
                   key={act.id}
-                  className="flex items-start gap-3 text-zinc-300 pb-2 border-b border-zinc-800/40 last:border-0"
+                  className="flex items-start gap-3 text-zinc-300 pb-2 border-b border-sky-500/10 last:border-0"
                 >
                   <span className="text-zinc-500 text-[11px] shrink-0">{formatTimeAgo(act.timestamp)}</span>
-                  <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 text-[10px] shrink-0 border border-zinc-700">
+                  <span className="px-1.5 py-0.5 rounded bg-sky-950/60 text-sky-300 text-[10px] shrink-0 border border-sky-800/60">
                     {act.type}
                   </span>
                   <span className="text-zinc-300 flex-1">{act.description}</span>
                   {act.incidentId && (
                     <button
                       onClick={() => onSelectIncident(act.incidentId!)}
-                      className="text-sky-400 hover:text-sky-300 shrink-0 text-[11px] font-bold"
+                      className="text-sky-400 hover:text-sky-300 shrink-0 text-[11px] font-bold cursor-pointer"
                     >
                       {act.incidentId} →
                     </button>

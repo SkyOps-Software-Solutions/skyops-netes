@@ -89,10 +89,13 @@ export const InvitationAcceptanceModal: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 backdrop-blur-md">
-      <div className="bg-zinc-950 border border-zinc-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl font-mono">
-        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-          <h3 className="text-sm font-bold text-zinc-100 flex items-center gap-2">
-            <Mail className="w-4 h-4 text-sky-400" />
+      <div className="bg-[#050914] border border-cyan-500/30 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl font-mono relative overflow-hidden electric-circuit-border">
+        {/* Top glowing electric bus line */}
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-sky-400 via-cyan-400 to-sky-300" />
+
+        <div className="flex items-center justify-between border-b border-cyan-500/15 pb-3">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Mail className="w-4 h-4 text-cyan-400" />
             Workspace Invitation
           </h3>
           {!accepted && (
@@ -122,7 +125,7 @@ export const InvitationAcceptanceModal: React.FC = () => {
               <CheckCircle2 className="w-6 h-6" />
             </div>
             <div>
-              <h4 className="text-sm font-bold text-zinc-100">Welcome to {invInfo?.orgName}!</h4>
+              <h4 className="text-sm font-bold text-white">Welcome to {invInfo?.orgName}!</h4>
               <p className="text-zinc-400 text-xs mt-1">
                 Your workspace membership is active. Initializing tenant context...
               </p>
@@ -132,17 +135,17 @@ export const InvitationAcceptanceModal: React.FC = () => {
           <div className="space-y-4 text-xs">
             <p className="text-zinc-300 leading-relaxed">
               You have been invited to join the enterprise workspace{' '}
-              <span className="text-sky-400 font-bold">{invInfo.orgName}</span>.
+              <span className="text-cyan-400 font-bold">{invInfo.orgName}</span>.
             </p>
 
-            <div className="p-3 bg-zinc-900 border border-zinc-800 rounded-lg space-y-2 text-[11px]">
+            <div className="p-3 bg-[#02050b] border border-cyan-500/20 rounded-lg space-y-2 text-[11px]">
               <div className="flex justify-between">
                 <span className="text-zinc-500">Target Email:</span>
                 <span className="text-zinc-200">{invInfo.email}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-zinc-500">Assigned Role:</span>
-                <span className="text-sky-400 font-bold">{invInfo.role}</span>
+                <span className="text-cyan-400 font-bold">{invInfo.role}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-zinc-500">Expires:</span>
@@ -171,7 +174,7 @@ export const InvitationAcceptanceModal: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex items-center gap-2 pt-2 border-t border-zinc-800">
+                <div className="flex items-center gap-2 pt-2 border-t border-cyan-500/15">
                   <Button variant="outline" size="sm" onClick={handleDismiss} disabled={accepting} className="w-full">
                     Decline
                   </Button>

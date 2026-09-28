@@ -11,11 +11,14 @@ import {
   Loader2,
   Lock,
   Mail,
+  Network,
   Server,
-  User as UserIcon
+  User as UserIcon,
+  Zap
 } from 'lucide-react';
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { ElectricCircuitBackground } from '../landing/ElectricCircuitBackground';
 
 interface AuthViewProps {
   initialMode?: 'signin' | 'signup';
@@ -122,33 +125,50 @@ export const AuthView: React.FC<AuthViewProps> = ({
       errorMessage.includes('auth/unauthorized-domain'));
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex flex-col justify-between text-zinc-100 font-sans selection:bg-sky-500/30 selection:text-sky-200">
-      {/* Top Bar */}
-      <header className="p-6 max-w-7xl w-full mx-auto flex items-center justify-between">
+    <div className="min-h-screen bg-[#02050d] flex flex-col justify-between text-zinc-100 font-sans selection:bg-cyan-500/30 selection:text-cyan-100 relative overflow-hidden">
+      {/* Dynamic Electric Circuit Background */}
+      <ElectricCircuitBackground />
+
+      {/* Top Header */}
+      <header className="relative z-10 p-6 max-w-7xl w-full mx-auto flex items-center justify-between border-b border-cyan-500/10 backdrop-blur-md bg-[#02050d]/60">
         <button
           onClick={onBackToHome}
-          className="flex items-center gap-2 text-xs font-mono text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer group"
+          className="flex items-center gap-2 text-xs font-mono text-zinc-400 hover:text-cyan-300 transition-colors cursor-pointer group"
         >
           <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-          Back to Home
+          <span>Back to Home</span>
         </button>
 
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-500 to-sky-700 flex items-center justify-center text-zinc-950 font-black">
-            <Server className="w-4 h-4 text-white" />
+        <a
+          href="/"
+          onClick={(e) => {
+            e.preventDefault();
+            onBackToHome();
+          }}
+          className="flex items-center gap-2.5 text-white hover:text-cyan-300 transition-colors cursor-pointer"
+        >
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center text-zinc-950 shadow-md shadow-sky-500/25">
+            <Network className="w-4 h-4 text-white" />
           </div>
-          <span className="text-sm font-bold tracking-tight text-zinc-200">SkyOps</span>
-        </div>
+          <span className="text-sm font-bold tracking-tight">SkyOps</span>
+        </a>
       </header>
 
       {/* Main Container */}
-      <main className="flex-1 flex items-center justify-center px-4 py-8">
+      <main className="relative z-10 flex-1 flex items-center justify-center px-4 py-10">
         <div className="w-full max-w-md space-y-6">
-          {/* Card Container */}
-          <div className="p-8 rounded-2xl bg-zinc-900/60 border border-zinc-800 shadow-2xl backdrop-blur-sm space-y-6">
+          {/* Card Container with Electric Border and Glow */}
+          <div className="p-8 rounded-2xl bg-[#060c18]/90 border border-cyan-500/25 shadow-2xl shadow-cyan-950/80 backdrop-blur-2xl space-y-6 relative overflow-hidden electric-circuit-border">
+            {/* Top glowing electric bus line */}
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-sky-400 via-cyan-400 to-sky-300" />
+
             {/* Header */}
             <div className="text-center space-y-1.5">
-              <h1 className="text-2xl font-bold tracking-tight text-zinc-100">
+              <div className="inline-flex items-center gap-1.5 text-[11px] font-mono text-cyan-400 font-semibold uppercase tracking-wider mb-1">
+                <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Enterprise Identity Bus</span>
+              </div>
+              <h1 className="text-2xl font-bold tracking-tight text-white">
                 {mode === 'signup'
                   ? 'Create SkyOps Account'
                   : mode === 'forgot'
@@ -164,6 +184,40 @@ export const AuthView: React.FC<AuthViewProps> = ({
               </p>
             </div>
 
+            {/* Mode Switcher Tabs */}
+            {mode !== 'forgot' && (
+              <div className="grid grid-cols-2 p-1 bg-[#02050b] rounded-xl border border-cyan-500/15">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('signin');
+                    setLocalError(null);
+                  }}
+                  className={`py-2 text-xs font-mono font-medium rounded-lg transition-all cursor-pointer ${
+                    mode === 'signin'
+                      ? 'bg-gradient-to-r from-sky-500/20 to-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold shadow-xs'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('signup');
+                    setLocalError(null);
+                  }}
+                  className={`py-2 text-xs font-mono font-medium rounded-lg transition-all cursor-pointer ${
+                    mode === 'signup'
+                      ? 'bg-gradient-to-r from-sky-500/20 to-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold shadow-xs'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  Create Account
+                </button>
+              </div>
+            )}
+
             {/* Unauthorized Domain Specific Alert */}
             {isUnauthorizedDomain ? (
               <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-800/80 text-amber-200 text-xs font-mono space-y-3">
@@ -174,12 +228,12 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 <p className="text-[11px] text-zinc-300 leading-relaxed">
                   Google OAuth requires adding this app's preview host to your Firebase Console (<strong>Authentication &gt; Settings &gt; Authorized Domains</strong>):
                 </p>
-                <div className="flex items-center justify-between bg-zinc-950 px-2.5 py-1.5 rounded border border-zinc-800 text-[11px] text-zinc-300 font-mono">
+                <div className="flex items-center justify-between bg-[#02050b] px-2.5 py-1.5 rounded border border-zinc-800 text-[11px] text-zinc-300 font-mono">
                   <span className="truncate mr-2">{currentHostname}</span>
                   <button
                     type="button"
                     onClick={handleCopyDomain}
-                    className="text-sky-400 hover:text-sky-300 shrink-0 flex items-center gap-1 font-semibold cursor-pointer"
+                    className="text-cyan-400 hover:text-cyan-300 shrink-0 flex items-center gap-1 font-semibold cursor-pointer"
                   >
                     {copiedDomain ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                     <span>{copiedDomain ? 'Copied!' : 'Copy'}</span>
@@ -221,7 +275,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                     }
                   }}
                   disabled={submitting}
-                  className="w-full py-2.5 px-4 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 rounded-xl text-xs font-mono font-medium text-zinc-200 flex items-center justify-center gap-3 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                  className="w-full py-2.5 px-4 bg-[#03060d] hover:bg-[#080f1e] border border-cyan-500/20 hover:border-cyan-500/40 rounded-xl text-xs font-mono font-medium text-zinc-100 flex items-center justify-center gap-3 transition-all cursor-pointer shadow-xs disabled:opacity-50"
                 >
                   <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
                     <path
@@ -245,8 +299,8 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 </button>
 
                 <div className="relative flex items-center justify-center py-2">
-                  <div className="border-t border-zinc-800 w-full" />
-                  <span className="bg-zinc-900 px-3 text-[11px] font-mono text-zinc-500 uppercase tracking-wider absolute">
+                  <div className="border-t border-cyan-500/10 w-full" />
+                  <span className="bg-[#060c18] px-3 text-[11px] font-mono text-zinc-400 uppercase tracking-wider absolute">
                     or with work email
                   </span>
                 </div>
@@ -259,17 +313,17 @@ export const AuthView: React.FC<AuthViewProps> = ({
               {mode === 'signup' && (
                 <div>
                   <label className="block text-xs font-mono font-medium text-zinc-300 mb-1.5">
-                    Organization / Workspace Name <span className="text-rose-400">*</span>
+                    Organization / Workspace Name <span className="text-cyan-400">*</span>
                   </label>
                   <div className="relative">
-                    <Building2 className="w-4 h-4 text-zinc-500 absolute left-3 top-2.5" />
+                    <Building2 className="w-4 h-4 text-cyan-400 absolute left-3 top-2.5" />
                     <input
                       type="text"
                       required
                       placeholder="e.g. Acme Cloud Engineering"
                       value={orgName}
                       onChange={(e) => setOrgName(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 text-xs bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-sky-500 font-mono"
+                      className="w-full pl-9 pr-3 py-2 text-xs bg-[#02050b] border border-cyan-500/20 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/30 font-mono transition-all"
                     />
                   </div>
                 </div>
@@ -288,7 +342,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                       placeholder="e.g. Alex Rivera"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 text-xs bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-sky-500 font-mono"
+                      className="w-full pl-9 pr-3 py-2 text-xs bg-[#02050b] border border-cyan-500/20 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/30 font-mono transition-all"
                     />
                   </div>
                 </div>
@@ -298,18 +352,18 @@ export const AuthView: React.FC<AuthViewProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs font-mono font-medium text-zinc-300">
-                    Work Email <span className="text-rose-400">*</span>
+                    Work Email <span className="text-cyan-400">*</span>
                   </label>
                 </div>
                 <div className="relative">
-                  <Mail className="w-4 h-4 text-zinc-500 absolute left-3 top-2.5" />
+                  <Mail className="w-4 h-4 text-cyan-400 absolute left-3 top-2.5" />
                   <input
                     type="email"
                     required
                     placeholder="name@company.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 text-xs bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-sky-500 font-mono"
+                    className="w-full pl-9 pr-3 py-2 text-xs bg-[#02050b] border border-cyan-500/20 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/30 font-mono transition-all"
                   />
                 </div>
               </div>
@@ -319,7 +373,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="block text-xs font-mono font-medium text-zinc-300">
-                      Password <span className="text-rose-400">*</span>
+                      Password <span className="text-cyan-400">*</span>
                     </label>
                     {mode === 'signin' && (
                       <button
@@ -328,21 +382,21 @@ export const AuthView: React.FC<AuthViewProps> = ({
                           setMode('forgot');
                           setLocalError(null);
                         }}
-                        className="text-[11px] font-mono text-sky-400 hover:text-sky-300 transition-colors"
+                        className="text-[11px] font-mono text-cyan-400 hover:text-cyan-300 transition-colors"
                       >
                         Forgot password?
                       </button>
                     )}
                   </div>
                   <div className="relative">
-                    <Lock className="w-4 h-4 text-zinc-500 absolute left-3 top-2.5" />
+                    <Lock className="w-4 h-4 text-cyan-400 absolute left-3 top-2.5" />
                     <input
                       type="password"
                       required
                       placeholder="••••••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 text-xs bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-sky-500 font-mono"
+                      className="w-full pl-9 pr-3 py-2 text-xs bg-[#02050b] border border-cyan-500/20 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/30 font-mono transition-all"
                     />
                   </div>
                 </div>
@@ -353,7 +407,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 type="submit"
                 id="auth-submit-btn"
                 disabled={submitting}
-                className="w-full py-2.5 px-4 bg-sky-500 hover:bg-sky-400 text-zinc-950 font-mono font-semibold text-xs rounded-xl shadow-lg shadow-sky-500/10 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 mt-2"
+                className="w-full py-2.5 px-4 bg-gradient-to-r from-sky-400 via-cyan-400 to-sky-300 hover:from-sky-300 hover:to-cyan-200 text-zinc-950 font-mono font-bold text-xs rounded-xl shadow-lg shadow-cyan-500/25 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 mt-2"
               >
                 {submitting ? (
                   <>
@@ -380,7 +434,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
             </form>
 
             {/* Toggle Modes */}
-            <div className="pt-2 border-t border-zinc-800/80 text-center text-xs font-mono text-zinc-400">
+            <div className="pt-2 border-t border-cyan-500/10 text-center text-xs font-mono text-zinc-400">
               {mode === 'signup' ? (
                 <div>
                   Already have an account?{' '}
@@ -389,7 +443,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                       setMode('signin');
                       setLocalError(null);
                     }}
-                    className="text-sky-400 hover:text-sky-300 font-semibold cursor-pointer underline"
+                    className="text-cyan-400 hover:text-cyan-300 font-semibold cursor-pointer underline"
                   >
                     Sign In
                   </button>
@@ -402,7 +456,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                       setMode('signin');
                       setLocalError(null);
                     }}
-                    className="text-sky-400 hover:text-sky-300 font-semibold cursor-pointer underline"
+                    className="text-cyan-400 hover:text-cyan-300 font-semibold cursor-pointer underline"
                   >
                     Back to Sign In
                   </button>
@@ -415,7 +469,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                       setMode('signup');
                       setLocalError(null);
                     }}
-                    className="text-sky-400 hover:text-sky-300 font-semibold cursor-pointer underline"
+                    className="text-cyan-400 hover:text-cyan-300 font-semibold cursor-pointer underline"
                   >
                     Create Account & Organization
                   </button>
@@ -428,10 +482,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
       {/* Google Org Prompt Modal */}
       {showGoogleOrgModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[#060c18] border border-cyan-500/30 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl electric-circuit-border">
             <div className="space-y-1">
-              <h3 className="text-sm font-bold text-zinc-100">Set Up Your Organization Name</h3>
+              <h3 className="text-sm font-bold text-white">Set Up Your Organization Name</h3>
               <p className="text-xs font-mono text-zinc-400">
                 To complete your Google sign up, specify your team workspace or organization name.
               </p>
@@ -447,11 +501,11 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 placeholder="e.g. Acme DevOps"
                 value={googleOrgName}
                 onChange={(e) => setGoogleOrgName(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-sky-500 font-mono"
+                className="w-full px-3 py-2 text-xs bg-[#02050b] border border-cyan-500/20 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-400 font-mono"
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-zinc-800">
+            <div className="flex justify-end gap-2 pt-2 border-t border-cyan-500/10">
               <button
                 type="button"
                 onClick={() => setShowGoogleOrgModal(false)}
@@ -463,7 +517,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 type="button"
                 onClick={() => handleGoogleAuth(googleOrgName.trim() || 'My Workspace')}
                 disabled={submitting}
-                className="px-4 py-1.5 text-xs font-mono font-semibold bg-sky-500 hover:bg-sky-400 text-zinc-950 rounded-lg flex items-center gap-1.5"
+                className="px-4 py-1.5 text-xs font-mono font-bold bg-gradient-to-r from-sky-400 to-cyan-400 text-zinc-950 rounded-lg flex items-center gap-1.5 shadow-sm shadow-cyan-500/25"
               >
                 {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Continue to SkyOps'}
               </button>
@@ -473,7 +527,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
       )}
 
       {/* Footer */}
-      <footer className="p-6 text-center text-xs font-mono text-zinc-600">
+      <footer className="relative z-10 p-6 text-center text-xs font-mono text-zinc-500 border-t border-cyan-500/10 backdrop-blur-md bg-[#02050d]/60">
         SkyOps • High-Assurance Kubernetes Observability
       </footer>
     </div>

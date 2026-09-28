@@ -81,21 +81,24 @@ export const Footer: React.FC<FooterProps> = ({
   return (
     <footer
       id="skyops-main-footer"
-      className={`border-t border-zinc-800/80 bg-zinc-950 text-zinc-300 font-sans selection:bg-sky-500/30 selection:text-sky-200 ${className}`}
+      className={`border-t border-cyan-500/20 bg-[#02050d] text-zinc-300 font-sans selection:bg-cyan-500/30 selection:text-cyan-100 relative ${className}`}
     >
+      {/* Top glowing electric conduit line */}
+      <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-400/40 to-transparent" />
+
       <div className="max-w-7xl mx-auto px-6 lg:px-12 pt-16 pb-12">
         {/* Main 5-Column Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 lg:gap-8 mb-12">
           {/* Column 1: Brand & Identity */}
           <div className="lg:col-span-2 space-y-4">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-sky-700 flex items-center justify-center text-zinc-950 shadow-md shadow-sky-950/50">
-                <Server className="w-4 h-4 text-white" />
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center text-zinc-950 shadow-md shadow-sky-500/25">
+                <Network className="w-4 h-4 text-white" />
               </div>
               <div>
-                <span className="text-base font-bold tracking-tight text-zinc-100 flex items-center gap-2">
+                <span className="text-base font-bold tracking-tight text-white flex items-center gap-2">
                   SkyOps
-                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-zinc-800 text-sky-400 border border-zinc-700">
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#060c18] text-cyan-400 border border-cyan-500/30">
                     v1.5
                   </span>
                 </span>
@@ -111,9 +114,9 @@ export const Footer: React.FC<FooterProps> = ({
 
             {/* Customer-Oriented Helpful CTA Block */}
             <div className="pt-2">
-              <div className="rounded-xl bg-zinc-900/60 border border-zinc-800/80 p-4 space-y-2.5 max-w-sm">
-                <div className="flex items-center gap-2 text-xs font-mono font-bold text-zinc-200">
-                  <Terminal className="w-3.5 h-3.5 text-sky-400" />
+              <div className="rounded-xl bg-[#060c18]/90 border border-cyan-500/20 p-4 space-y-2.5 max-w-sm electric-circuit-border">
+                <div className="flex items-center gap-2 text-xs font-mono font-bold text-white">
+                  <Terminal className="w-3.5 h-3.5 text-cyan-400" />
                   Need help connecting your cluster?
                 </div>
                 <p className="text-[11px] text-zinc-400 leading-normal">
@@ -131,7 +134,7 @@ export const Footer: React.FC<FooterProps> = ({
                         onOpenDoc('quickstart');
                       }
                     }}
-                    className="text-xs font-mono font-bold text-sky-400 hover:text-sky-300 inline-flex items-center gap-1 transition-colors cursor-pointer group"
+                    className="text-xs font-mono font-bold text-cyan-400 hover:text-cyan-300 inline-flex items-center gap-1 transition-colors cursor-pointer group"
                   >
                     <span>Get Started</span>
                     <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
@@ -140,7 +143,7 @@ export const Footer: React.FC<FooterProps> = ({
                   <a
                     id="footer-cta-email-link"
                     href="mailto:skyopsnetes2000@gmail.com"
-                    className="text-xs font-mono text-zinc-400 hover:text-zinc-200 transition-colors"
+                    className="text-xs font-mono text-zinc-400 hover:text-white transition-colors"
                   >
                     Ask Support
                   </a>
@@ -398,7 +401,7 @@ export const Footer: React.FC<FooterProps> = ({
                   <a
                     id="footer-support-email-link"
                     href="mailto:skyopsnetes2000@gmail.com"
-                    className="text-sky-400 hover:text-sky-300 transition-colors break-all flex items-center gap-1.5"
+                    className="text-cyan-400 hover:text-cyan-300 transition-colors break-all flex items-center gap-1.5"
                   >
                     <Mail className="w-3.5 h-3.5 shrink-0" />
                     <span>skyopsnetes2000@gmail.com</span>

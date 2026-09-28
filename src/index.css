@@ -87,171 +87,307 @@ body,
   background: rgba(161, 161, 170, 0.38);
 }
 
-/* 
+/*
  * =========================================================
- * ELECTRIC INFRASTRUCTURE INTELLIGENCE - VISUAL UTILITIES
- * Subtle electrical conduits, grid geometry, and energy glow
- * Strictly BLACK + BLUE + WHITE design language
+ * SKYOPS LIVE ANIMATION ENGINE
+ * Sophisticated continuous ambient infrastructure intelligence
  * =========================================================
  */
 
-.electric-grid-bg {
-  background-image: 
-    linear-gradient(to right, rgba(56, 189, 248, 0.04) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(56, 189, 248, 0.04) 1px, transparent 1px);
-  background-size: 36px 36px;
-}
-
-.electric-circuit-border {
-  border: 1px solid rgba(56, 189, 248, 0.2);
-  box-shadow: 0 0 20px -2px rgba(14, 165, 233, 0.08), inset 0 0 15px -3px rgba(14, 165, 233, 0.03);
-}
-
-.electric-circuit-border-active {
-  border: 1px solid rgba(56, 189, 248, 0.45);
-  box-shadow: 0 0 25px -2px rgba(14, 165, 233, 0.22), inset 0 0 15px -2px rgba(14, 165, 233, 0.08);
-}
-
-.electric-glass-card {
-  background: rgba(6, 11, 22, 0.88);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(56, 189, 248, 0.18);
-  box-shadow: 0 20px 40px -15px rgba(2, 6, 23, 0.9), 0 0 25px -5px rgba(14, 165, 233, 0.06);
-}
-
-.electric-focus-glow:focus {
-  outline: none;
-  border-color: rgba(56, 189, 248, 0.6);
-  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.4), 0 0 16px -2px rgba(14, 165, 233, 0.3);
-}
-
-@keyframes conduit-dash {
-  to {
-    stroke-dashoffset: -40;
+/* 1. Living Cosmic Atmosphere Clouds */
+@keyframes cosmicCloudBlue {
+  0% {
+    transform: translate3d(calc(var(--parallax-blue-x, 0px)), calc(var(--parallax-blue-y, 0px)), 0) scale(1);
+    opacity: 0.38;
+  }
+  50% {
+    transform: translate3d(calc(var(--parallax-blue-x, 0px) + 24px), calc(var(--parallax-blue-y, 0px) - 20px), 0) scale(1.14);
+    opacity: 0.54;
+  }
+  100% {
+    transform: translate3d(calc(var(--parallax-blue-x, 0px) - 18px), calc(var(--parallax-blue-y, 0px) + 16px), 0) scale(1.05);
+    opacity: 0.42;
   }
 }
 
-.conduit-flow-active {
-  stroke-dasharray: 6 4;
-  animation: conduit-dash 1.2s linear infinite;
+@keyframes cosmicCloudViolet {
+  0% {
+    transform: translate3d(calc(var(--parallax-violet-x, 0px)), calc(var(--parallax-violet-y, 0px)), 0) scale(1.08);
+    opacity: 0.24;
+  }
+  50% {
+    transform: translate3d(calc(var(--parallax-violet-x, 0px) - 28px), calc(var(--parallax-violet-y, 0px) + 26px), 0) scale(0.95);
+    opacity: 0.38;
+  }
+  100% {
+    transform: translate3d(calc(var(--parallax-violet-x, 0px) + 22px), calc(var(--parallax-violet-y, 0px) - 16px), 0) scale(1.1);
+    opacity: 0.28;
+  }
 }
 
-@keyframes electric-pulse-glow {
+@keyframes cosmicCloudCyan {
+  0% {
+    transform: translate3d(calc(var(--parallax-cyan-x, 0px)), calc(var(--parallax-cyan-y, 0px)), 0) scale(1);
+    opacity: 0.16;
+  }
+  50% {
+    transform: translate3d(calc(var(--parallax-cyan-x, 0px) + 16px), calc(var(--parallax-cyan-y, 0px) + 18px), 0) scale(1.18);
+    opacity: 0.3;
+  }
+  100% {
+    transform: translate3d(calc(var(--parallax-cyan-x, 0px) - 14px), calc(var(--parallax-cyan-y, 0px) - 10px), 0) scale(1.02);
+    opacity: 0.2;
+  }
+}
+
+.skyops-cosmic-cloud-blue {
+  animation: cosmicCloudBlue 32s ease-in-out infinite alternate;
+}
+
+.skyops-cosmic-cloud-violet {
+  animation: cosmicCloudViolet 45s ease-in-out infinite alternate;
+}
+
+.skyops-cosmic-cloud-cyan {
+  animation: cosmicCloudCyan 22s ease-in-out infinite alternate;
+}
+
+/* 2. Digital Signal Particles */
+@keyframes signalParticleDrift {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: var(--base-opacity, 0.25);
+  }
+  40% {
+    opacity: calc(var(--base-opacity, 0.25) * 2.3);
+  }
+  50% {
+    transform: translate3d(var(--drift-x, 12px), var(--drift-y, -14px), 0);
+  }
+  75% {
+    opacity: calc(var(--base-opacity, 0.25) * 1.5);
+  }
+  100% {
+    transform: translate3d(calc(var(--drift-x, 12px) * -0.6), calc(var(--drift-y, -14px) * -0.7), 0);
+    opacity: var(--base-opacity, 0.25);
+  }
+}
+
+.skyops-signal-particle {
+  animation: signalParticleDrift linear infinite alternate;
+  will-change: transform, opacity;
+}
+
+/* 3. Status Indicator Breathing (Cluster & Node Health) */
+@keyframes statusBreatheEmerald {
   0%, 100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 4.5px rgba(16, 185, 129, 0);
+  }
+}
+
+@keyframes statusBreatheAmber {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 0 5.5px rgba(245, 158, 11, 0);
+  }
+}
+
+@keyframes statusBreatheRose {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 6.5px rgba(244, 63, 94, 0);
+  }
+}
+
+.status-breathe-emerald {
+  animation: statusBreatheEmerald 3.4s ease-in-out infinite;
+}
+
+.status-breathe-amber {
+  animation: statusBreatheAmber 2.4s ease-in-out infinite;
+}
+
+.status-breathe-rose {
+  animation: statusBreatheRose 1.8s ease-in-out infinite;
+}
+
+/* 4. Localized Energy Disturbance for Critical Resources */
+@keyframes disturbanceRed {
+  0%, 100% {
+    box-shadow: 0 0 10px 1px rgba(244, 63, 94, 0.35), inset 0 0 8px rgba(244, 63, 94, 0.15);
+    border-color: rgba(244, 63, 94, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 22px 3px rgba(244, 63, 94, 0.65), inset 0 0 14px rgba(244, 63, 94, 0.28);
+    border-color: rgba(244, 63, 94, 0.95);
+  }
+}
+
+@keyframes disturbanceAmber {
+  0%, 100% {
+    box-shadow: 0 0 8px 1px rgba(245, 158, 11, 0.25);
+    border-color: rgba(245, 158, 11, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 16px 2px rgba(245, 158, 11, 0.5);
+    border-color: rgba(245, 158, 11, 0.8);
+  }
+}
+
+.animate-disturbance-red {
+  animation: disturbanceRed 2.4s ease-in-out infinite;
+}
+
+.animate-disturbance-amber {
+  animation: disturbanceAmber 2.8s ease-in-out infinite;
+}
+
+/* 5. AI Intelligence Animation Engine */
+@keyframes aiEnergyRotate {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    transform: rotate(180deg) scale(1.1);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+@keyframes aiConicSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes aiParticleInward {
+  0% {
+    transform: translate(var(--in-x, 24px), var(--in-y, 24px)) scale(0.5);
+    opacity: 0;
+  }
+  40% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(0, 0) scale(1.3);
+    opacity: 0;
+  }
+}
+
+@keyframes aiRingPulse {
+  0%, 100% {
+    transform: scale(1);
     opacity: 0.4;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.8;
+  }
+}
+
+@keyframes aiSparkleGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.6));
     transform: scale(1);
   }
   50% {
+    filter: drop-shadow(0 0 10px rgba(168, 85, 247, 0.9));
+    transform: scale(1.08);
+  }
+}
+
+.skyops-ai-energy-field {
+  animation: aiEnergyRotate 18s linear infinite;
+  will-change: transform;
+}
+
+.skyops-ai-conic-spin {
+  animation: aiConicSpin 24s linear infinite;
+  will-change: transform;
+}
+
+.skyops-ai-particle-inward {
+  animation: aiParticleInward 2.2s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+  will-change: transform, opacity;
+}
+
+.skyops-ai-ring-pulse {
+  animation: aiRingPulse 2.8s ease-in-out infinite;
+}
+
+.skyops-ai-sparkle-glow {
+  animation: aiSparkleGlow 2.5s ease-in-out infinite;
+}
+
+/* 6. Page View Transition (Subtle fade, opacity, translateY 4-8px) */
+@keyframes pageViewEnter {
+  0% {
     opacity: 0.9;
-    transform: scale(1.04);
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
-.electric-pulse-glow {
-  animation: electric-pulse-glow 3s ease-in-out infinite;
+.page-view-enter {
+  animation: pageViewEnter 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: opacity, transform;
 }
 
-/* 
- * =========================================================
- * STORM MISSION CONTROL - ENTERPRISE OPERATIONS SYSTEM
- * Visual language: "Mission control for infrastructure during a storm"
- * Deep storm dark canvas, atmospheric energy, electric cyan accents,
- * subtle indigo/violet AI neural highlights, and tactile SRE telemetry.
- * =========================================================
- */
-
-.storm-bg-canvas {
-  background-color: #030712;
-  background-image: 
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(14, 165, 233, 0.08), transparent),
-    radial-gradient(circle 800px at 100% 100%, rgba(15, 23, 42, 0.5), transparent);
-}
-
-.storm-atmospheric-overlay {
-  background-image: radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
-}
-
-.storm-card {
-  background: linear-gradient(180deg, rgba(10, 18, 36, 0.75) 0%, rgba(5, 10, 20, 0.85) 100%);
-  border: 1px solid rgba(56, 189, 248, 0.12);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 10px 25px -5px rgba(2, 6, 23, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.03);
-}
-
-.storm-card-hover {
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.storm-card-hover:hover {
-  border-color: rgba(56, 189, 248, 0.3);
-  box-shadow: 0 12px 30px -5px rgba(2, 6, 23, 0.8), 0 0 20px -4px rgba(14, 165, 233, 0.15);
-  transform: translateY(-1px);
-}
-
-.storm-kpi-card {
-  background: linear-gradient(180deg, rgba(8, 15, 30, 0.8) 0%, rgba(4, 8, 18, 0.9) 100%);
-  border: 1px solid rgba(56, 189, 248, 0.1);
-  position: relative;
-  overflow: hidden;
-}
-
-.storm-kpi-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.3), transparent);
-}
-
-.storm-critical-card {
-  background: linear-gradient(180deg, rgba(40, 10, 20, 0.4) 0%, rgba(20, 5, 12, 0.6) 100%);
-  border: 1px solid rgba(244, 63, 94, 0.3);
-  box-shadow: 0 10px 30px -10px rgba(225, 29, 72, 0.2), inset 0 0 15px -3px rgba(225, 29, 72, 0.05);
-}
-
-.storm-ai-card {
-  background: linear-gradient(180deg, rgba(25, 15, 45, 0.45) 0%, rgba(12, 8, 25, 0.65) 100%);
-  border: 1px solid rgba(168, 85, 247, 0.25);
-  box-shadow: 0 10px 30px -10px rgba(147, 51, 234, 0.15), inset 0 0 20px -5px rgba(168, 85, 247, 0.05);
-}
-
-.storm-radar-line {
-  background: linear-gradient(90deg, rgba(56, 189, 248, 0.4) 0%, rgba(56, 189, 248, 0) 100%);
-}
-
-@keyframes storm-lightning-pulse {
+/* 7. Footer Ambient Diffusion & Cosmic Movement */
+@keyframes footerCosmicDrift {
   0%, 100% {
-    opacity: 0.15;
-  }
-  48% {
-    opacity: 0.15;
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.16;
   }
   50% {
-    opacity: 0.8;
-  }
-  52% {
-    opacity: 0.3;
-  }
-  54% {
-    opacity: 0.9;
-  }
-  56% {
-    opacity: 0.15;
+    transform: translate3d(24px, -8px, 0) scale(1.08);
+    opacity: 0.28;
   }
 }
 
-.storm-lightning-flash {
-  animation: storm-lightning-pulse 8s ease-in-out infinite;
+.footer-cosmic-drift {
+  animation: footerCosmicDrift 30s ease-in-out infinite alternate;
+  will-change: transform, opacity;
 }
 
-.electric-active-tab {
-  background: linear-gradient(90deg, rgba(14, 165, 233, 0.15) 0%, rgba(14, 165, 233, 0.03) 100%);
-  border-left: 2px solid #38bdf8;
-  color: #7dd3fc;
-  box-shadow: inset 0 0 12px -2px rgba(14, 165, 233, 0.1);
+/* 8. Reduced Motion Respect (Zero Disruption Accessibility) */
+@media (prefers-reduced-motion: reduce) {
+  .skyops-cosmic-cloud-blue,
+  .skyops-cosmic-cloud-violet,
+  .skyops-cosmic-cloud-cyan,
+  .skyops-signal-particle,
+  .status-breathe-emerald,
+  .status-breathe-amber,
+  .status-breathe-rose,
+  .animate-disturbance-red,
+  .animate-disturbance-amber,
+  .skyops-ai-energy-field,
+  .skyops-ai-conic-spin,
+  .skyops-ai-particle-inward,
+  .skyops-ai-ring-pulse,
+  .skyops-ai-sparkle-glow,
+  .page-view-enter,
+  .footer-cosmic-drift {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .skyops-signal-particle {
+    display: none !important;
+  }
 }
 

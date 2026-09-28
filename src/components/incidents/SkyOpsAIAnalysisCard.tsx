@@ -25,6 +25,7 @@ import {
 import { api } from '../../api/client';
 import { Button } from '../common/UI';
 import { ProvenanceBadge } from '../common/Badges';
+import { SkyOpsIntelligenceProcessing } from '../common/SkyOpsIntelligenceProcessing';
 
 interface SkyOpsAIAnalysisCardProps {
   incidentId: string;
@@ -207,13 +208,10 @@ Ticket: ${analysis.incidentId}
 
       {/* Loading State */}
       {loading && !analysis && (
-        <div className="py-8 flex flex-col items-center justify-center gap-2 text-center">
-          <RefreshCw className="w-5 h-5 text-sky-400 animate-spin" />
-          <p className="text-xs font-semibold text-zinc-200 font-mono">Running SkyOps AI Reasoning Engine...</p>
-          <p className="text-[11px] text-zinc-400 font-mono">
-            Correlating Kubernetes telemetry, container states, exit codes, and events
-          </p>
-        </div>
+        <SkyOpsIntelligenceProcessing
+          title="✦ SKYOPS INTELLIGENCE"
+          subtitle="Analyzing infrastructure signals..."
+        />
       )}
 
       {/* Error Banner */}

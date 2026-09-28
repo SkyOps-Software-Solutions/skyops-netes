@@ -50,12 +50,21 @@ export function getPersistenceStore(): IPersistenceStore {
       process.env.VITE_FIREBASE_PROJECT_ID ||
       fallbackConfig.projectId;
 
-    const databaseId =
-      process.env.SKYOPS_FIRESTORE_DATABASE_ID ||
-      process.env.FIREBASE_DATABASE_ID ||
-      process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID ||
-      (fallbackConfig as any).firestoreDatabaseId ||
-      '(default)';
+    const namedDatabaseId =
+      (process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID && process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID !== '(default)'
+        ? process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID
+        : null) ||
+      ((fallbackConfig as any).firestoreDatabaseId && (fallbackConfig as any).firestoreDatabaseId !== '(default)'
+        ? (fallbackConfig as any).firestoreDatabaseId
+        : null) ||
+      (process.env.SKYOPS_FIRESTORE_DATABASE_ID && process.env.SKYOPS_FIRESTORE_DATABASE_ID !== '(default)'
+        ? process.env.SKYOPS_FIRESTORE_DATABASE_ID
+        : null) ||
+      (process.env.FIREBASE_DATABASE_ID && process.env.FIREBASE_DATABASE_ID !== '(default)'
+        ? process.env.FIREBASE_DATABASE_ID
+        : null);
+
+    const databaseId = namedDatabaseId || process.env.SKYOPS_FIRESTORE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID || '(default)';
 
     if (!projectId) {
       const errorMsg =
@@ -98,7 +107,7 @@ export function resetPersistenceStore(): void {
  * Validates that production persistence is correctly configured.
  * Enforces production persistence gates and initializes persistence store.
  */
-export function verifyProductionPersistence(): void {
+export async function verifyProductionPersistence(): Promise<void> {
   const isProd = process.env.NODE_ENV === 'production';
   const envProvider = process.env.PERSISTENCE_PROVIDER?.toLowerCase();
 
@@ -109,9 +118,11 @@ export function verifyProductionPersistence(): void {
   }
 
   const store = getPersistenceStore();
-  store.init().catch((err: any) => {
+  try {
+    await store.init();
+  } catch (err: any) {
     console.warn(`[Persistence] Notice: Initial store probe: ${err?.message || err}`);
-  });
+  }
 }
 
 export { resolvePersistenceConfig } from '../persistence';

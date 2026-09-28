@@ -59,7 +59,8 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
     const diffMin = Math.floor(diffSec / 60);
     if (diffMin < 60) return `${diffMin}m ago`;
     const diffHours = Math.floor(diffMin / 60);
-    return `${diffHours}h ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${Math.floor(diffHours / 24)}d ago`;
   };
 
   const safeIncidents = Array.isArray(incidents) ? incidents : [];
@@ -67,7 +68,6 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
 
   const filteredIncidents = safeIncidents.filter((inc) => {
     if (!inc) return false;
-    // Search
     const q = (searchTerm || '').toLowerCase().trim();
     const matchesSearch =
       !q ||
@@ -78,13 +78,8 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
       (inc.clusterName && inc.clusterName.toLowerCase().includes(q)) ||
       (inc.incidentType && inc.incidentType.toLowerCase().includes(q));
 
-    // Status
     const matchesStatus = statusFilter === 'ALL' || inc.status === statusFilter;
-
-    // Severity
     const matchesSeverity = severityFilter === 'ALL' || inc.severity === severityFilter;
-
-    // Cluster
     const matchesCluster = clusterFilter === 'ALL' || inc.clusterId === clusterFilter;
 
     return Boolean(matchesSearch && matchesStatus && matchesSeverity && matchesCluster);
@@ -101,18 +96,21 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
   };
 
   return (
-    <div className="p-8 space-y-6 max-w-7xl mx-auto">
+    <div className="p-6 lg:p-10 space-y-6 max-w-7xl mx-auto font-sans text-zinc-100">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-sky-500/15 pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/6 pb-5">
         <div>
-          <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2.5 font-mono">
-            <span className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.25)]">
-              <AlertTriangle className="w-5 h-5" />
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
+              <AlertTriangle className="w-5 h-5 text-amber-400" />
+              <span>Incident Investigation Workspace</span>
+            </h1>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              Deterministic Engine
             </span>
-            Deterministic Incident Tickets
-          </h1>
-          <p className="text-xs font-mono text-zinc-400 mt-1">
-            Deduplicated Kubernetes failure states, occurrence counters, and automated investigation telemetry
+          </div>
+          <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+            Deduplicated Kubernetes failure states, occurrence telemetry, and root-cause evidence
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -123,7 +121,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
               onClick={handleClearAll}
               disabled={loading || clearing}
               icon={<Trash2 className="w-3.5 h-3.5 text-zinc-400" />}
-              className="text-zinc-400 hover:text-rose-400 hover:border-rose-500/40"
+              className="text-zinc-400 hover:text-rose-400 hover:border-rose-900/60"
             >
               Clear All
             </Button>
@@ -133,8 +131,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
             size="sm"
             onClick={onRefresh}
             disabled={loading}
-            icon={<RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-sky-400' : 'text-zinc-400'}`} />}
-            className="border-sky-500/20 hover:border-sky-500/40 bg-[#081024]/60 hover:bg-[#0c1836] text-zinc-300"
+            icon={<RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-sky-400' : ''}`} />}
           >
             Refresh Incidents
           </Button>
@@ -142,17 +139,17 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
       </div>
 
       {/* Filter / Search Bar */}
-      <div className="storm-card rounded-xl p-4 space-y-3 font-mono text-xs">
+      <div className="cosmic-panel rounded-xl p-4 space-y-3 text-xs">
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
           {/* Search Box */}
           <div className="sm:col-span-4 relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-sky-400/60" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
             <input
               type="text"
               placeholder="Search SKY ID, resource, namespace..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 bg-[#030712] border border-sky-500/25 rounded-lg text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/30 transition-all"
+              className="w-full pl-9 pr-3 py-1.5 bg-[#05060A] border border-white/10 rounded-lg text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-sky-500 font-mono text-xs"
             />
           </div>
 
@@ -161,7 +158,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-3 py-1.5 bg-[#030712] border border-sky-500/25 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-400 cursor-pointer"
+              className="w-full px-3 py-1.5 bg-[#05060A] border border-white/10 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-500 text-xs"
             >
               <option value="ALL">Status: All</option>
               <option value="OPEN">Status: OPEN</option>
@@ -177,7 +174,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
             <select
               value={severityFilter}
               onChange={(e) => setSeverityFilter(e.target.value)}
-              className="w-full px-3 py-1.5 bg-[#030712] border border-sky-500/25 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-400 cursor-pointer"
+              className="w-full px-3 py-1.5 bg-[#05060A] border border-white/10 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-500 text-xs"
             >
               <option value="ALL">Severity: All</option>
               <option value="CRITICAL">CRITICAL</option>
@@ -193,7 +190,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
             <select
               value={clusterFilter}
               onChange={(e) => setClusterFilter(e.target.value)}
-              className="w-full px-3 py-1.5 bg-[#030712] border border-sky-500/25 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-400 cursor-pointer"
+              className="w-full px-3 py-1.5 bg-[#05060A] border border-white/10 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-500 text-xs"
             >
               <option value="ALL">Cluster: All Clusters</option>
               {safeClusters.map((c) => (
@@ -206,11 +203,11 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
         </div>
 
         {activeFiltersCount > 0 && (
-          <div className="flex items-center justify-between pt-2 border-t border-sky-500/10 text-[11px] text-zinc-400">
+          <div className="flex items-center justify-between pt-2 border-t border-white/6 text-xs text-zinc-400">
             <span>{activeFiltersCount} active filter(s) applied</span>
             <button
               onClick={resetFilters}
-              className="text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer transition-colors"
+              className="text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer font-medium"
             >
               <X className="w-3 h-3" />
               Clear all filters
@@ -230,30 +227,30 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
           }
         />
       ) : (
-        <div className="storm-card rounded-xl overflow-hidden shadow-xl">
+        <div className="cosmic-panel rounded-xl overflow-hidden shadow-xl">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-mono">
-              <thead className="bg-[#050b18]/90 border-b border-sky-500/15 text-zinc-400 uppercase text-[10px] tracking-wider">
+            <table className="w-full text-left text-xs font-sans">
+              <thead className="bg-[#070B16] border-b border-white/6 text-zinc-400 uppercase text-[10px] tracking-wider font-mono">
                 <tr>
-                  <th className="px-5 py-3.5">Incident ID</th>
-                  <th className="px-5 py-3.5">Severity</th>
-                  <th className="px-5 py-3.5">Title / Problem</th>
-                  <th className="px-5 py-3.5">Cluster / Target Resource</th>
-                  <th className="px-5 py-3.5">Status</th>
-                  <th className="px-5 py-3.5">Occurrences</th>
-                  <th className="px-5 py-3.5">Last Seen</th>
-                  <th className="px-5 py-3.5 text-right">Inspect</th>
+                  <th className="px-5 py-3">Incident ID</th>
+                  <th className="px-5 py-3">Severity</th>
+                  <th className="px-5 py-3">Title / Problem</th>
+                  <th className="px-5 py-3">Cluster / Resource</th>
+                  <th className="px-5 py-3">Status</th>
+                  <th className="px-5 py-3">Occurrences</th>
+                  <th className="px-5 py-3">Last Seen</th>
+                  <th className="px-5 py-3 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-sky-500/10 text-zinc-300">
+              <tbody className="divide-y divide-white/5 text-zinc-300">
                 {filteredIncidents.map((inc) => (
                   <tr
                     key={inc.id}
                     onClick={() => onSelectIncident(inc.id)}
-                    className="hover:bg-sky-950/20 transition-all cursor-pointer group"
+                    className="hover:bg-white/4 transition-colors cursor-pointer"
                   >
                     <td className="px-5 py-3.5">
-                      <span className="font-bold text-sky-400 font-mono group-hover:text-sky-300 transition-colors">{inc.id}</span>
+                      <span className="font-bold text-sky-400 font-mono">{inc.id}</span>
                       <div className="text-[10px] text-zinc-500 font-sans mt-0.5">{inc.incidentType || 'Failure'}</div>
                     </td>
 
@@ -262,9 +259,9 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                     </td>
 
                     <td className="px-5 py-3.5 max-w-sm">
-                      <div className="font-semibold text-zinc-100 truncate group-hover:text-white transition-colors">{inc.title || 'Incident Anomaly'}</div>
+                      <div className="font-semibold text-white truncate tracking-tight">{inc.title || 'Incident Anomaly'}</div>
                       {inc.technicalDetails?.reason && (
-                        <div className="text-[11px] text-zinc-400 truncate mt-0.5">
+                        <div className="text-[11px] text-zinc-500 truncate mt-0.5 font-mono">
                           Reason: {inc.technicalDetails.reason}
                         </div>
                       )}
@@ -272,7 +269,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
 
                     <td className="px-5 py-3.5">
                       <div className="text-zinc-200 font-medium">{inc.clusterName || inc.clusterId || 'Cluster'}</div>
-                      <div className="text-[11px] text-zinc-500 truncate">
+                      <div className="text-[11px] text-zinc-500 truncate font-mono">
                         ns: <strong className="text-zinc-400">{inc.namespace || 'default'}</strong> • {inc.resourceKind || 'Workload'}/
                         {inc.resourceName || 'Resource'}
                       </div>
@@ -283,14 +280,14 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                     </td>
 
                     <td className="px-5 py-3.5">
-                      <span className="font-bold text-sky-200 bg-sky-950/60 px-2 py-0.5 rounded border border-sky-800/60">
+                      <span className="font-semibold font-mono text-zinc-200 bg-[#0B1020] px-2 py-0.5 rounded border border-white/10">
                         {inc.occurrenceCount}x
                       </span>
                     </td>
 
                     <td className="px-5 py-3.5 text-zinc-400 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5 text-zinc-300">
-                        <Clock className="w-3.5 h-3.5 text-sky-400/70" />
+                      <div className="flex items-center gap-1.5 text-zinc-300 text-xs">
+                        <Clock className="w-3.5 h-3.5 text-zinc-500" />
                         {formatTimeAgo(inc.lastSeenAt)}
                       </div>
                     </td>
@@ -298,7 +295,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                     <td className="px-5 py-3.5 text-right">
                       <button
                         onClick={() => onSelectIncident(inc.id)}
-                        className="px-3 py-1 bg-sky-950/70 hover:bg-sky-900/80 text-sky-300 border border-sky-700/60 rounded text-xs transition-colors cursor-pointer group-hover:border-sky-500"
+                        className="px-3 py-1 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/20 hover:border-sky-400/40 rounded-lg text-xs transition-colors cursor-pointer font-medium"
                       >
                         Investigate →
                       </button>

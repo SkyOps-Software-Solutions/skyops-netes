@@ -131,25 +131,25 @@ export const SeverityBadge: React.FC<{ severity: IncidentSeverity; size?: 'sm' |
       bg: 'bg-rose-950/40 text-rose-300',
       text: 'text-rose-400',
       border: 'border-rose-700/60',
-      dot: 'bg-rose-500'
+      dot: 'bg-rose-500 status-breathe-rose'
     },
     HIGH: {
       bg: 'bg-amber-950/40 text-amber-300',
       text: 'text-amber-400',
       border: 'border-amber-700/60',
-      dot: 'bg-amber-500'
+      dot: 'bg-amber-500 status-breathe-amber'
     },
     MEDIUM: {
       bg: 'bg-yellow-950/30 text-yellow-300',
       text: 'text-yellow-400',
       border: 'border-yellow-700/50',
-      dot: 'bg-yellow-500'
+      dot: 'bg-yellow-500 status-breathe-amber'
     },
     LOW: {
       bg: 'bg-sky-950/30 text-sky-300',
       text: 'text-sky-400',
       border: 'border-sky-700/50',
-      dot: 'bg-sky-500'
+      dot: 'bg-sky-400 status-breathe-emerald'
     },
     INFO: {
       bg: 'bg-slate-900 text-slate-300',
@@ -269,19 +269,19 @@ export const ClusterStatusBadge: React.FC<{ status: ClusterStatus; agentStatus?:
   } else if (normalized === 'critical' || status === 'CRITICAL') {
     label = 'CRITICAL';
     bg = 'bg-rose-950/40 text-rose-300 border-rose-700/60';
-    dot = 'bg-rose-500 animate-pulse';
+    dot = 'bg-rose-500 status-breathe-rose';
   } else if (normalized === 'warning' || status === 'WARNING' || agentStatus === 'DEGRADED') {
     label = agentStatus === 'DEGRADED' ? 'DEGRADED' : 'WARNING';
     bg = 'bg-amber-950/40 text-amber-300 border-amber-700/60';
-    dot = 'bg-amber-500';
+    dot = 'bg-amber-400 status-breathe-amber';
   } else if (normalized === 'connected' || normalized === 'healthy' || status === 'HEALTHY') {
     label = 'CONNECTED';
     bg = 'bg-emerald-950/40 text-emerald-300 border-emerald-700/60';
-    dot = 'bg-emerald-500';
+    dot = 'bg-emerald-400 status-breathe-emerald';
   } else if (normalized === 'error' || agentStatus === 'ERROR') {
     label = 'CONNECTION ERROR';
     bg = 'bg-rose-950/40 text-rose-300 border-rose-800/60';
-    dot = 'bg-rose-500';
+    dot = 'bg-rose-500 status-breathe-rose';
   }
 
   return (

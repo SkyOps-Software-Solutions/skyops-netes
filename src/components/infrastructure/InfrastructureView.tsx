@@ -146,19 +146,16 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-sky-500/15 pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2.5">
-            <span className="p-1.5 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-400 shadow-[0_0_12px_rgba(14,165,233,0.3)]">
-              <Server className="w-5 h-5" />
-            </span>
-            <h1 className="text-xl font-bold text-white font-mono">Infrastructure Topology</h1>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/30">
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-zinc-100">Infrastructure Center</h1>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/30">
               Fleet Mesh
             </span>
           </div>
-          <p className="text-xs font-mono text-zinc-400 mt-1">
-            Authoritative multi-cluster inventory: nodes, replica sets, pods, and ingress mesh
+          <p className="text-xs text-zinc-400 mt-1">
+            Real-time inventory of connected clusters, nodes, deployments, pods, and storage
           </p>
         </div>
 
@@ -169,15 +166,15 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
               fetchResources();
             }}
             disabled={loading || loadingResources}
-            className="p-2 text-zinc-300 hover:text-white bg-[#081024] border border-sky-500/25 hover:border-sky-500/45 rounded-lg hover:bg-[#0c1836] transition-colors cursor-pointer shadow-xs"
+            className="p-2 text-zinc-400 hover:text-zinc-200 bg-zinc-900 border border-zinc-800 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer"
             title="Refresh Fleet Data"
           >
-            <RefreshCw className={`w-4 h-4 ${loading || loadingResources ? 'animate-spin text-sky-400' : 'text-zinc-400'}`} />
+            <RefreshCw className={`w-4 h-4 ${loading || loadingResources ? 'animate-spin' : ''}`} />
           </button>
 
           <button
             onClick={onOpenAddCluster}
-            className="px-3.5 py-2 text-xs font-semibold font-mono rounded-lg bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white border border-sky-400/40 shadow-[0_0_15px_-3px_rgba(14,165,233,0.4)] transition-all cursor-pointer flex items-center gap-1.5"
+            className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors cursor-pointer flex items-center gap-1.5 shadow-md"
           >
             <Plus className="w-4 h-4" />
             Connect Cluster
@@ -186,15 +183,15 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
       </div>
 
       {/* Sub-Navigation & Filters Bar */}
-      <div className="storm-card rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl">
+      <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
         {/* Sub-tabs */}
-        <div className="flex items-center gap-1 bg-[#030712] p-1 rounded-lg border border-sky-500/20 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-lg border border-zinc-800 overflow-x-auto">
           <button
             onClick={() => setSubTab('architecture')}
-            className={`px-3 py-1.5 text-xs font-medium font-mono rounded transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               subTab === 'architecture'
-                ? 'bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-[0_0_12px_rgba(14,165,233,0.35)] border border-sky-400/40'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-sky-950/20'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
             <Workflow className="w-3.5 h-3.5 text-sky-400" />
@@ -202,10 +199,10 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
           </button>
           <button
             onClick={() => setSubTab('clusters')}
-            className={`px-3 py-1.5 text-xs font-medium font-mono rounded transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               subTab === 'clusters'
-                ? 'bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-[0_0_12px_rgba(14,165,233,0.35)] border border-sky-400/40'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-sky-950/20'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
             <Server className="w-3.5 h-3.5" />
@@ -213,10 +210,10 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
           </button>
           <button
             onClick={() => setSubTab('nodes')}
-            className={`px-3 py-1.5 text-xs font-medium font-mono rounded transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               subTab === 'nodes'
-                ? 'bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-[0_0_12px_rgba(14,165,233,0.35)] border border-sky-400/40'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-sky-950/20'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
             <Cpu className="w-3.5 h-3.5" />
@@ -224,10 +221,10 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
           </button>
           <button
             onClick={() => setSubTab('workloads')}
-            className={`px-3 py-1.5 text-xs font-medium font-mono rounded transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               subTab === 'workloads'
-                ? 'bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-[0_0_12px_rgba(14,165,233,0.35)] border border-sky-400/40'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-sky-950/20'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
@@ -235,10 +232,10 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
           </button>
           <button
             onClick={() => setSubTab('pods')}
-            className={`px-3 py-1.5 text-xs font-medium font-mono rounded transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               subTab === 'pods'
-                ? 'bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-[0_0_12px_rgba(14,165,233,0.35)] border border-sky-400/40'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-sky-950/20'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
             <Boxes className="w-3.5 h-3.5" />
@@ -246,10 +243,10 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
           </button>
           <button
             onClick={() => setSubTab('services')}
-            className={`px-3 py-1.5 text-xs font-medium font-mono rounded transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               subTab === 'services'
-                ? 'bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-[0_0_12px_rgba(14,165,233,0.35)] border border-sky-400/40'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-sky-950/20'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
             <Network className="w-3.5 h-3.5" />
@@ -259,12 +256,12 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
 
         {/* Global Cluster & Search Filter */}
         {subTab !== 'architecture' && (
-          <div className="flex flex-wrap items-center gap-2.5 font-mono text-xs">
+          <div className="flex flex-wrap items-center gap-2.5">
             {safeClusters.length > 1 && (
               <select
                 value={selectedClusterFilter}
                 onChange={(e) => setSelectedClusterFilter(e.target.value)}
-                className="bg-[#030712] border border-sky-500/25 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-sky-400 cursor-pointer"
+                className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-sky-500"
               >
                 <option value="all">All Clusters ({safeClusters.length})</option>
                 {safeClusters.map((c) => (
@@ -279,7 +276,7 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
               <select
                 value={selectedNamespaceFilter}
                 onChange={(e) => setSelectedNamespaceFilter(e.target.value)}
-                className="bg-[#030712] border border-sky-500/25 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-sky-400 cursor-pointer"
+                className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-sky-500"
               >
                 <option value="all">All Namespaces</option>
                 {namespaces.map((ns) => (
@@ -343,54 +340,68 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
               const clusterRes = safeResources.filter((r) => r.clusterId === cluster.id);
               const nodeCount = cluster.nodeCount || clusterRes.filter((r) => r.kind === 'Node').length || 0;
               const podCount = cluster.podCount || clusterRes.filter((r) => r.kind === 'Pod').length || 0;
+              const serviceCount = clusterRes.filter((r) => r.kind === 'Service').length || 0;
+              const clusterIncidents = incidents.filter(
+                (i) => i.clusterId === cluster.id && (i.status === 'OPEN' || i.status === 'IN_PROGRESS' || i.status === 'ACKNOWLEDGED')
+              );
 
               return (
                 <div
                   key={cluster.id}
-                  className="bg-zinc-900/80 border border-zinc-800 hover:border-zinc-700 rounded-xl p-5 flex flex-col justify-between transition-all group shadow-sm"
+                  className="cosmic-panel cosmic-panel-hover rounded-xl p-5 flex flex-col justify-between transition-all group shadow-sm text-xs font-sans"
                 >
                   <div>
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400">
+                        <div className="w-9 h-9 rounded-lg bg-sky-500/10 border border-sky-400/20 flex items-center justify-center text-sky-400">
                           <Server className="w-4 h-4" />
                         </div>
                         <div>
                           <h3
                             onClick={() => onSelectCluster(cluster.id)}
-                            className="text-sm font-bold text-zinc-100 group-hover:text-sky-400 transition-colors cursor-pointer"
+                            className="text-sm font-bold text-white group-hover:text-sky-400 transition-colors cursor-pointer tracking-tight"
                           >
                             {cluster.name}
                           </h3>
-                          <div className="text-[11px] font-mono text-zinc-500">
+                          <div className="text-[11px] text-zinc-400 font-sans">
                             {cluster.environment || 'production'} • {cluster.region || 'global'}
                           </div>
                         </div>
                       </div>
 
-                      <ClusterStatusBadge status={cluster.status} />
+                      <ClusterStatusBadge status={cluster.status} agentStatus={cluster.agentStatus} />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 my-4">
-                      <div className="bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
+                    <div className="grid grid-cols-3 gap-2 my-4">
+                      <div className="bg-[#05060A]/80 p-2.5 rounded-lg border border-white/6">
                         <div className="text-[10px] font-mono text-zinc-500 uppercase">Nodes</div>
                         <div className="text-xs font-semibold text-zinc-200 mt-0.5">{nodeCount} Ready</div>
                       </div>
-                      <div className="bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
+                      <div className="bg-[#05060A]/80 p-2.5 rounded-lg border border-white/6">
                         <div className="text-[10px] font-mono text-zinc-500 uppercase">Workloads</div>
                         <div className="text-xs font-semibold text-zinc-200 mt-0.5">{podCount} Pods</div>
                       </div>
-                      <div className="bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
-                        <div className="text-[10px] font-mono text-zinc-500 uppercase">Kubernetes</div>
+                      <div className="bg-[#05060A]/80 p-2.5 rounded-lg border border-white/6">
+                        <div className="text-[10px] font-mono text-zinc-500 uppercase">Services</div>
+                        <div className="text-xs font-semibold text-zinc-200 mt-0.5">{serviceCount} Mesh</div>
+                      </div>
+                      <div className="bg-[#05060A]/80 p-2.5 rounded-lg border border-white/6">
+                        <div className="text-[10px] font-mono text-zinc-500 uppercase">Incidents</div>
+                        <div className={`text-xs font-semibold mt-0.5 ${clusterIncidents.length > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                          {clusterIncidents.length > 0 ? `${clusterIncidents.length} Active` : '0 Active'}
+                        </div>
+                      </div>
+                      <div className="bg-[#05060A]/80 p-2.5 rounded-lg border border-white/6">
+                        <div className="text-[10px] font-mono text-zinc-500 uppercase">K8s Version</div>
                         <div className="text-xs font-semibold text-zinc-200 mt-0.5">
                           {cluster.k8sVersion || 'v1.29'}
                         </div>
                       </div>
-                      <div className="bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
-                        <div className="text-[10px] font-mono text-zinc-500 uppercase">Telemetry Agent</div>
+                      <div className="bg-[#05060A]/80 p-2.5 rounded-lg border border-white/6">
+                        <div className="text-[10px] font-mono text-zinc-500 uppercase">Agent</div>
                         <div className="text-xs font-semibold text-emerald-400 mt-0.5 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                          {cluster.agentStatus}
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-energy-healthy" />
+                          <span>{cluster.agentStatus || 'CONNECTED'}</span>
                         </div>
                       </div>
                     </div>

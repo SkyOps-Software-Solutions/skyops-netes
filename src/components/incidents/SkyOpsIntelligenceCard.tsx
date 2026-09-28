@@ -40,6 +40,7 @@ import {
   SignalCategory
 } from '../../types';
 import { ProvenanceBadge, ProvenanceType } from '../common/Badges';
+import { SkyOpsIntelligenceProcessing } from '../common/SkyOpsIntelligenceProcessing';
 
 interface SkyOpsIntelligenceCardProps {
   intelligence?: IntelligenceAnalysis | null;
@@ -83,14 +84,10 @@ export const SkyOpsIntelligenceCard: React.FC<SkyOpsIntelligenceCardProps> = ({
 
   if (loading) {
     return (
-      <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 shadow-xs space-y-3">
-        <div className="flex items-center gap-2.5">
-          <RefreshCw className="w-4 h-4 text-cyan-400 animate-spin" />
-          <span className="text-xs font-mono font-semibold text-zinc-300">
-            Running Deterministic Kubernetes Intelligence Engine...
-          </span>
-        </div>
-      </div>
+      <SkyOpsIntelligenceProcessing
+        title="✦ SKYOPS INTELLIGENCE"
+        subtitle="Analyzing infrastructure signals..."
+      />
     );
   }
 

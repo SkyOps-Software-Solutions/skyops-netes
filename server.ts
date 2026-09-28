@@ -84,6 +84,7 @@ app.use((req, res, next) => {
 app.use(correlationIdMiddleware);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(process.cwd(), 'public')));
 app.use(storageRouter);
 
 // --- Platform Health & Self-Observability Probes ---
@@ -152,11 +153,18 @@ function getPublicServerUrl(req?: Request): string {
 
 // --- Health Check ---
 app.get('/api/health', (req, res) => {
+  const persistence = store.getPersistence();
+  const isHealthy = (persistence as any).isHealthySync ? (persistence as any).isHealthySync() : true;
   res.json({
     status: 'ok',
     service: 'SkyOps Central Ingestion API',
     version: AGENT_VERSION,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    persistence: {
+      provider: persistence.providerName,
+      connected: isHealthy,
+      databaseId: (persistence as any).getDatabaseId ? (persistence as any).getDatabaseId() : 'unknown'
+    }
   });
 });
 
@@ -1373,11 +1381,43 @@ app.get('/api/v1/agent/actions', requireAgentAuth, (req: AuthenticatedAgentReque
   res.json({ actions: store.claimPendingRemediationActions(req.clusterId!) });
 });
 
+app.get('/api/v1/agent/actions/stream', requireAgentAuth, (req: AuthenticatedAgentRequest, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  // Stream initial pending actions if any
+  const initialActions = store.claimPendingRemediationActions(req.clusterId!);
+  if (initialActions.length > 0) {
+    res.write(`event: actions\ndata: ${JSON.stringify({ actions: initialActions })}\n\n`);
+  }
+
+  const pingInterval = setInterval(() => {
+    try {
+      res.write(': ping\n\n');
+    } catch {
+      clearInterval(pingInterval);
+    }
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(pingInterval);
+  });
+});
+
 const ActionResultSchema = z.object({
   actionId: z.string().min(1).optional(),
-  success: z.boolean(),
-  message: z.string().min(1).max(4096)
-});
+  success: z.boolean().default(false),
+  message: z.string().min(1).max(8192),
+  state: z.enum(['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED']).optional(),
+  executionContext: z.record(z.string(), z.any()).optional(),
+  runtimeTraces: z.array(z.any()).optional(),
+  stdErr: z.string().optional(),
+  durationMs: z.number().optional(),
+  timestamp: z.number().optional(),
+  agentId: z.string().optional()
+}).passthrough();
 
 app.post('/api/v1/agent/actions/:actionId/result', requireAgentAuth, (req: AuthenticatedAgentRequest, res) => {
   const parsed = ActionResultSchema.safeParse(req.body);
@@ -2716,7 +2756,7 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 // ==========================================
 async function startServer() {
   try {
-    verifyProductionPersistence();
+    await verifyProductionPersistence();
   } catch (err: any) {
     console.warn('[SkyOps Server] Persistence verification notice:', err?.message || err);
   }

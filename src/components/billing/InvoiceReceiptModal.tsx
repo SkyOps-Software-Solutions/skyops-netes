@@ -1,7 +1,8 @@
-import { CheckCircle2, Download, FileText, Printer, X } from 'lucide-react';
+import { CheckCircle2, Download, FileText, Mail, Printer, X } from 'lucide-react';
 import React from 'react';
 import { Invoice } from '../../types/billing';
 import { Button, Modal } from '../common/UI';
+import { SKYOPS_CONTACT_EMAIL } from '../../config/contact';
 
 interface InvoiceReceiptModalProps {
   isOpen: boolean;
@@ -48,7 +49,8 @@ Provider Ref:   ${invoice.providerInvoiceId || 'N/A'}
 =====================================================
 SkyOps Enterprise Autonomous Systems Private Limited
 Bengaluru, Karnataka, India
-support@skyops.io
+For billing/support enquiries:
+${SKYOPS_CONTACT_EMAIL}
 =====================================================`;
 
     const blob = new Blob([receiptContent], { type: 'text/plain' });
@@ -121,6 +123,18 @@ support@skyops.io
               <span className="text-emerald-400">₹{invoice.amount.toLocaleString('en-IN')}</span>
             </div>
           </div>
+        </div>
+
+        {/* Support & Billing Enquiries Info */}
+        <div className="p-3 bg-zinc-950/70 border border-zinc-800 rounded-lg flex items-center justify-between text-[11px] text-zinc-400">
+          <span>For billing/support enquiries:</span>
+          <a
+            href={`mailto:${SKYOPS_CONTACT_EMAIL}?subject=${encodeURIComponent(`Invoice Enquiry: ${invoice.id}`)}`}
+            className="text-sky-400 hover:text-sky-300 font-semibold flex items-center gap-1.5 transition-colors"
+          >
+            <Mail className="w-3.5 h-3.5 text-sky-400" />
+            <span>{SKYOPS_CONTACT_EMAIL}</span>
+          </a>
         </div>
 
         {/* Action Controls */}

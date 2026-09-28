@@ -98,6 +98,7 @@ export interface IPersistenceStore {
 
   // --- Cluster Tokens ---
   getClusterTokenByHash(tokenHash: string): Promise<ClusterTokenRecord | null>;
+  listClusterTokens(clusterId?: string): Promise<ClusterTokenRecord[]>;
   saveClusterToken(record: ClusterTokenRecord): Promise<void>;
   deleteClusterToken(tokenHash: string): Promise<boolean>;
 

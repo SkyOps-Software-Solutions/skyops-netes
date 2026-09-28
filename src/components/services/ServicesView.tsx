@@ -278,59 +278,59 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
     <div className="space-y-6">
       {/* Metrics Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="storm-kpi-card rounded-xl p-4 flex items-center gap-3 shadow-md">
-          <div className="p-2.5 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/30 shadow-[0_0_10px_rgba(14,165,233,0.2)]">
+        <div className="bg-zinc-900/80 border border-zinc-800/80 rounded-xl p-4 flex items-center gap-3 shadow-xs">
+          <div className="p-2.5 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20">
             <Network className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-2xl font-bold text-white font-mono">{metrics.total}</div>
-            <div className="text-xs font-mono text-zinc-400">Total Services</div>
+            <div className="text-2xl font-bold text-zinc-100 font-mono">{metrics.total}</div>
+            <div className="text-xs text-zinc-400">Total Services</div>
           </div>
         </div>
 
-        <div className="storm-kpi-card rounded-xl p-4 flex items-center gap-3 shadow-md">
-          <div className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shadow-[0_0_10px_rgba(52,211,153,0.2)]">
+        <div className="bg-zinc-900/80 border border-zinc-800/80 rounded-xl p-4 flex items-center gap-3 shadow-xs">
+          <div className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             <CheckCircle2 className="w-5 h-5" />
           </div>
           <div>
             <div className="text-2xl font-bold text-emerald-400 font-mono">{metrics.healthy}</div>
-            <div className="text-xs font-mono text-zinc-400">Healthy & Backed</div>
+            <div className="text-xs text-zinc-400">Healthy & Backed</div>
           </div>
         </div>
 
-        <div className="storm-kpi-card rounded-xl p-4 flex items-center gap-3 shadow-md">
-          <div className="p-2.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.2)]">
+        <div className="bg-zinc-900/80 border border-zinc-800/80 rounded-xl p-4 flex items-center gap-3 shadow-xs">
+          <div className="p-2.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">
             <AlertTriangle className="w-5 h-5" />
           </div>
           <div>
             <div className="text-2xl font-bold text-amber-400 font-mono">{metrics.warning}</div>
-            <div className="text-xs font-mono text-zinc-400">Degraded Endpoints</div>
+            <div className="text-xs text-zinc-400">Degraded Endpoints</div>
           </div>
         </div>
 
-        <div className="storm-kpi-card rounded-xl p-4 flex items-center gap-3 shadow-md">
-          <div className="p-2.5 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/30 shadow-[0_0_10px_rgba(244,63,94,0.2)]">
+        <div className="bg-zinc-900/80 border border-zinc-800/80 rounded-xl p-4 flex items-center gap-3 shadow-xs">
+          <div className="p-2.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20">
             <AlertOctagon className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-2xl font-bold text-rose-400 font-mono">{metrics.critical}</div>
-            <div className="text-xs font-mono text-zinc-400">Broken Endpoints</div>
+            <div className="text-2xl font-bold text-red-400 font-mono">{metrics.critical}</div>
+            <div className="text-xs text-zinc-400">Zero Endpoints / Broken</div>
           </div>
         </div>
       </div>
 
       {/* Control / Filter Bar */}
-      <div className="storm-card rounded-xl p-4 space-y-4 shadow-xl">
-        <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between font-mono text-xs">
+      <div className="bg-zinc-900/80 border border-zinc-800 rounded-xl p-4 space-y-4">
+        <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
           {/* Search Input */}
           <div className="relative flex-1">
-            <Search className="w-4 h-4 text-sky-400/60 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               placeholder="Filter by name, namespace, IP, port, or selector..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-[#030712] border border-sky-500/25 rounded-lg text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-sky-400 font-mono transition-all"
+              className="w-full pl-9 pr-4 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-sky-500 font-sans"
             />
           </div>
 
@@ -341,7 +341,7 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
               <select
                 value={selectedClusterId}
                 onChange={(e) => setSelectedClusterId(e.target.value)}
-                className="px-3 py-2 bg-[#030712] border border-sky-500/25 rounded-lg text-xs text-zinc-300 focus:outline-none focus:border-sky-400 font-mono cursor-pointer"
+                className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-300 focus:outline-none focus:border-sky-500 font-mono"
               >
                 <option value="all">
                   {safeClusters.length === 1
@@ -358,9 +358,9 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
             )}
 
             {cluster && (
-              <div className="flex items-center gap-1.5 px-3 py-2 bg-[#030712] border border-sky-500/25 rounded-lg text-xs font-mono text-zinc-300">
+              <div className="flex items-center gap-1.5 px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs font-mono text-zinc-300">
                 <Server className="w-3.5 h-3.5 text-sky-400" />
-                <span>Cluster: <strong className="text-white">{cluster.name || cluster.id}</strong></span>
+                <span>Cluster: <strong className="text-zinc-100">{cluster.name || cluster.id}</strong></span>
               </div>
             )}
 
@@ -368,7 +368,7 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
             <select
               value={selectedNamespace}
               onChange={(e) => setSelectedNamespace(e.target.value)}
-              className="px-3 py-2 bg-[#030712] border border-sky-500/25 rounded-lg text-xs text-zinc-300 focus:outline-none focus:border-sky-400 font-mono cursor-pointer"
+              className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-300 focus:outline-none focus:border-sky-500"
             >
               <option value="all">All Namespaces</option>
               {namespaces.map((ns) => (
@@ -382,9 +382,9 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
             <select
               value={selectedType}
               onChange={(e) => setSelectedType(e.target.value)}
-              className="px-3 py-2 bg-[#030712] border border-sky-500/25 rounded-lg text-xs text-zinc-300 focus:outline-none focus:border-sky-400 font-mono cursor-pointer"
+              className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-300 focus:outline-none focus:border-sky-500"
             >
-              <option value="all">All Types</option>
+              <option value="all">All Service Types</option>
               <option value="ClusterIP">ClusterIP</option>
               <option value="NodePort">NodePort</option>
               <option value="LoadBalancer">LoadBalancer</option>
@@ -395,7 +395,7 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
             <select
               value={selectedHealth}
               onChange={(e) => setSelectedHealth(e.target.value)}
-              className="px-3 py-2 bg-[#030712] border border-sky-500/25 rounded-lg text-xs text-zinc-300 focus:outline-none focus:border-sky-400 font-mono cursor-pointer"
+              className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-300 focus:outline-none focus:border-sky-500"
             >
               <option value="all">All Health</option>
               <option value="HEALTHY">Healthy</option>
@@ -405,11 +405,11 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
 
             {(onRefresh || !isControlled) && (
               <Button
-                variant="outline"
+                variant="secondary"
                 size="sm"
                 onClick={handleRefresh}
                 loading={loading || internalLoading}
-                className="flex items-center gap-1.5 font-mono text-xs border-sky-500/25 hover:border-sky-500/45"
+                className="flex items-center gap-1.5"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 <span>Refresh</span>
@@ -420,11 +420,11 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
       </div>
 
       {/* Services Table */}
-      <div className="storm-card rounded-xl overflow-hidden shadow-xl">
+      <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr className="border-b border-sky-500/15 bg-[#050b18]/90 text-[11px] font-mono text-zinc-400">
+              <tr className="border-b border-zinc-800 bg-zinc-950/80 text-[11px] font-mono text-zinc-400">
                 <th className="py-3 px-4">Service Name</th>
                 {(!isEmbedded || safeClusters.length > 1) && (
                   <th className="py-3 px-4">Cluster</th>

@@ -462,11 +462,11 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   const getHealthDot = (health: string) => {
     switch (health) {
       case 'HEALTHY':
-        return 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]';
+        return 'bg-emerald-400 status-breathe-emerald';
       case 'WARNING':
-        return 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]';
+        return 'bg-amber-400 status-breathe-amber';
       case 'CRITICAL':
-        return 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.7)] animate-pulse';
+        return 'bg-rose-500 status-breathe-rose';
       default:
         return 'bg-zinc-500';
     }
@@ -622,6 +622,15 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           style={{ zIndex: 1 }}
         >
           <defs>
+            <filter id="electric-glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#38bdf8" floodOpacity="0.8" />
+            </filter>
+            <filter id="electric-glow-warning" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#f59e0b" floodOpacity="0.85" />
+            </filter>
+            <filter id="electric-glow-critical" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="0" stdDeviation="2.5" floodColor="#f43f5e" floodOpacity="0.9" />
+            </filter>
             <marker
               id="arrow-traffic"
               viewBox="0 0 10 10"
@@ -645,8 +654,51 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             const pathD = calculatePath(edge);
             if (!pathD) return null;
 
+            // Live Telemetry Signal dynamics between infrastructure resources
+            const sourceNode = graphData.nodeMap.get(edge.source);
+            const targetNode = graphData.nodeMap.get(edge.target);
+            const isEdgeCritical =
+              sourceNode?.health === 'CRITICAL' ||
+              targetNode?.health === 'CRITICAL' ||
+              Boolean(sourceNode?.incidents && sourceNode.incidents.some((i) => i.severity === 'CRITICAL')) ||
+              Boolean(targetNode?.incidents && targetNode.incidents.some((i) => i.severity === 'CRITICAL'));
+            const isEdgeWarning =
+              !isEdgeCritical &&
+              (sourceNode?.health === 'WARNING' ||
+                targetNode?.health === 'WARNING' ||
+                Boolean(sourceNode?.incidents && sourceNode.incidents.length > 0) ||
+                Boolean(targetNode?.incidents && targetNode.incidents.length > 0));
+
+            // Dynamic connection speeds based on connection type
+            let baseDuration = 3.2;
+            if (edge.type === 'traffic') baseDuration = 2.2;
+            else if (edge.type === 'uses') baseDuration = 3.0;
+            else if (edge.type === 'depends_on') baseDuration = 3.6;
+            else baseDuration = 4.2;
+
+            // Seeded deterministic offset so connections feel organic
+            const edgeCharSum = (edge.id.charCodeAt(0) || 0) + (edge.id.charCodeAt(edge.id.length - 1) || 0);
+            const durationVariance = (edgeCharSum % 5) * 0.25;
+            let signalDuration = baseDuration + durationVariance;
+
+            // When unhealthy: signal slows or changes behavior
+            if (isEdgeCritical) {
+              signalDuration = signalDuration * 1.8;
+            } else if (isEdgeWarning) {
+              signalDuration = signalDuration * 1.3;
+            }
+
+            const signalColor = isEdgeCritical ? '#f43f5e' : isEdgeWarning ? '#f59e0b' : '#38bdf8';
+            const signalFilter = isEdgeCritical
+              ? 'url(#electric-glow-critical)'
+              : isEdgeWarning
+              ? 'url(#electric-glow-warning)'
+              : 'url(#electric-glow)';
+            const signalRadius = isEdgeFocused ? 3.5 : 2.5;
+
             return (
               <g key={edge.id}>
+                {/* Base connection line */}
                 <path
                   d={pathD}
                   fill="none"
@@ -657,6 +709,22 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                   markerEnd={style.markerEnd}
                   className="transition-all duration-300"
                 />
+
+                {/* Live Travelling Telemetry Signal (NODE A ──●── NODE B) */}
+                <circle
+                  r={signalRadius}
+                  fill={signalColor}
+                  filter={signalFilter}
+                  opacity={style.opacity > 0.3 ? 0.95 : 0.2}
+                >
+                  <animateMotion
+                    dur={`${signalDuration.toFixed(2)}s`}
+                    repeatCount="indefinite"
+                    path={pathD}
+                    rotate="auto"
+                  />
+                </circle>
+
                 {edge.label && isEdgeFocused && (
                   <text
                     className="text-[9px] fill-sky-400 font-mono"
@@ -684,6 +752,14 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             const opacityClass = isFocused ? 'opacity-100 scale-100' : 'opacity-20 scale-95 pointer-events-none';
             const hasIncidents = node.incidents && node.incidents.length > 0;
 
+            const isCriticalNode =
+              node.health === 'CRITICAL' ||
+              Boolean(node.incidents && node.incidents.some((i) => i.severity === 'CRITICAL'));
+            const isWarningNode =
+              !isCriticalNode &&
+              (node.health === 'WARNING' ||
+                Boolean(node.incidents && node.incidents.length > 0));
+
             // Render based on node type
             if (node.type === 'cluster') {
               return (
@@ -702,9 +778,25 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                   className={`absolute rounded-xl bg-zinc-950/95 border p-3.5 transition-all duration-200 cursor-pointer shadow-2xl flex flex-col justify-between ${opacityClass} ${
                     isSelected
                       ? 'border-sky-400 ring-2 ring-sky-500/30 shadow-sky-500/20'
+                      : isCriticalNode
+                      ? 'border-rose-600/70'
+                      : isWarningNode
+                      ? 'border-amber-600/70'
                       : 'border-zinc-800 hover:border-zinc-700'
                   }`}
                 >
+                  {isCriticalNode && (
+                    <div
+                      aria-hidden="true"
+                      className="absolute -inset-1 rounded-2xl border-2 border-rose-500/70 animate-disturbance-red pointer-events-none"
+                    />
+                  )}
+                  {isWarningNode && (
+                    <div
+                      aria-hidden="true"
+                      className="absolute -inset-0.5 rounded-2xl border border-amber-500/50 animate-disturbance-amber pointer-events-none"
+                    />
+                  )}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div className="p-1.5 rounded-lg bg-sky-500/10 border border-sky-500/20">
@@ -749,9 +841,25 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                   className={`absolute rounded-xl bg-zinc-950/95 border p-3 transition-all duration-200 cursor-pointer shadow-lg flex flex-col justify-between ${opacityClass} ${
                     isSelected
                       ? 'border-sky-400 ring-2 ring-sky-500/30'
+                      : isCriticalNode
+                      ? 'border-rose-600/70'
+                      : isWarningNode
+                      ? 'border-amber-600/70'
                       : 'border-zinc-800 hover:border-zinc-700'
                   }`}
                 >
+                  {isCriticalNode && (
+                    <div
+                      aria-hidden="true"
+                      className="absolute -inset-1 rounded-2xl border-2 border-rose-500/70 animate-disturbance-red pointer-events-none"
+                    />
+                  )}
+                  {isWarningNode && (
+                    <div
+                      aria-hidden="true"
+                      className="absolute -inset-0.5 rounded-2xl border border-amber-500/50 animate-disturbance-amber pointer-events-none"
+                    />
+                  )}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div className="p-1.5 rounded-lg bg-zinc-900 border border-zinc-800">
@@ -788,11 +896,27 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                 className={`absolute rounded-lg bg-zinc-950/95 border p-2.5 transition-all duration-200 cursor-pointer shadow-md flex flex-col justify-between group ${opacityClass} ${
                   isSelected
                     ? 'border-sky-400 ring-2 ring-sky-500/30 shadow-sky-500/10'
+                    : isCriticalNode
+                    ? 'border-rose-600/70 shadow-rose-950/30'
+                    : isWarningNode
+                    ? 'border-amber-600/60 shadow-amber-950/20'
                     : hasIncidents
                     ? 'border-rose-900/60 hover:border-rose-700'
                     : 'border-zinc-800 hover:border-zinc-700'
                 }`}
               >
+                {isCriticalNode && (
+                  <div
+                    aria-hidden="true"
+                    className="absolute -inset-1 rounded-xl border border-rose-500/70 animate-disturbance-red pointer-events-none"
+                  />
+                )}
+                {isWarningNode && (
+                  <div
+                    aria-hidden="true"
+                    className="absolute -inset-0.5 rounded-xl border border-amber-500/50 animate-disturbance-amber pointer-events-none"
+                  />
+                )}
                 {/* Header: Health, Kind, Name */}
                 <div className="flex items-center justify-between gap-1.5">
                   <div className="flex items-center gap-1.5 min-w-0">

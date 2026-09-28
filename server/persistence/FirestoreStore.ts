@@ -1,5 +1,19 @@
-import { applicationDefault, getApps, initializeApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getApps, initializeApp } from 'firebase/app';
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  collection,
+  query,
+  where,
+  orderBy,
+  limit,
+  getDocs,
+  writeBatch
+} from 'firebase/firestore';
 import crypto from 'crypto';
 
 import {
@@ -37,23 +51,23 @@ import { ClusterResourcesRecord, ClusterTokenRecord, IPersistenceStore } from '.
 import fallbackConfig from '../../firebase-applet-config.json';
 
 class DocRefWrapper {
-  constructor(private docRef: any, public id: string) {}
+  constructor(public docRef: any, public id: string) {}
 
   public async get(): Promise<{ exists: boolean; data: () => any }> {
-    const snap = await this.docRef.get();
-    return { exists: snap.exists, data: () => snap.data() };
+    const snap = await getDoc(this.docRef);
+    return { exists: snap.exists(), data: () => snap.data() };
   }
 
   public async set(data: any, options?: { merge?: boolean }): Promise<void> {
-    await this.docRef.set(data, options || {});
+    await setDoc(this.docRef, data, options || {});
   }
 
   public async update(data: any): Promise<void> {
-    await this.docRef.update(data);
+    await updateDoc(this.docRef, data);
   }
 
   public async delete(): Promise<void> {
-    await this.docRef.delete();
+    await deleteDoc(this.docRef);
   }
 }
 
@@ -62,51 +76,71 @@ class CollectionRefWrapper {
 
   public doc(id?: string): DocRefWrapper {
     const docId = id || crypto.randomUUID();
-    return new DocRefWrapper(this.db.collection(this.name).doc(docId), docId);
+    return new DocRefWrapper(doc(this.db, this.name, docId), docId);
   }
 
   public where(field: string, op: any, val: any): CollectionRefWrapper {
     if (val === undefined) return this;
-    return new CollectionRefWrapper(this.db, this.name, [...this.constraints, { type: 'where', field, op, val }]);
+    return new CollectionRefWrapper(this.db, this.name, [...this.constraints, where(field, op, val)]);
   }
 
   public orderBy(field: string, direction?: 'asc' | 'desc'): CollectionRefWrapper {
-    return new CollectionRefWrapper(this.db, this.name, [...this.constraints, { type: 'orderBy', field, direction: direction || 'asc' }]);
+    return new CollectionRefWrapper(this.db, this.name, [...this.constraints, orderBy(field, direction || 'asc')]);
   }
 
   public limit(n: number): CollectionRefWrapper {
-    return new CollectionRefWrapper(this.db, this.name, [...this.constraints, { type: 'limit', n }]);
-  }
-
-  private buildQuery(): any {
-    let q: any = this.db.collection(this.name);
-    for (const constraint of this.constraints) {
-      if (constraint.type === 'where') q = q.where(constraint.field, constraint.op, constraint.val);
-      else if (constraint.type === 'orderBy') q = q.orderBy(constraint.field, constraint.direction);
-      else if (constraint.type === 'limit') q = q.limit(constraint.n);
-    }
-    return q;
+    return new CollectionRefWrapper(this.db, this.name, [...this.constraints, limit(n)]);
   }
 
   public async get(): Promise<{
     empty: boolean;
     size: number;
-    docs: Array<{ id: string; ref: { delete: () => Promise<void> }; data: () => any }>;
+    docs: Array<{ id: string; ref: DocRefWrapper; data: () => any }>;
   }> {
-    const snap = await this.buildQuery().get();
+    const colRef = collection(this.db, this.name);
+    const q = this.constraints.length > 0 ? query(colRef, ...this.constraints) : colRef;
+    const snap = await getDocs(q);
     return {
       empty: snap.empty,
       size: snap.size,
-      docs: snap.docs.map((d: any) => ({ id: d.id, ref: { delete: () => d.ref.delete() }, data: () => d.data() }))
+      docs: snap.docs.map((d: any) => ({
+        id: d.id,
+        ref: new DocRefWrapper(d.ref, d.id),
+        data: () => d.data()
+      }))
     };
   }
 }
 
-class FirebaseAdminWrapper {
+class BatchWrapper {
+  private batch: any;
+  constructor(db: any) {
+    this.batch = writeBatch(db);
+  }
+  public set(target: any, data: any, options?: any): void {
+    const ref = target.docRef ? target.docRef : target;
+    this.batch.set(ref, data, options || {});
+  }
+  public delete(target: any): void {
+    const ref = target.docRef ? target.docRef : target;
+    this.batch.delete(ref);
+  }
+  public async commit(): Promise<void> {
+    await this.batch.commit();
+  }
+}
+
+class FirebaseStoreWrapper {
   constructor(private db: any) {}
-  public collection(name: string): CollectionRefWrapper { return new CollectionRefWrapper(this.db, name); }
-  public batch(): any { return this.db.batch(); }
-  public async terminate(): Promise<void> { /* shared Admin client remains process-scoped */ }
+  public collection(name: string): CollectionRefWrapper {
+    return new CollectionRefWrapper(this.db, name);
+  }
+  public batch(): BatchWrapper {
+    return new BatchWrapper(this.db);
+  }
+  public async terminate(): Promise<void> {
+    // client handles lifecycle
+  }
 }
 
 export interface FirestoreStoreConfig {
@@ -117,32 +151,76 @@ export interface FirestoreStoreConfig {
 
 export class FirestoreStore implements IPersistenceStore {
   public readonly providerName = 'firestore';
-  private firestore: FirebaseAdminWrapper;
+  private firestore: FirebaseStoreWrapper;
   private readonly projectId: string;
   private readonly databaseId: string;
   public connected: boolean = false;
 
   constructor(config?: FirestoreStoreConfig) {
-    this.projectId = config?.projectId || process.env.SKYOPS_FIRESTORE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || fallbackConfig.projectId || '';
-    this.databaseId = config?.databaseId || process.env.SKYOPS_FIRESTORE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID || process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || (fallbackConfig as any).firestoreDatabaseId || '';
+    this.projectId =
+      config?.projectId ||
+      process.env.SKYOPS_FIRESTORE_PROJECT_ID ||
+      process.env.FIREBASE_PROJECT_ID ||
+      process.env.VITE_FIREBASE_PROJECT_ID ||
+      fallbackConfig.projectId ||
+      '';
+
+    const namedDatabaseId =
+      (config?.databaseId && config.databaseId !== '(default)' ? config.databaseId : null) ||
+      (process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID && process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID !== '(default)'
+        ? process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID
+        : null) ||
+      ((fallbackConfig as any).firestoreDatabaseId && (fallbackConfig as any).firestoreDatabaseId !== '(default)'
+        ? (fallbackConfig as any).firestoreDatabaseId
+        : null) ||
+      (process.env.SKYOPS_FIRESTORE_DATABASE_ID && process.env.SKYOPS_FIRESTORE_DATABASE_ID !== '(default)'
+        ? process.env.SKYOPS_FIRESTORE_DATABASE_ID
+        : null) ||
+      (process.env.FIREBASE_DATABASE_ID && process.env.FIREBASE_DATABASE_ID !== '(default)'
+        ? process.env.FIREBASE_DATABASE_ID
+        : null);
+
+    this.databaseId = namedDatabaseId || config?.databaseId || process.env.SKYOPS_FIRESTORE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID || '(default)';
 
     if (!this.projectId) throw new Error('[FirestoreStore] Fatal Startup Error: Missing Firestore project ID. Set SKYOPS_FIRESTORE_PROJECT_ID.');
     if (!this.databaseId) throw new Error('[FirestoreStore] Fatal Startup Error: Missing Firestore database ID. Set SKYOPS_FIRESTORE_DATABASE_ID.');
 
     const apps = getApps();
-    const app = apps.length > 0 ? apps[0] : initializeApp({ projectId: this.projectId, credential: applicationDefault() });
+    const app =
+      apps.length > 0
+        ? apps[0]
+        : initializeApp({
+            projectId: this.projectId,
+            apiKey: fallbackConfig.apiKey,
+            authDomain: fallbackConfig.authDomain,
+            appId: fallbackConfig.appId,
+            storageBucket: fallbackConfig.storageBucket,
+            messagingSenderId: fallbackConfig.messagingSenderId
+          });
     const firestoreInstance = this.databaseId === '(default)' ? getFirestore(app) : getFirestore(app, this.databaseId);
-    this.firestore = new FirebaseAdminWrapper(firestoreInstance);
+    this.firestore = new FirebaseStoreWrapper(firestoreInstance);
   }
 
   public getDatabaseId(): string { return this.databaseId; }
   public getProjectId(): string { return this.projectId; }
 
+  private connectingPromise: Promise<void> | null = null;
+
+  public async ensureConnected(): Promise<void> {
+    if (this.connected) return;
+    if (!this.connectingPromise) {
+      this.connectingPromise = this.init().finally(() => {
+        this.connectingPromise = null;
+      });
+    }
+    await this.connectingPromise;
+  }
+
   public async init(): Promise<void> {
     try {
-      await this.firestore.collection('organizations').limit(1).get();
+      await this.firestore.collection('system_health').limit(1).get();
       this.connected = true;
-      console.log(`[FirestoreStore] Connected to Firestore project="${this.projectId}", database="${this.databaseId}" using server credentials`);
+      console.log(`[FirestoreStore] Connected to Firestore project="${this.projectId}", database="${this.databaseId}"`);
     } catch (err: any) {
       this.connected = false;
       throw new Error(
@@ -161,7 +239,7 @@ export class FirestoreStore implements IPersistenceStore {
   public async isHealthy(): Promise<boolean> {
     if (!this.connected) return false;
     try {
-      await this.firestore.collection('organizations').limit(1).get();
+      await this.firestore.collection('system_health').limit(1).get();
       return true;
     } catch {
       this.connected = false;
@@ -169,12 +247,20 @@ export class FirestoreStore implements IPersistenceStore {
     }
   }
 
-  // Helper to remove undefined fields before writing to Firestore
+  // Helper to deeply remove undefined fields before writing to Firestore
   private sanitize<T extends Record<string, any>>(data: T): T {
+    if (data === null || typeof data !== 'object') return data;
+    if (Array.isArray(data)) {
+      return data.map((item) => this.sanitize(item)) as any;
+    }
     const clean: Record<string, any> = {};
     for (const [key, value] of Object.entries(data)) {
       if (value !== undefined) {
-        clean[key] = value;
+        if (value !== null && typeof value === 'object' && !(value instanceof Date)) {
+          clean[key] = this.sanitize(value);
+        } else {
+          clean[key] = value;
+        }
       }
     }
     return clean as T;
@@ -183,6 +269,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Users ---
   public async getUser(userId: string): Promise<User | null> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('users').doc(userId).get();
       if (!snap.exists) return null;
       return snap.data() as User;
@@ -192,7 +279,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async upsertUser(user: User): Promise<User> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       const docRef = this.firestore.collection('users').doc(user.id);
       const existing = await docRef.get();
@@ -209,6 +296,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   public async listUsers(): Promise<User[]> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('users').get();
       const docs = snap.docs.map((d) => d.data() as User);
       return docs;
@@ -220,6 +308,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- User Notification Settings ---
   public async getUserNotificationSettings(userId: string): Promise<UserNotificationSettings | null> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('userNotificationSettings').doc(userId).get();
       if (!snap.exists) return null;
       return snap.data() as UserNotificationSettings;
@@ -229,7 +318,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async saveUserNotificationSettings(userId: string, settings: UserNotificationSettings): Promise<void> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore
         .collection('userNotificationSettings')
@@ -243,6 +332,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Organizations ---
   public async getOrganization(orgId: string): Promise<Organization | null> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('organizations').doc(orgId).get();
       if (!snap.exists) return null;
       return snap.data() as Organization;
@@ -252,7 +342,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async upsertOrganization(org: Organization): Promise<Organization> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       const docRef = this.firestore.collection('organizations').doc(org.id);
       const existing = await docRef.get();
@@ -270,6 +360,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   public async listOrganizations(): Promise<Organization[]> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('organizations').get();
       const docs = snap.docs.map((d) => d.data() as Organization);
       return docs;
@@ -279,7 +370,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async deleteOrganization(orgId: string): Promise<boolean> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       const batch = this.firestore.batch();
       batch.delete(this.firestore.collection('organizations').doc(orgId));
@@ -298,6 +389,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Organization Memberships ---
   public async getOrgMembers(orgId: string): Promise<OrgMember[]> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('memberships').where('orgId', '==', orgId).get();
       const docs = snap.docs.map((d) => d.data() as OrgMember);
       return docs;
@@ -307,7 +399,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async setOrgMembers(orgId: string, members: OrgMember[]): Promise<void> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       const batch = this.firestore.batch();
       const existing = await this.firestore.collection('memberships').where('orgId', '==', orgId).get();
@@ -325,7 +417,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async addOrgMember(orgId: string, member: OrgMember): Promise<OrgMember> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       const docId = `${orgId}_${member.userId}`;
       const payload = this.sanitize({ ...member, orgId });
@@ -337,7 +429,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async removeOrgMember(orgId: string, userId: string): Promise<boolean> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       const docId = `${orgId}_${userId}`;
       await this.firestore.collection('memberships').doc(docId).delete();
@@ -349,6 +441,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   public async getUserOrganizations(userId: string, email?: string): Promise<Organization[]> {
     try {
+    await this.ensureConnected();
       const orgIds = new Set<string>();
       const userMemberships = await this.firestore
         .collection('memberships')
@@ -385,6 +478,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Invitations ---
   public async getInvitation(invitationId: string): Promise<OrgInvitation | null> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('invitations').doc(invitationId).get();
       if (!snap.exists) return null;
       return snap.data() as OrgInvitation;
@@ -395,6 +489,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   public async getInvitationByToken(token: string): Promise<OrgInvitation | null> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('invitations').where('token', '==', token).limit(1).get();
       if (snap.empty) return null;
       return snap.docs[0].data() as OrgInvitation;
@@ -405,6 +500,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   public async listOrgInvitations(orgId: string): Promise<OrgInvitation[]> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('invitations').where('orgId', '==', orgId).get();
       const docs = snap.docs.map((d) => d.data() as OrgInvitation);
       return docs;
@@ -414,7 +510,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async saveInvitation(invitation: OrgInvitation): Promise<OrgInvitation> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore
         .collection('invitations')
@@ -427,7 +523,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async deleteInvitation(invitationId: string): Promise<boolean> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore.collection('invitations').doc(invitationId).delete();
       return true;
@@ -439,6 +535,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Support Tickets ---
   public async getSupportTicket(ticketId: string): Promise<SupportTicket | null> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('supportTickets').doc(ticketId).get();
       if (!snap.exists) return null;
       return snap.data() as SupportTicket;
@@ -449,6 +546,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   public async listSupportTickets(orgId: string): Promise<SupportTicket[]> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('supportTickets').where('orgId', '==', orgId).get();
       const docs = snap.docs.map((d) => d.data() as SupportTicket);
       return docs;
@@ -458,7 +556,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async saveSupportTicket(ticket: SupportTicket): Promise<SupportTicket> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore
         .collection('supportTickets')
@@ -473,6 +571,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Clusters ---
   public async getCluster(clusterId: string, orgId?: string): Promise<Cluster | null> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('clusters').doc(clusterId).get();
       if (!snap.exists) return null;
       const cluster = snap.data() as Cluster;
@@ -485,6 +584,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   public async listClusters(orgId?: string): Promise<Cluster[]> {
     try {
+    await this.ensureConnected();
       let query: any = this.firestore.collection('clusters');
       if (orgId) {
         query = query.where('orgId', '==', orgId);
@@ -498,7 +598,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async upsertCluster(cluster: Cluster): Promise<Cluster> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore.collection('clusters').doc(cluster.id).set(this.sanitize(cluster), { merge: true });
       return cluster;
@@ -508,7 +608,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async deleteCluster(clusterId: string, orgId: string): Promise<boolean> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       const cluster = await this.getCluster(clusterId, orgId);
       if (!cluster) return false;
@@ -531,6 +631,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   // --- Cluster Tokens ---
   public async getClusterTokenByHash(tokenHash: string): Promise<ClusterTokenRecord | null> {
+    await this.ensureConnected();
     try {
       const snap = await this.firestore.collection('clusterTokens').doc(tokenHash).get();
       if (!snap.exists) return null;
@@ -540,8 +641,22 @@ export class FirestoreStore implements IPersistenceStore {
     }
   }
 
+  public async listClusterTokens(clusterId?: string): Promise<ClusterTokenRecord[]> {
+    await this.ensureConnected();
+    try {
+      if (clusterId) {
+        const snap = await this.firestore.collection('clusterTokens').where('clusterId', '==', clusterId).get();
+        return snap.docs.map((d: any) => d.data() as ClusterTokenRecord);
+      }
+      const snap = await this.firestore.collection('clusterTokens').get();
+      return snap.docs.map((d: any) => d.data() as ClusterTokenRecord);
+    } catch (err: any) {
+      throw err;
+    }
+  }
+
   public async saveClusterToken(record: ClusterTokenRecord): Promise<void> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore.collection('clusterTokens').doc(record.tokenHash).set(this.sanitize(record), { merge: true });
     } catch (err: any) {
@@ -550,7 +665,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async deleteClusterToken(tokenHash: string): Promise<boolean> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore.collection('clusterTokens').doc(tokenHash).delete();
       return true;
@@ -562,6 +677,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Cluster Resources ---
   public async getClusterResources(clusterId: string, orgId?: string): Promise<KubernetesResource[]> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('clusterResources').doc(clusterId).get();
       if (!snap.exists) return [];
       const record = snap.data() as ClusterResourcesRecord;
@@ -573,7 +689,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async saveClusterResources(clusterId: string, orgId: string, resources: KubernetesResource[]): Promise<void> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       const payload: ClusterResourcesRecord = {
         clusterId,
@@ -590,6 +706,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Incidents ---
   public async getIncident(incidentId: string, orgId?: string): Promise<Incident | null> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('incidents').doc(incidentId).get();
       if (!snap.exists) return null;
       const inc = snap.data() as Incident;
@@ -602,6 +719,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   public async listIncidents(orgId?: string, clusterId?: string): Promise<Incident[]> {
     try {
+    await this.ensureConnected();
       let query: any = this.firestore.collection('incidents');
       if (orgId) query = query.where('orgId', '==', orgId);
       if (clusterId) query = query.where('clusterId', '==', clusterId);
@@ -614,7 +732,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async upsertIncident(incident: Incident): Promise<Incident> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore.collection('incidents').doc(incident.id).set(this.sanitize(incident), { merge: true });
       return incident;
@@ -624,7 +742,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async deleteIncident(incidentId: string, orgId: string): Promise<boolean> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       const inc = await this.getIncident(incidentId, orgId);
       if (!inc) return false;
@@ -650,6 +768,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Incident Timeline ---
   public async getIncidentTimeline(incidentId: string, orgId?: string): Promise<TimelineEvent[]> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore
         .collection('incidentTimeline')
         .where('incidentId', '==', incidentId)
@@ -664,7 +783,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async addTimelineEvent(incidentId: string, event: TimelineEvent, orgId: string): Promise<TimelineEvent> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       const docId = event.id || `${incidentId}_${event.timestamp}_${Math.random().toString(36).substring(2, 7)}`;
       const fullEvent: TimelineEvent = {
@@ -682,7 +801,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async setIncidentTimeline(incidentId: string, events: TimelineEvent[], orgId: string): Promise<void> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       const batch = this.firestore.batch();
       const existing = await this.firestore.collection('incidentTimeline').where('incidentId', '==', incidentId).get();
@@ -704,6 +823,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Incident Notes ---
   public async getIncidentNotes(incidentId: string, orgId?: string): Promise<IncidentNote[]> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore
         .collection('incidentNotes')
         .where('incidentId', '==', incidentId)
@@ -717,7 +837,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async addIncidentNote(incidentId: string, note: IncidentNote, orgId: string): Promise<IncidentNote> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore
         .collection('incidentNotes')
@@ -730,7 +850,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async deleteIncidentNote(incidentId: string, noteId: string, orgId: string): Promise<boolean> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore.collection('incidentNotes').doc(noteId).delete();
       return true;
@@ -742,6 +862,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Remediations ---
   public async getRemediation(incidentId: string, orgId?: string): Promise<StructuredRemediation | null> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('remediations').doc(incidentId).get();
       if (!snap.exists) return null;
       const data = snap.data();
@@ -753,7 +874,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async saveRemediation(incidentId: string, remediation: StructuredRemediation, orgId: string): Promise<void> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore
         .collection('remediations')
@@ -767,6 +888,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Remediation Actions ---
   public async getRemediationAction(actionId: string, orgId?: string): Promise<RemediationAction | null> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('remediationActions').doc(actionId).get();
       if (!snap.exists) return null;
       const action = snap.data() as RemediationAction;
@@ -779,6 +901,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   public async listRemediationActions(orgId?: string, incidentId?: string): Promise<RemediationAction[]> {
     try {
+    await this.ensureConnected();
       let query: any = this.firestore.collection('remediationActions');
       if (orgId) query = query.where('orgId', '==', orgId);
       if (incidentId) query = query.where('incidentId', '==', incidentId);
@@ -791,7 +914,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async saveRemediationAction(action: RemediationAction): Promise<RemediationAction> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore
         .collection('remediationActions')
@@ -806,6 +929,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- AI Analyses ---
   public async getAIAnalysis(incidentId: string, orgId?: string): Promise<SkyOpsAIAnalysis | null> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('aiAnalyses').doc(incidentId).get();
       if (!snap.exists) return null;
       const data = snap.data();
@@ -817,7 +941,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async saveAIAnalysis(incidentId: string, analysis: SkyOpsAIAnalysis, orgId: string): Promise<void> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore
         .collection('aiAnalyses')
@@ -831,6 +955,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Policies ---
   public async getPolicy(policyId: string, orgId?: string): Promise<RemediationPolicy | null> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('policies').doc(policyId).get();
       if (!snap.exists) return null;
       const pol = snap.data() as RemediationPolicy;
@@ -843,6 +968,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   public async listPolicies(orgId: string): Promise<RemediationPolicy[]> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('policies').where('orgId', '==', orgId).get();
       const docs = snap.docs.map((d) => d.data() as RemediationPolicy);
       return docs;
@@ -852,7 +978,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async savePolicy(policy: RemediationPolicy): Promise<RemediationPolicy> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       const docId = (policy as any).id || (policy.clusterId ? `${policy.orgId}_${policy.clusterId}` : policy.orgId);
       await this.firestore.collection('policies').doc(docId).set(this.sanitize(policy), { merge: true });
@@ -863,7 +989,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async deletePolicy(policyId: string, orgId: string): Promise<boolean> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       const pol = await this.getPolicy(policyId, orgId);
       if (!pol) return false;
@@ -876,7 +1002,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   // --- Audit Events ---
   public async recordAuditEvent(event: AuditEvent): Promise<AuditEvent> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore
         .collection('auditEvents')
@@ -945,6 +1071,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Webhooks ---
   public async getWebhook(webhookId: string, orgId?: string): Promise<WebhookConfig | null> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('webhooks').doc(webhookId).get();
       if (!snap.exists) return null;
       const wh = snap.data() as WebhookConfig;
@@ -957,6 +1084,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   public async listWebhooks(orgId: string): Promise<WebhookConfig[]> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('webhooks').where('orgId', '==', orgId).get();
       const docs = snap.docs.map((d) => d.data() as WebhookConfig);
       return docs;
@@ -966,7 +1094,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async saveWebhook(webhook: WebhookConfig): Promise<WebhookConfig> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore
         .collection('webhooks')
@@ -979,7 +1107,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async deleteWebhook(webhookId: string, orgId: string): Promise<boolean> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       const wh = await this.getWebhook(webhookId, orgId);
       if (!wh) return false;
@@ -992,7 +1120,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   // --- Webhook Deliveries ---
   public async recordWebhookDelivery(delivery: WebhookDeliveryRecord): Promise<WebhookDeliveryRecord> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore
         .collection('webhookDeliveries')
@@ -1006,6 +1134,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   public async listWebhookDeliveries(orgId: string, webhookId?: string, limit = 100): Promise<WebhookDeliveryRecord[]> {
     try {
+    await this.ensureConnected();
       let query: any = this.firestore
         .collection('webhookDeliveries')
         .where('orgId', '==', orgId);
@@ -1024,6 +1153,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Subscriptions & Invoices ---
   public async getSubscription(orgId: string): Promise<Subscription | null> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('subscriptions').doc(orgId).get();
       if (!snap.exists) return null;
       return snap.data() as Subscription;
@@ -1033,7 +1163,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async saveSubscription(subscription: Subscription): Promise<Subscription> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       const orgId = subscription.organizationId || (subscription as any).orgId;
       await this.firestore
@@ -1048,6 +1178,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   public async getInvoice(invoiceId: string, orgId?: string): Promise<Invoice | null> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('invoices').doc(invoiceId).get();
       if (!snap.exists) return null;
       const inv = snap.data() as Invoice;
@@ -1061,6 +1192,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   public async listInvoices(orgId: string): Promise<Invoice[]> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('invoices').where('organizationId', '==', orgId).get();
       const docs = snap.docs.map((d) => d.data() as Invoice);
       return docs;
@@ -1070,7 +1202,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async saveInvoice(invoice: Invoice): Promise<Invoice> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore
         .collection('invoices')
@@ -1085,6 +1217,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Usage Summaries ---
   public async getUsage(orgId: string, period: string): Promise<OrgUsageSummary | null> {
     try {
+    await this.ensureConnected();
       const docId = `${orgId}_${period}`;
       const snap = await this.firestore.collection('usage').doc(docId).get();
       if (!snap.exists) return null;
@@ -1095,7 +1228,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async saveUsage(summary: OrgUsageSummary): Promise<void> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       const docId = `${summary.orgId}_${summary.period}`;
       await this.firestore.collection('usage').doc(docId).set(this.sanitize(summary), { merge: true });
@@ -1107,6 +1240,7 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Processed Webhook IDs ---
   public async isWebhookProcessed(webhookId: string): Promise<boolean> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('processedWebhooks').doc(webhookId).get();
       return snap.exists;
     } catch (err: any) {
@@ -1115,7 +1249,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async markWebhookProcessed(webhookId: string): Promise<void> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore
         .collection('processedWebhooks')
@@ -1128,7 +1262,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   // --- Stored Artifacts ---
   public async saveStoredArtifact(artifact: StoredArtifact): Promise<StoredArtifact> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       await this.firestore
         .collection('storedArtifacts')
@@ -1142,6 +1276,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   public async getStoredArtifact(orgId: string, id: string): Promise<StoredArtifact | null> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore.collection('storedArtifacts').doc(id).get();
       if (!snap.exists) return null;
       const data = snap.data() as StoredArtifact;
@@ -1212,6 +1347,7 @@ export class FirestoreStore implements IPersistenceStore {
     status: StoredArtifactLifecycleStatus
   ): Promise<StoredArtifact | null> {
     try {
+    await this.ensureConnected();
       const docRef = this.firestore.collection('storedArtifacts').doc(id);
       const snap = await docRef.get();
       if (!snap.exists) return null;
@@ -1230,7 +1366,7 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async deleteStoredArtifact(orgId: string, id: string): Promise<boolean> {
-    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    await this.ensureConnected();
     try {
       const docRef = this.firestore.collection('storedArtifacts').doc(id);
       const snap = await docRef.get();
@@ -1246,6 +1382,7 @@ export class FirestoreStore implements IPersistenceStore {
 
   public async getStorageUsageSummary(orgId: string): Promise<StorageUsageSummary> {
     try {
+    await this.ensureConnected();
       const snap = await this.firestore
         .collection('storedArtifacts')
         .where('orgId', '==', orgId)

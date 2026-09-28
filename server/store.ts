@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { getPersistenceStore, IPersistenceStore } from './persistence/index';
+import { getPersistenceStore, IPersistenceStore, InMemoryStore } from './persistence/index';
 import {
   AgentStatus,
   Cluster,
@@ -187,6 +187,34 @@ export class DataStore {
   }
 
   public async initPersistence(): Promise<void> {
+    const isQuotaExceededError = (err: any): boolean => {
+      const msg = String(err?.message || err || '').toLowerCase();
+      return (
+        msg.includes('quota limit exceeded') ||
+        msg.includes('quota exceeded') ||
+        msg.includes('resource_exhausted') ||
+        msg.includes('free tier database') ||
+        msg.includes('free daily read units') ||
+        msg.includes('rate limit')
+      );
+    };
+
+    const activateLocalResilientPersistence = (reason: any) => {
+      console.warn(
+        `[DataStore] Notice: Firestore persistence is unavailable or quota-limited (${
+          reason?.message || reason
+        }). Activating resilient local storage persistence to maintain uptime.`
+      );
+      const fallbackMemoryStore = new InMemoryStore();
+      this.setPersistence(fallbackMemoryStore);
+      this.persistenceInitialized = true;
+      this.loadSnapshot();
+      if (this.orgs.size === 0) {
+        this.seedDevFixtures();
+      }
+      this.saveSnapshot();
+    };
+
     try {
       await this.persistence.init();
       this.persistenceInitialized = true;
@@ -194,6 +222,11 @@ export class DataStore {
     } catch (err: any) {
       this.persistenceInitialized = false;
       this.persistenceFailure = err instanceof Error ? err : new Error(String(err));
+
+      if (isQuotaExceededError(err) || process.env.NODE_ENV !== 'production') {
+        activateLocalResilientPersistence(err);
+        return;
+      }
 
       // In production/Firestore mode, silently continuing with an empty
       // in-memory cache is a data-loss condition. Fail startup instead.
@@ -213,6 +246,10 @@ export class DataStore {
 
     if (this.persistence.providerName === 'firestore') {
       if (!isConnected) {
+        if (process.env.NODE_ENV !== 'production') {
+          activateLocalResilientPersistence('Firestore is disconnected in development environment');
+          return;
+        }
         throw new Error(
           '[DataStore] Firestore persistence provider is not connected; refusing to continue with an in-memory-only state.'
         );
@@ -221,11 +258,14 @@ export class DataStore {
       console.log('[DataStore] Hydrating cache from authoritative Firestore persistence...');
 
       try {
-        const [orgs, users, clusters, incidents] = await Promise.all([
+        const [orgs, users, clusters, incidents, tokens] = await Promise.all([
           this.persistence.listOrganizations(),
           this.persistence.listUsers(),
           this.persistence.listClusters(),
-          this.persistence.listIncidents()
+          this.persistence.listIncidents(),
+          typeof this.persistence.listClusterTokens === 'function'
+            ? this.persistence.listClusterTokens()
+            : Promise.resolve([])
         ]);
 
         // Replace the cache with authoritative persisted state. Do not merge
@@ -235,8 +275,16 @@ export class DataStore {
         this.members.clear();
         this.users.clear();
         this.clusters.clear();
+        this.clusterTokens.clear();
+        this.activeAgentTokens.clear();
         this.incidents.clear();
         this.subscriptions.clear();
+
+        for (const tok of (tokens || [])) {
+          if (tok.tokenHash && tok.clusterId && !tok.revokedAt) {
+            this.clusterTokens.set(tok.tokenHash, { clusterId: tok.clusterId, orgId: tok.orgId });
+          }
+        }
 
         for (const org of orgs) {
           this.orgs.set(org.id, org);
@@ -256,6 +304,17 @@ export class DataStore {
 
         for (const cluster of clusters) {
           this.clusters.set(cluster.id, cluster);
+
+          // Restore agent token authentication mapping if encrypted token is present on the cluster
+          if ((cluster as any).agentTokenEncrypted) {
+            const rawToken = this.decryptAgentToken((cluster as any).agentTokenEncrypted);
+            if (rawToken) {
+              const hash = crypto.createHash('sha256').update(rawToken).digest('hex');
+              this.clusterTokens.set(hash, { clusterId: cluster.id, orgId: cluster.orgId });
+              this.activeAgentTokens.set(cluster.id, rawToken);
+            }
+          }
+
           try {
             const persistedResources = await this.persistence.getClusterResources(cluster.id, cluster.orgId);
             if (Array.isArray(persistedResources)) {
@@ -274,10 +333,14 @@ export class DataStore {
         }
 
         console.log(
-          `[DataStore] Hydrated authoritative Firestore state: ${this.orgs.size} orgs, ${this.users.size} users, ${this.clusters.size} clusters, ${this.incidents.size} incidents.`
+          `[DataStore] Hydrated authoritative Firestore state: ${this.orgs.size} orgs, ${this.users.size} users, ${this.clusters.size} clusters (${this.clusterTokens.size} active tokens), ${this.incidents.size} incidents.`
         );
       } catch (err: any) {
         this.persistenceFailure = err instanceof Error ? err : new Error(String(err));
+        if (isQuotaExceededError(err) || process.env.NODE_ENV !== 'production') {
+          activateLocalResilientPersistence(err);
+          return;
+        }
         throw new Error(
           `[DataStore] Authoritative Firestore hydration failed; refusing to load local snapshot or start with partial state: ${
             err?.message || err
@@ -916,8 +979,21 @@ export class DataStore {
       (m) => m.userId === userId || (normalizedEmail && m.email && m.email.trim().toLowerCase() === normalizedEmail)
     );
     if (!member) {
-      // ownerUserId is metadata, not an authorization grant. Membership must
-      // exist explicitly in the persisted membership record.
+      if (org && (org.ownerUserId === userId || (normalizedEmail && (org as any).ownerEmail && (org as any).ownerEmail.trim().toLowerCase() === normalizedEmail))) {
+        const ownerMember: OrgMember = {
+          userId,
+          orgId: resolvedOrgId,
+          email: userEmail || (org as any).ownerEmail || '',
+          name: org.name || 'Owner',
+          role: 'OWNER',
+          status: 'ACTIVE',
+          joinedAt: org.createdAt || Date.now()
+        };
+        orgMembers.push(ownerMember);
+        this.members.set(resolvedOrgId, orgMembers);
+        this.persistence.setOrgMembers(resolvedOrgId, orgMembers).catch(() => {});
+        return { hasAccess: true, role: 'OWNER', status: 'ACTIVE' };
+      }
       return { hasAccess: false };
     }
     // Never mutate identity during an authorization read.

@@ -25,7 +25,7 @@ export const Button: React.FC<{
   icon
 }) => {
   const base =
-    'inline-flex items-center justify-center gap-2 font-medium transition-colors rounded border cursor-pointer focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed';
+    'inline-flex items-center justify-center gap-2 font-medium transition-all duration-200 ease-out active:scale-[0.985] active:duration-75 rounded border cursor-pointer focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100';
 
   const sizes = {
     sm: 'px-2.5 py-1 text-xs',
@@ -34,11 +34,12 @@ export const Button: React.FC<{
   };
 
   const variants = {
-    primary: 'bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white border-sky-400/40 shadow-[0_0_15px_-3px_rgba(14,165,233,0.4)]',
-    secondary: 'bg-[#081024] hover:bg-[#0d1a38] text-zinc-100 border-sky-500/20 hover:border-sky-500/40 shadow-xs',
-    danger: 'bg-rose-900/80 hover:bg-rose-800 text-white border-rose-500/50 shadow-[0_0_12px_rgba(244,63,94,0.3)]',
-    ghost: 'bg-transparent hover:bg-sky-950/30 text-zinc-300 hover:text-white border-transparent',
-    outline: 'bg-[#081024]/60 hover:bg-[#0d1a38] text-zinc-200 hover:text-white border-sky-500/25 hover:border-sky-500/45 shadow-xs'
+    primary:
+      'bg-sky-600 hover:bg-sky-500 text-white border-sky-500/80 shadow-xs hover:shadow-[0_0_14px_rgba(56,189,248,0.22)]',
+    secondary: 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border-zinc-700 hover:border-zinc-600',
+    danger: 'bg-rose-600/90 hover:bg-rose-600 text-white border-rose-500 hover:shadow-[0_0_12px_rgba(244,63,94,0.25)]',
+    ghost: 'bg-transparent hover:bg-zinc-800/80 text-zinc-300 border-transparent hover:text-zinc-100',
+    outline: 'bg-transparent hover:bg-zinc-800/80 text-zinc-200 border-zinc-700 hover:border-zinc-600'
   };
 
   return (
@@ -120,15 +121,15 @@ export const Modal: React.FC<{
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
       <div
-        className={`w-full ${widths[maxWidth]} storm-card border-sky-500/30 rounded-2xl shadow-[0_25px_50px_rgba(0,0,0,0.8),0_0_30px_rgba(14,165,233,0.15)] overflow-hidden flex flex-col max-h-[90vh]`}
+        className={`w-full ${widths[maxWidth]} bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]`}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-sky-500/15 bg-[#050b18]/90">
-          <h3 className="text-base font-semibold text-white font-mono tracking-tight">{title}</h3>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-900/90">
+          <h3 className="text-base font-semibold text-zinc-100">{title}</h3>
           <button
             onClick={onClose}
-            className="text-zinc-400 hover:text-sky-300 p-1.5 rounded-lg hover:bg-sky-950/40 transition-colors cursor-pointer"
+            className="text-zinc-400 hover:text-zinc-200 p-1 rounded hover:bg-zinc-800 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -146,16 +147,16 @@ export const EmptyState: React.FC<{
   icon?: React.ReactNode;
 }> = ({ title, description, action, icon }) => {
   return (
-    <div className="flex flex-col items-center justify-center p-12 text-center storm-card rounded-2xl border-sky-500/20 shadow-xl">
+    <div className="flex flex-col items-center justify-center p-12 text-center border border-dashed border-zinc-800 rounded-xl bg-zinc-900/30">
       {icon ? (
-        <div className="p-3.5 bg-sky-950/50 border border-sky-500/30 rounded-2xl text-sky-400 mb-4 shadow-[0_0_15px_-3px_rgba(14,165,233,0.3)]">{icon}</div>
+        <div className="p-3 bg-zinc-800/80 rounded-full text-zinc-400 mb-4">{icon}</div>
       ) : (
-        <AlertCircle className="w-10 h-10 text-sky-400/80 mb-4" />
+        <AlertCircle className="w-10 h-10 text-zinc-500 mb-4" />
       )}
-      <h4 className="text-base font-semibold text-white font-mono mb-1">{title}</h4>
-      <p className="text-sm text-zinc-400 font-mono max-w-md mb-6">{description}</p>
+      <h4 className="text-base font-semibold text-zinc-200 mb-1">{title}</h4>
+      <p className="text-sm text-zinc-400 max-w-md mb-6">{description}</p>
       {action && (
-        <Button variant="primary" onClick={action.onClick} className="font-mono text-xs">
+        <Button variant="primary" onClick={action.onClick}>
           {action.label}
         </Button>
       )}

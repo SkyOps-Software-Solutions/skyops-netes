@@ -225,23 +225,23 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
   }
 
   return (
-    <div className="flex flex-col h-full bg-transparent text-zinc-100">
+    <div className="flex flex-col h-full bg-transparent text-zinc-100 font-sans">
       {/* Top Observability Hub Header */}
-      <div className="border-b border-sky-500/15 bg-[#030712]/80 backdrop-blur-md px-6 lg:px-8 py-4">
+      <div className="border-b border-white/6 bg-[#05060A]/80 backdrop-blur-md px-6 lg:px-8 py-4">
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-sky-950/60 border border-sky-500/30 flex items-center justify-center text-sky-400 shrink-0 shadow-[0_0_15px_-3px_rgba(14,165,233,0.3)]">
+              <div className="w-9 h-9 rounded-lg bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-sky-300 shrink-0 shadow-sm">
                 <Radio className="w-5 h-5" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h1 className="text-lg font-bold text-white font-mono">Observability Radar</h1>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/30">
-                    Live Stream & Diagnostics
+                  <h1 className="text-lg font-bold text-white tracking-tight">Observability Hub</h1>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                    Telemetry & Diagnostics
                   </span>
                 </div>
-                <p className="text-xs text-zinc-400 font-mono mt-0.5">
+                <p className="text-xs text-zinc-400 mt-0.5">
                   Full-stack infrastructure telemetry, real-time pod log streaming, and cluster audit events.
                 </p>
               </div>
@@ -249,8 +249,8 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
 
             {/* Controls: Cluster Selector & Refresh */}
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 bg-[#081024] border border-sky-500/25 rounded-lg px-3 py-1.5 shadow-xs">
-                <Server className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+              <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5">
+                <Server className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                 <select
                   aria-label="Select Cluster"
                   value={selectedCluster?.id || ''}
@@ -261,7 +261,7 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
                   className="bg-transparent text-xs font-mono text-zinc-200 outline-none cursor-pointer pr-2"
                 >
                   {clusters.map((c) => (
-                    <option key={c.id} value={c.id} className="bg-[#050b18] text-zinc-200">
+                    <option key={c.id} value={c.id} className="bg-zinc-900 text-zinc-200">
                       {c.name} ({c.environment || 'production'})
                     </option>
                   ))}
@@ -278,23 +278,23 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
                   if (onRefresh) onRefresh();
                 }}
                 title="Refresh telemetry"
-                className="p-2 rounded-lg bg-[#081024] hover:bg-[#0c1836] text-zinc-300 hover:text-white border border-sky-500/25 hover:border-sky-500/45 transition-colors cursor-pointer shadow-xs"
+                className="p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-800 transition-colors cursor-pointer"
               >
                 <RefreshCw
-                  className={`w-4 h-4 ${loadingResources || loadingEvents ? 'animate-spin text-sky-400' : 'text-zinc-400'}`}
+                  className={`w-4 h-4 ${loadingResources || loadingEvents ? 'animate-spin text-sky-400' : ''}`}
                 />
               </button>
             </div>
           </div>
 
           {/* View Mode Tabs */}
-          <div className="flex items-center gap-2 mt-4 border-t border-sky-500/10 pt-3">
+          <div className="flex items-center gap-1.5 mt-4 border-t border-white/6 pt-3">
             <button
               onClick={() => setActiveTab('metrics')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium font-mono transition-all cursor-pointer ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                 activeTab === 'metrics'
-                  ? 'bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-[0_0_12px_rgba(14,165,233,0.35)] border border-sky-400/40'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-sky-950/30'
+                  ? 'bg-sky-500/15 text-sky-300 border border-sky-400/40 shadow-xs'
+                  : 'text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent'
               }`}
             >
               <Activity className="w-3.5 h-3.5" />
@@ -303,10 +303,10 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
 
             <button
               onClick={() => setActiveTab('logs')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium font-mono transition-all cursor-pointer ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                 activeTab === 'logs'
-                  ? 'bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-[0_0_12px_rgba(14,165,233,0.35)] border border-sky-400/40'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-sky-950/30'
+                  ? 'bg-sky-500/15 text-sky-300 border border-sky-400/40 shadow-xs'
+                  : 'text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent'
               }`}
             >
               <Terminal className="w-3.5 h-3.5" />
@@ -314,7 +314,7 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
               {podResources.length > 0 && (
                 <span
                   className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                    activeTab === 'logs' ? 'bg-sky-900 text-sky-200 border border-sky-400/30' : 'bg-sky-950/60 text-sky-300 border border-sky-800/60'
+                    activeTab === 'logs' ? 'bg-sky-500/30 text-sky-200' : 'bg-white/10 text-zinc-400'
                   }`}
                 >
                   {podResources.length}
@@ -324,10 +324,10 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
 
             <button
               onClick={() => setActiveTab('events')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium font-mono transition-all cursor-pointer ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                 activeTab === 'events'
-                  ? 'bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-[0_0_12px_rgba(14,165,233,0.35)] border border-sky-400/40'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-sky-950/30'
+                  ? 'bg-sky-500/15 text-sky-300 border border-sky-400/40 shadow-xs'
+                  : 'text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent'
               }`}
             >
               <Layers className="w-3.5 h-3.5" />
@@ -335,7 +335,7 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
               {clusterEvents.length > 0 && (
                 <span
                   className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                    activeTab === 'events' ? 'bg-sky-900 text-sky-200 border border-sky-400/30' : 'bg-sky-950/60 text-sky-300 border border-sky-800/60'
+                    activeTab === 'events' ? 'bg-sky-500/30 text-sky-200' : 'bg-white/10 text-zinc-400'
                   }`}
                 >
                   {clusterEvents.length}

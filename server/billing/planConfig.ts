@@ -44,6 +44,7 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
       workloads: SRC_PLANS.FREE.limits.workloads,
       members: SRC_PLANS.FREE.limits.members,
       dataRetentionDays: SRC_PLANS.FREE.limits.dataRetentionDays,
+      telemetryRetentionDays: SRC_PLANS.FREE.limits.dataRetentionDays,
       auditRetentionDays: SRC_PLANS.FREE.limits.auditLogsDays,
       aiMonthlyAllowance: SRC_PLANS.FREE.limits.aiMonthlyAllowance ?? SRC_PLANS.FREE.limits.aiInvestigationsMonthly,
       storageGb: 10
@@ -77,6 +78,7 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
       workloads: SRC_PLANS.PRO.limits.workloads,
       members: SRC_PLANS.PRO.limits.members,
       dataRetentionDays: SRC_PLANS.PRO.limits.dataRetentionDays,
+      telemetryRetentionDays: SRC_PLANS.PRO.limits.dataRetentionDays,
       auditRetentionDays: SRC_PLANS.PRO.limits.auditLogsDays,
       aiMonthlyAllowance: SRC_PLANS.PRO.limits.aiMonthlyAllowance ?? SRC_PLANS.PRO.limits.aiInvestigationsMonthly,
       storageGb: 50
@@ -109,6 +111,7 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
       workloads: SRC_PLANS.BUSINESS.limits.workloads,
       members: SRC_PLANS.BUSINESS.limits.members,
       dataRetentionDays: SRC_PLANS.BUSINESS.limits.dataRetentionDays,
+      telemetryRetentionDays: SRC_PLANS.BUSINESS.limits.dataRetentionDays,
       auditRetentionDays: SRC_PLANS.BUSINESS.limits.auditLogsDays,
       aiMonthlyAllowance: SRC_PLANS.BUSINESS.limits.aiMonthlyAllowance ?? SRC_PLANS.BUSINESS.limits.aiInvestigationsMonthly,
       storageGb: 250
@@ -141,6 +144,7 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
       workloads: -1,
       members: -1,
       dataRetentionDays: 365,
+      telemetryRetentionDays: 365,
       auditRetentionDays: 365,
       aiMonthlyAllowance: -1,
       storageGb: -1

@@ -273,60 +273,72 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
       : 'Localized component degradation without total cluster outage.');
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-7xl mx-auto font-sans">
+    <div className="p-6 lg:p-8 space-y-6 max-w-7xl mx-auto font-sans relative z-10">
       {/* ========================================================================= */}
-      {/* 1. INCIDENT HEADER */}
+      {/* 1. INCIDENT HEADER (Deep Space Enterprise Shell) */}
       {/* ========================================================================= */}
-      <div className="p-6 rounded-2xl storm-card border-sky-500/20 shadow-xl space-y-4">
+      <div className={`p-6 rounded-2xl bg-[#080B12]/85 border backdrop-blur-md space-y-5 transition-all duration-300 ${
+        incident.severity === 'CRITICAL'
+          ? 'border-rose-500/30 shadow-[0_0_30px_rgba(244,63,94,0.12)]'
+          : incident.severity === 'HIGH'
+          ? 'border-amber-500/25 shadow-[0_0_20px_rgba(245,158,11,0.08)]'
+          : 'border-cyan-500/20 shadow-[0_0_25px_rgba(6,182,212,0.06)]'
+      }`}>
         {/* Top Action Bar */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="flex items-start sm:items-center gap-3">
+          <div className="flex items-start sm:items-center gap-4">
             <button
               onClick={onBack}
-              className="p-2 rounded-lg bg-[#050b18] border border-sky-500/20 text-zinc-400 hover:text-sky-300 hover:bg-sky-950/40 hover:border-sky-500/40 transition-colors cursor-pointer shrink-0 mt-0.5 sm:mt-0 shadow-xs"
+              className="p-2.5 rounded-xl bg-[#05060A]/80 border border-white/10 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/30 hover:bg-[#0B1020] transition-all cursor-pointer shrink-0 mt-0.5 sm:mt-0"
               title="Back to Incidents List"
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xl font-bold font-mono text-sky-400">{incident.id}</span>
-                <span className="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-sky-950/60 text-sky-300 border border-sky-800/60">
+                <span className="text-[11px] font-mono tracking-wider uppercase text-cyan-400 font-bold px-2 py-0.5 rounded-md bg-cyan-950/60 border border-cyan-800/40">
+                  INCIDENT
+                </span>
+                <span className="text-xl font-bold font-mono text-white tracking-tight">{incident.id}</span>
+                <span className="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-[#0B1020] text-slate-300 border border-white/10">
                   {priority}
                 </span>
                 <SeverityBadge severity={incident.severity} size="sm" />
                 <StatusBadge status={incident.status} size="sm" />
-                <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-amber-950/80 text-amber-300 border border-amber-800/80">
+                <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-amber-950/70 text-amber-300 border border-amber-800/60">
                   {incident.occurrenceCount}x Occurrence{incident.occurrenceCount > 1 ? ` (Recurred ${incident.occurrenceCount - 1}x)` : ''}
                 </span>
 
                 {/* Resolution Provenance Badge (if resolved) */}
                 {incident.resolvedAt && (
                   incident.resolutionSource === 'AUTOMATIC_VERIFIED' || incident.resolution?.source === 'AUTOMATIC_VERIFIED' ? (
-                    <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-emerald-950/90 text-emerald-300 border border-emerald-700 flex items-center gap-1">
-                      <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                    <span className="px-2.5 py-0.5 rounded text-[11px] font-mono font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 shadow-[0_0_12px_rgba(16,185,129,0.2)]">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                       VERIFIED BY TELEMETRY
                     </span>
                   ) : (
-                    <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-zinc-900 text-zinc-300 border border-zinc-700 flex items-center gap-1">
-                      <UserCheck className="w-3 h-3 text-sky-400" />
+                    <span className="px-2.5 py-0.5 rounded text-[11px] font-mono font-bold bg-[#0B1020] text-slate-300 border border-white/15 flex items-center gap-1.5">
+                      <UserCheck className="w-3.5 h-3.5 text-cyan-400" />
                       MANUALLY CLOSED
                     </span>
                   )
                 )}
               </div>
-              <h1 className="text-base font-semibold text-white mt-1.5 leading-snug">{incident.title}</h1>
-              <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-zinc-400 mt-1">
-                <span>
-                  Cluster: <strong className="text-zinc-200">{incident.clusterName}</strong>
+              <h1 className="text-lg font-medium text-white mt-2 leading-snug tracking-tight">{incident.title}</h1>
+              <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-slate-400 mt-1.5">
+                <span className="flex items-center gap-1.5">
+                  <span className="text-slate-500">ENVIRONMENT:</span>
+                  <strong className="text-slate-200">{incident.clusterName}</strong>
                 </span>
-                <span>•</span>
-                <span>
-                  Namespace: <strong className="text-zinc-200">{incident.namespace}</strong>
+                <span className="text-slate-600">•</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="text-slate-500">NAMESPACE:</span>
+                  <strong className="text-slate-200">{incident.namespace}</strong>
                 </span>
-                <span>•</span>
-                <span>
-                  Target: <strong className="text-sky-300">{incident.resourceKind}/{incident.resourceName}</strong>
+                <span className="text-slate-600">•</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="text-slate-500">AFFECTED RESOURCE:</span>
+                  <strong className="text-cyan-300 font-semibold">{incident.resourceKind}/{incident.resourceName}</strong>
                 </span>
               </div>
             </div>
@@ -340,7 +352,7 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
               onClick={handleDownloadPdf}
               disabled={isGeneratingPdf}
               icon={isGeneratingPdf ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-              className="bg-sky-600 hover:bg-sky-500 text-white font-semibold shadow-xs"
+              className="bg-cyan-500 hover:bg-cyan-400 text-[#05060A] font-semibold shadow-[0_0_15px_rgba(6,182,212,0.3)] border-none"
             >
               {pdfSuccess ? 'Report Downloaded!' : isGeneratingPdf ? 'Generating PDF...' : 'Download PDF Report'}
             </Button>
@@ -355,19 +367,19 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
             </Button>
 
             {canEditIncidents && (
-              <div className="flex items-center gap-1.5 bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1">
-                <span className="text-zinc-500 text-[11px] uppercase">Status:</span>
+              <div className="flex items-center gap-1.5 bg-[#05060A]/80 border border-white/10 rounded-lg px-2.5 py-1">
+                <span className="text-slate-400 text-[11px] uppercase">Status:</span>
                 <select
                   value={incident.status}
                   disabled={statusUpdateLoading}
                   onChange={(e) => handleStatusChange(e.target.value as IncidentStatus)}
-                  className="bg-transparent text-zinc-200 focus:outline-none font-semibold cursor-pointer text-xs"
+                  className="bg-transparent text-slate-200 focus:outline-none font-semibold cursor-pointer text-xs"
                 >
-                  <option value="OPEN" className="bg-zinc-900 text-zinc-200">OPEN</option>
-                  <option value="ACKNOWLEDGED" className="bg-zinc-900 text-zinc-200">ACKNOWLEDGED</option>
-                  <option value="IN_PROGRESS" className="bg-zinc-900 text-zinc-200">IN_PROGRESS</option>
-                  <option value="RESOLVED" className="bg-zinc-900 text-zinc-200">RESOLVED</option>
-                  <option value="CLOSED" className="bg-zinc-900 text-zinc-200">CLOSED</option>
+                  <option value="OPEN" className="bg-[#080B12] text-slate-200">OPEN</option>
+                  <option value="ACKNOWLEDGED" className="bg-[#080B12] text-slate-200">ACKNOWLEDGED</option>
+                  <option value="IN_PROGRESS" className="bg-[#080B12] text-slate-200">IN_PROGRESS</option>
+                  <option value="RESOLVED" className="bg-[#080B12] text-slate-200">RESOLVED</option>
+                  <option value="CLOSED" className="bg-[#080B12] text-slate-200">CLOSED</option>
                 </select>
               </div>
             )}
@@ -388,30 +400,30 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
         </div>
 
         {/* Compact Incident Lifecycle Bar */}
-        <div className="pt-3 border-t border-zinc-800/80">
+        <div className="pt-4 border-t border-white/5">
           <div className="flex items-center justify-between text-[11px] font-mono overflow-x-auto pb-1 gap-2 no-scrollbar">
             {/* Stage 1: Detected */}
             <div className="flex items-center gap-2 shrink-0">
-              <span className="w-5 h-5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-700 flex items-center justify-center font-bold text-[10px]">
+              <span className="w-5 h-5 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-500/50 flex items-center justify-center font-bold text-[10px]">
                 ✓
               </span>
               <div>
                 <span className="text-emerald-300 font-bold block">1. Detected</span>
-                <span className="text-zinc-500 text-[10px]">{formatTimeAgo(incident.firstSeenAt)}</span>
+                <span className="text-slate-500 text-[10px]">{formatTimeAgo(incident.firstSeenAt)}</span>
               </div>
             </div>
 
-            <div className="w-6 h-0.5 bg-zinc-800 shrink-0" />
+            <div className="w-6 h-0.5 bg-white/10 shrink-0" />
 
             {/* Stage 2: Investigating */}
             <div className="flex items-center gap-2 shrink-0">
               <span
                 className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] ${
                   isRemediationActive || isVerifying || isResolved
-                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-700'
+                    ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-500/50'
                     : isInvestigating
-                    ? 'bg-sky-950 text-sky-400 border border-sky-700 animate-pulse'
-                    : 'bg-zinc-900 text-zinc-600 border border-zinc-800'
+                    ? 'bg-cyan-950/80 text-cyan-400 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.4)] animate-pulse'
+                    : 'bg-[#0B1020] text-slate-600 border border-white/10'
                 }`}
               >
                 {isRemediationActive || isVerifying || isResolved ? '✓' : '2'}
@@ -422,29 +434,29 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
                     isRemediationActive || isVerifying || isResolved
                       ? 'text-emerald-300'
                       : isInvestigating
-                      ? 'text-sky-300'
-                      : 'text-zinc-500'
+                      ? 'text-cyan-300'
+                      : 'text-slate-500'
                   }`}
                 >
                   2. Investigating
                 </span>
-                <span className="text-zinc-500 text-[10px]">
+                <span className="text-slate-500 text-[10px]">
                   {isInvestigating ? 'Active Triage' : 'Root Cause Analysed'}
                 </span>
               </div>
             </div>
 
-            <div className="w-6 h-0.5 bg-zinc-800 shrink-0" />
+            <div className="w-6 h-0.5 bg-white/10 shrink-0" />
 
             {/* Stage 3: Remediation */}
             <div className="flex items-center gap-2 shrink-0">
               <span
                 className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] ${
                   isVerifying || isResolved
-                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-700'
+                    ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-500/50'
                     : isRemediationActive
-                    ? 'bg-amber-950 text-amber-400 border border-amber-700 animate-pulse'
-                    : 'bg-zinc-900 text-zinc-600 border border-zinc-800'
+                    ? 'bg-amber-950/80 text-amber-400 border border-amber-500/50 animate-pulse'
+                    : 'bg-[#0B1020] text-slate-600 border border-white/10'
                 }`}
               >
                 {isVerifying || isResolved ? '✓' : '3'}
@@ -456,12 +468,12 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
                       ? 'text-emerald-300'
                       : isRemediationActive
                       ? 'text-amber-300'
-                      : 'text-zinc-500'
+                      : 'text-slate-500'
                   }`}
                 >
                   3. Remediation
                 </span>
-                <span className="text-zinc-500 text-[10px]">
+                <span className="text-slate-500 text-[10px]">
                   {remediation?.status === 'DISPATCHED'
                     ? 'Dispatched to Agent'
                     : remediation?.status === 'PROPOSED'
@@ -473,17 +485,17 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
               </div>
             </div>
 
-            <div className="w-6 h-0.5 bg-zinc-800 shrink-0" />
+            <div className="w-6 h-0.5 bg-white/10 shrink-0" />
 
             {/* Stage 4: Verifying */}
             <div className="flex items-center gap-2 shrink-0">
               <span
                 className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] ${
                   isResolved
-                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-700'
+                    ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-500/50'
                     : isVerifying
-                    ? 'bg-purple-950 text-purple-400 border border-purple-700 animate-pulse'
-                    : 'bg-zinc-900 text-zinc-600 border border-zinc-800'
+                    ? 'bg-purple-950/80 text-purple-400 border border-purple-500/50 animate-pulse'
+                    : 'bg-[#0B1020] text-slate-600 border border-white/10'
                 }`}
               >
                 {isResolved ? '✓' : '4'}
@@ -491,35 +503,35 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
               <div>
                 <span
                   className={`font-bold block ${
-                    isResolved ? 'text-emerald-300' : isVerifying ? 'text-purple-300' : 'text-zinc-500'
+                    isResolved ? 'text-emerald-300' : isVerifying ? 'text-purple-300' : 'text-slate-500'
                   }`}
                 >
                   4. Verifying
                 </span>
-                <span className="text-zinc-500 text-[10px]">
+                <span className="text-slate-500 text-[10px]">
                   {isVerifying ? 'Live Telemetry Check' : isResolved ? 'Verified' : 'Awaiting Check'}
                 </span>
               </div>
             </div>
 
-            <div className="w-6 h-0.5 bg-zinc-800 shrink-0" />
+            <div className="w-6 h-0.5 bg-white/10 shrink-0" />
 
             {/* Stage 5: Resolved */}
             <div className="flex items-center gap-2 shrink-0">
               <span
                 className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] ${
                   isResolved
-                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-700'
-                    : 'bg-zinc-900 text-zinc-600 border border-zinc-800'
+                    ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-500/50'
+                    : 'bg-[#0B1020] text-slate-600 border border-white/10'
                 }`}
               >
                 {isResolved ? '✓' : '5'}
               </span>
               <div>
-                <span className={`font-bold block ${isResolved ? 'text-emerald-300' : 'text-zinc-500'}`}>
+                <span className={`font-bold block ${isResolved ? 'text-emerald-300' : 'text-slate-500'}`}>
                   5. Resolved
                 </span>
-                <span className="text-zinc-500 text-[10px]">
+                <span className="text-slate-500 text-[10px]">
                   {incident.resolvedAt ? formatTimeAgo(incident.resolvedAt) : 'Open Ticket'}
                 </span>
               </div>
@@ -530,14 +542,14 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
 
       {/* Status Action Error Banner */}
       {statusError && (
-        <div className="p-3.5 rounded-lg bg-rose-950/80 border border-rose-800 text-xs text-rose-200 flex items-center justify-between gap-2 shadow-xs font-mono">
-          <div className="flex items-center gap-2">
+        <div className="p-4 rounded-xl bg-rose-950/80 border border-rose-800/80 text-xs text-rose-200 flex items-center justify-between gap-3 shadow-[0_0_20px_rgba(244,63,94,0.15)] font-mono">
+          <div className="flex items-center gap-2.5">
             <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
             <span>{statusError}</span>
           </div>
           <button
             onClick={() => setStatusError(null)}
-            className="text-rose-400 hover:text-rose-200 text-xs font-bold px-2 py-0.5 rounded hover:bg-rose-900/50 cursor-pointer"
+            className="text-rose-400 hover:text-rose-200 text-xs font-bold px-2.5 py-1 rounded hover:bg-rose-900/50 cursor-pointer transition-colors"
           >
             Dismiss
           </button>
@@ -545,70 +557,248 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* TWO-COLUMN SRE CONSOLE GRID */}
+      {/* TWO-COLUMN SRE INVESTIGATION WORKSPACE */}
       {/* ========================================================================= */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Main Column (8 cols): What Happened, Root Cause, Impact, Remediation, AI Analysis, Evidence, Infrastructure, Telemetry */}
+        {/* Main Workspace Column (8 cols): WHAT HAPPENED, TIMELINE, EVIDENCE, AI INVESTIGATION, ROOT CAUSE, REMEDIATION */}
         <div className="lg:col-span-8 space-y-6">
+
           {/* ========================================================================= */}
-          {/* 2. WHAT HAPPENED */}
+          {/* SECTION: WHAT HAPPENED? */}
           {/* ========================================================================= */}
-          <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-3.5 shadow-xs">
-            <div className="flex items-center gap-2 border-b border-zinc-800/80 pb-2.5">
-              <AlertOctagon className="w-4 h-4 text-sky-400" />
-              <h2 className="text-xs font-bold text-zinc-100 font-mono uppercase tracking-wider">
-                2. What Happened
-              </h2>
+          <div className="p-6 rounded-2xl bg-[#080B12]/80 border border-white/10 backdrop-blur-md space-y-4 shadow-sm hover:border-cyan-500/20 transition-all">
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-cyan-950/60 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                  <AlertOctagon className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-xs font-bold text-white font-mono uppercase tracking-wider">
+                    What Happened?
+                  </h2>
+                  <span className="text-[11px] text-slate-400">Deterministic incident summary and impact</span>
+                </div>
+              </div>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#0B1020] text-cyan-300 border border-cyan-500/20">
+                TELEMETRY CAPTURE
+              </span>
             </div>
 
-            {/* Single strong human-readable statement */}
-            <div className="p-3.5 rounded-lg bg-zinc-950/90 border border-zinc-800">
-              <p className="text-sm font-semibold text-zinc-100 leading-relaxed font-sans">
+            {/* Human-readable primary statement */}
+            <div className="p-4 rounded-xl bg-[#05060A]/85 border border-white/5">
+              <p className="text-sm font-medium text-slate-100 leading-relaxed font-sans">
                 {getWhatHappenedStatement()}
               </p>
             </div>
 
-            {/* Concise supporting pills */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
-              <div className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800/80">
-                <span className="text-[10px] text-zinc-500 uppercase block">Current State</span>
-                <span className="text-rose-400 font-bold truncate block">
+            {/* Concise supporting telemetry pills */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs font-mono">
+              <div className="p-3 rounded-xl bg-[#05060A]/70 border border-white/5">
+                <span className="text-[10px] text-slate-500 uppercase block tracking-wider">Current State</span>
+                <span className="text-rose-400 font-semibold truncate block mt-1">
                   {tech.reason || tech.observedState || incident.incidentType}
                 </span>
               </div>
 
-              <div className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800/80">
-                <span className="text-[10px] text-zinc-500 uppercase block">Target Workload</span>
-                <span className="text-sky-300 font-semibold truncate block">
+              <div className="p-3 rounded-xl bg-[#05060A]/70 border border-white/5">
+                <span className="text-[10px] text-slate-500 uppercase block tracking-wider">Target Resource</span>
+                <span className="text-cyan-300 font-semibold truncate block mt-1">
                   {incident.resourceKind}/{incident.resourceName}
                 </span>
               </div>
 
-              <div className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800/80">
-                <span className="text-[10px] text-zinc-500 uppercase block">Namespace</span>
-                <span className="text-zinc-200 truncate block">{incident.namespace}</span>
+              <div className="p-3 rounded-xl bg-[#05060A]/70 border border-white/5">
+                <span className="text-[10px] text-slate-500 uppercase block tracking-wider">Namespace</span>
+                <span className="text-slate-200 truncate block mt-1">{incident.namespace}</span>
               </div>
 
-              <div className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800/80">
-                <span className="text-[10px] text-zinc-500 uppercase block">Cluster</span>
-                <span className="text-zinc-200 truncate block">{incident.clusterName}</span>
+              <div className="p-3 rounded-xl bg-[#05060A]/70 border border-white/5">
+                <span className="text-[10px] text-slate-500 uppercase block tracking-wider">Cluster</span>
+                <span className="text-slate-200 truncate block mt-1">{incident.clusterName}</span>
+              </div>
+            </div>
+
+            {/* Operational Impact breakdown */}
+            <div className="p-4 rounded-xl bg-[#05060A]/60 border border-white/5 space-y-2">
+              <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
+                <Activity className="w-3.5 h-3.5 text-amber-400" />
+                <span className="uppercase tracking-wider text-[10px] font-bold">Operational Impact:</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed font-sans">{impactSummary}</p>
+            </div>
+          </div>
+
+          {/* ========================================================================= */}
+          {/* SECTION: EVIDENCE */}
+          {/* ========================================================================= */}
+          <div className="space-y-4">
+            <IncidentEvidenceSection
+              technicalDetails={tech}
+              aiAnalysis={aiAnalysis}
+              incidentType={incident.incidentType}
+              incident={incident}
+            />
+
+            {/* Diagnostic Telemetry & Observed State */}
+            <div className="p-6 rounded-2xl bg-[#080B12]/80 border border-white/10 backdrop-blur-md space-y-4">
+              <h3 className="text-xs font-bold text-slate-200 font-mono uppercase tracking-wider flex items-center gap-2 border-b border-white/5 pb-3">
+                <Layers className="w-4 h-4 text-cyan-400" />
+                Diagnostic Telemetry & Observed State
+              </h3>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+                <div className="p-3 bg-[#05060A]/80 rounded-xl border border-white/5">
+                  <span className="text-slate-500 text-[10px] block uppercase">State / Reason</span>
+                  <span className="text-rose-400 font-bold truncate block mt-0.5">{tech.reason || incident.incidentType}</span>
+                </div>
+
+                <div className="p-3 bg-[#05060A]/80 rounded-xl border border-white/5">
+                  <span className="text-slate-500 text-[10px] block uppercase">Observed Status</span>
+                  <span className="text-slate-200 font-semibold truncate block mt-0.5">{tech.observedState || incident.status}</span>
+                </div>
+
+                <div className="p-3 bg-[#05060A]/80 rounded-xl border border-white/5">
+                  <span className="text-slate-500 text-[10px] block uppercase">Exit Code</span>
+                  <span className={`font-bold block mt-0.5 ${tech.exitCode !== undefined && tech.exitCode !== 0 ? 'text-rose-400' : 'text-slate-300'}`}>
+                    {tech.exitCode !== undefined ? tech.exitCode : 'None (Waiting)'}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-[#05060A]/80 rounded-xl border border-white/5">
+                  <span className="text-slate-500 text-[10px] block uppercase">Restart Count</span>
+                  <span className={`font-bold block mt-0.5 ${tech.restartCount && tech.restartCount > 0 ? 'text-amber-400' : 'text-slate-300'}`}>
+                    {tech.restartCount !== undefined ? `${tech.restartCount} restarts` : '0 restarts'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Diagnostic Message Callout */}
+              {tech.message && (
+                <div className="p-4 bg-rose-950/20 border border-rose-900/40 rounded-xl space-y-1.5 font-mono text-xs">
+                  <span className="text-rose-300 font-bold block text-[10px] uppercase tracking-wider">
+                    Diagnostic Telemetry String:
+                  </span>
+                  <p className="text-rose-200/90 leading-relaxed font-sans">{tech.message}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Target Kubernetes Infrastructure */}
+            <div className="p-6 rounded-2xl bg-[#080B12]/80 border border-white/10 backdrop-blur-md space-y-4">
+              <h3 className="text-xs font-bold text-slate-200 font-mono uppercase tracking-wider flex items-center gap-2 border-b border-white/5 pb-3">
+                <Server className="w-4 h-4 text-cyan-400" />
+                Kubernetes Target Infrastructure
+              </h3>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs font-mono">
+                <div className="p-3 bg-[#05060A]/80 rounded-xl border border-white/5">
+                  <span className="text-slate-500 text-[10px] block uppercase">Cluster Name</span>
+                  <span
+                    onClick={() => onSelectCluster && onSelectCluster(incident.clusterId)}
+                    className="text-cyan-400 font-semibold truncate block hover:underline cursor-pointer mt-0.5"
+                  >
+                    {incident.clusterName}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-[#05060A]/80 rounded-xl border border-white/5">
+                  <span className="text-slate-500 text-[10px] block uppercase">Cluster ID</span>
+                  <span className="text-slate-300 truncate block text-[11px] mt-0.5">{incident.clusterId}</span>
+                </div>
+
+                <div className="p-3 bg-[#05060A]/80 rounded-xl border border-white/5">
+                  <span className="text-slate-500 text-[10px] block uppercase">Namespace</span>
+                  <span className="text-slate-200 font-semibold truncate block mt-0.5">{incident.namespace}</span>
+                </div>
+
+                <div className="p-3 bg-[#05060A]/80 rounded-xl border border-white/5">
+                  <span className="text-slate-500 text-[10px] block uppercase">Resource Target</span>
+                  <span className="text-slate-200 font-semibold truncate block mt-0.5">
+                    {incident.resourceKind}/{incident.resourceName}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-[#05060A]/80 rounded-xl border border-white/5">
+                  <span className="text-slate-500 text-[10px] block uppercase">Pod Name</span>
+                  <span className="text-slate-200 truncate block mt-0.5">{tech.podName || incident.resourceName}</span>
+                </div>
+
+                <div className="p-3 bg-[#05060A]/80 rounded-xl border border-white/5">
+                  <span className="text-slate-500 text-[10px] block uppercase">Target Container</span>
+                  <span className="text-slate-200 truncate block mt-0.5">{tech.containerName || 'Not available'}</span>
+                </div>
+
+                <div className="p-3 bg-[#05060A]/80 rounded-xl border border-white/5">
+                  <span className="text-slate-500 text-[10px] block uppercase">Observed Node</span>
+                  <span className="text-slate-200 truncate block mt-0.5">{tech.nodeName || 'Not available'}</span>
+                </div>
+
+                <div className="p-3 bg-[#05060A]/80 rounded-xl border border-white/5 sm:col-span-2">
+                  <span className="text-slate-500 text-[10px] block uppercase">Container Image</span>
+                  <span className="text-slate-300 truncate block font-mono text-[11px] mt-0.5">
+                    {tech.image || 'Not available'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Deterministic Fingerprint Strip */}
+              <div className="p-3.5 bg-[#05060A]/90 rounded-xl border border-white/5 flex items-center justify-between text-xs font-mono">
+                <span className="text-slate-500 text-[10px] uppercase">Deterministic Incident Fingerprint:</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-300 bg-[#0B1020] px-2.5 py-1 rounded border border-white/10 text-[11px]">
+                    {incident.fingerprint}
+                  </span>
+                  <CopyButton text={incident.fingerprint} />
+                </div>
               </div>
             </div>
           </div>
 
           {/* ========================================================================= */}
-          {/* 3. ROOT CAUSE */}
+          {/* SECTION: AI INVESTIGATION & INTELLIGENCE LAYER */}
+          {/* Atmospheric blue/violet glow */}
           {/* ========================================================================= */}
-          <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-3.5 shadow-xs">
-            <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5">
-              <div className="flex items-center gap-2">
-                <Shield className="w-4 h-4 text-emerald-400" />
-                <h2 className="text-xs font-bold text-zinc-100 font-mono uppercase tracking-wider">
-                  3. Root Cause Analysis
+          <div className="space-y-4 relative">
+            <div className="relative rounded-2xl p-1 bg-gradient-to-r from-cyan-500/20 via-indigo-500/20 to-purple-500/20 shadow-[0_0_35px_rgba(99,102,241,0.08)]">
+              <div className="bg-[#080B12] rounded-[14px] p-1 space-y-4">
+                {/* Authoritative Kubernetes Grounding */}
+                <SkyOpsIntelligenceCard
+                  intelligence={intelligence}
+                  onRefresh={fetchIncidentData}
+                />
+
+                {/* AI Reasoning, Confidence & Evidence Synthesis */}
+                <SkyOpsAIAnalysisCard
+                  incidentId={incident.id}
+                  initialAnalysis={aiAnalysis}
+                  initialRemediation={remediation}
+                  canEdit={canEditIncidents}
+                  onRemediationApplied={fetchIncidentData}
+                  onAnalysisUpdated={(analysis, rem) => {
+                    setAiAnalysis(analysis);
+                    if (rem) setRemediation(rem);
+                    if (analysis.intelligence) setIntelligence(analysis.intelligence);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* ========================================================================= */}
+          {/* SECTION: ROOT CAUSE */}
+          {/* ========================================================================= */}
+          <div className="p-6 rounded-2xl bg-[#080B12]/80 border border-white/10 backdrop-blur-md space-y-4">
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-emerald-950/60 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <Shield className="w-4 h-4" />
+                </div>
+                <h2 className="text-xs font-bold text-white font-mono uppercase tracking-wider">
+                  Root Cause Analysis
                 </h2>
               </div>
-              <span className="text-[10px] font-mono text-zinc-400">
-                Category: <strong className="text-zinc-200">{tech.rootCauseCategory || 'CONTAINER_RUNTIME'}</strong>
+              <span className="text-[10px] font-mono text-slate-400">
+                Category: <strong className="text-slate-200">{tech.rootCauseCategory || 'CONTAINER_RUNTIME'}</strong>
               </span>
             </div>
 
@@ -616,12 +806,12 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
             <div className="space-y-3 text-xs">
               {/* CONFIRMED */}
               {confirmedFact && (
-                <div className="p-3.5 rounded-lg bg-zinc-950/90 border border-emerald-900/50 space-y-1">
+                <div className="p-4 rounded-xl bg-[#05060A]/90 border border-emerald-500/30 space-y-1.5 shadow-[0_0_15px_rgba(16,185,129,0.06)]">
                   <div className="flex items-center gap-2">
                     <ProvenanceBadge type="CONFIRMED" label="CONFIRMED" />
-                    <span className="text-[11px] font-mono text-zinc-400">Authoritative Observation</span>
+                    <span className="text-[11px] font-mono text-slate-400">Authoritative Observation</span>
                   </div>
-                  <p className="text-xs text-zinc-200 leading-relaxed font-sans mt-1">
+                  <p className="text-xs text-slate-200 leading-relaxed font-sans mt-1">
                     {confirmedFact}
                   </p>
                 </div>
@@ -629,12 +819,12 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
 
               {/* INFERENCE */}
               {inferenceHypothesis && (
-                <div className="p-3.5 rounded-lg bg-zinc-950/90 border border-sky-900/50 space-y-1">
+                <div className="p-4 rounded-xl bg-[#05060A]/90 border border-cyan-500/25 space-y-1.5">
                   <div className="flex items-center gap-2">
                     <ProvenanceBadge type="INFERENCE" label="INFERENCE" />
-                    <span className="text-[11px] font-mono text-zinc-400">Plausible Failure Explanation</span>
+                    <span className="text-[11px] font-mono text-slate-400">Plausible Failure Explanation</span>
                   </div>
-                  <p className="text-xs text-zinc-300 leading-relaxed font-sans mt-1">
+                  <p className="text-xs text-slate-300 leading-relaxed font-sans mt-1">
                     {inferenceHypothesis}
                   </p>
                 </div>
@@ -642,7 +832,7 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
 
               {/* UNKNOWN / NEEDS INVESTIGATION */}
               {unknownInvestigationNote && (
-                <div className="p-3.5 rounded-lg bg-zinc-950/90 border border-amber-900/50 space-y-1">
+                <div className="p-4 rounded-xl bg-[#05060A]/90 border border-amber-500/25 space-y-1.5">
                   <div className="flex items-center gap-2">
                     <ProvenanceBadge type="UNKNOWN" label="UNKNOWN / NEEDS INVESTIGATION" />
                   </div>
@@ -655,251 +845,37 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
           </div>
 
           {/* ========================================================================= */}
-          {/* 4. IMPACT */}
+          {/* SECTION: RECOMMENDED ACTION & REMEDIATION */}
           {/* ========================================================================= */}
-          <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-3.5 shadow-xs">
-            <div className="flex items-center gap-2 border-b border-zinc-800/80 pb-2.5">
-              <Activity className="w-4 h-4 text-amber-400" />
-              <h2 className="text-xs font-bold text-zinc-100 font-mono uppercase tracking-wider">
-                4. Operational Impact
-              </h2>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs font-mono">
-              <div className="p-3 rounded-lg bg-zinc-950/90 border border-zinc-800">
-                <span className="text-[10px] text-zinc-500 uppercase block">Affected Resource</span>
-                <span className="text-sky-400 font-bold block mt-0.5 truncate">
-                  {incident.resourceKind}/{incident.resourceName}
-                </span>
-                <span className="text-[11px] text-zinc-400 block mt-0.5">Namespace: {incident.namespace}</span>
-              </div>
-
-              <div className="p-3 rounded-lg bg-zinc-950/90 border border-zinc-800">
-                <span className="text-[10px] text-zinc-500 uppercase block">Degraded Availability</span>
-                <span className="text-rose-400 font-bold block mt-0.5">
-                  {incident.severity === 'CRITICAL' ? 'Service Unavailable' : 'Degraded Pod Condition'}
-                </span>
-                <span className="text-[11px] text-zinc-400 block mt-0.5">
-                  {tech.nodeName ? `Scheduled on node: ${tech.nodeName}` : 'Node pending'}
-                </span>
-              </div>
-
-              {typeof tech.availableReplicas === 'number' ? (
-                <div className="p-3 rounded-lg bg-zinc-950/90 border border-zinc-800">
-                  <span className="text-[10px] text-zinc-500 uppercase block">Replica Availability</span>
-                  <span className="text-amber-400 font-bold block mt-0.5">
-                    {tech.availableReplicas} / {tech.desiredReplicas ?? 1} Available Replicas
-                  </span>
-                  <span className="text-[11px] text-zinc-400 block mt-0.5">Under desired scale</span>
-                </div>
-              ) : (
-                <div className="p-3 rounded-lg bg-zinc-950/90 border border-zinc-800">
-                  <span className="text-[10px] text-zinc-500 uppercase block">Target Container</span>
-                  <span className="text-zinc-200 font-bold block mt-0.5 truncate">
-                    {tech.containerName || 'Primary container'}
-                  </span>
-                  <span className="text-[11px] text-zinc-400 block mt-0.5">Readiness: False</span>
-                </div>
-              )}
-            </div>
-
-            <div className="p-3 rounded-lg bg-zinc-950/80 border border-zinc-800/80 text-xs">
-              <span className="text-[10px] font-mono text-zinc-500 uppercase font-bold block mb-1">
-                Impact Summary:
-              </span>
-              <p className="text-zinc-200 leading-relaxed font-sans">{impactSummary}</p>
-            </div>
-          </div>
-
-          {/* ========================================================================= */}
-          {/* 5. REMEDIATION / NEXT ACTION */}
-          {/* ========================================================================= */}
-          <IncidentRemediationCard
-            incident={incident}
-            remediation={remediation}
-            aiAnalysis={aiAnalysis}
-            canEdit={canEditIncidents}
-            onRemediationUpdated={(rem) => setRemediation(rem)}
-            onRefresh={fetchIncidentData}
-          />
-
-          {/* ========================================================================= */}
-          {/* 6. EVIDENCE & OBSERVABILITY SIGNALS */}
-          {/* ========================================================================= */}
-          <IncidentEvidenceSection
-            technicalDetails={tech}
-            aiAnalysis={aiAnalysis}
-            incidentType={incident.incidentType}
-            incident={incident}
-          />
-
-          {/* ========================================================================= */}
-          {/* 6.5. DETERMINISTIC INTELLIGENCE ENGINE (Authoritative Kubernetes Grounding) */}
-          {/* ========================================================================= */}
-          <SkyOpsIntelligenceCard
-            intelligence={intelligence}
-            onRefresh={fetchIncidentData}
-          />
-
-          {/* ========================================================================= */}
-          {/* 7. AI ANALYSIS / DEEPER REASONING */}
-          {/* ========================================================================= */}
-          <SkyOpsAIAnalysisCard
-            incidentId={incident.id}
-            initialAnalysis={aiAnalysis}
-            initialRemediation={remediation}
-            canEdit={canEditIncidents}
-            onRemediationApplied={fetchIncidentData}
-            onAnalysisUpdated={(analysis, rem) => {
-              setAiAnalysis(analysis);
-              if (rem) setRemediation(rem);
-              if (analysis.intelligence) setIntelligence(analysis.intelligence);
-            }}
-          />
-
-          {/* ========================================================================= */}
-          {/* 8. KUBERNETES TARGET INFRASTRUCTURE */}
-          {/* ========================================================================= */}
-          <div className="p-5 rounded-xl bg-zinc-900/50 border border-zinc-800/80 space-y-4 shadow-xs">
-            <h3 className="text-xs font-bold text-zinc-200 font-mono uppercase tracking-wider flex items-center gap-2 border-b border-zinc-800/80 pb-3">
-              <Server className="w-4 h-4 text-sky-400" />
-              8. Kubernetes Target Infrastructure
-            </h3>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs font-mono">
-              <div className="p-3 bg-zinc-950 rounded-lg border border-zinc-800/70">
-                <span className="text-zinc-500 text-[10px] block uppercase">Cluster Name</span>
-                <span
-                  onClick={() => onSelectCluster && onSelectCluster(incident.clusterId)}
-                  className="text-sky-400 font-semibold truncate block hover:underline cursor-pointer"
-                >
-                  {incident.clusterName}
-                </span>
-              </div>
-
-              <div className="p-3 bg-zinc-950 rounded-lg border border-zinc-800/70">
-                <span className="text-zinc-500 text-[10px] block uppercase">Cluster ID</span>
-                <span className="text-zinc-300 truncate block text-[11px]">{incident.clusterId}</span>
-              </div>
-
-              <div className="p-3 bg-zinc-950 rounded-lg border border-zinc-800/70">
-                <span className="text-zinc-500 text-[10px] block uppercase">Namespace</span>
-                <span className="text-zinc-200 font-semibold truncate block">{incident.namespace}</span>
-              </div>
-
-              <div className="p-3 bg-zinc-950 rounded-lg border border-zinc-800/70">
-                <span className="text-zinc-500 text-[10px] block uppercase">Resource Target</span>
-                <span className="text-zinc-200 font-semibold truncate block">
-                  {incident.resourceKind}/{incident.resourceName}
-                </span>
-              </div>
-
-              <div className="p-3 bg-zinc-950 rounded-lg border border-zinc-800/70">
-                <span className="text-zinc-500 text-[10px] block uppercase">Pod Name</span>
-                <span className="text-zinc-200 truncate block">{tech.podName || incident.resourceName}</span>
-              </div>
-
-              <div className="p-3 bg-zinc-950 rounded-lg border border-zinc-800/70">
-                <span className="text-zinc-500 text-[10px] block uppercase">Target Container</span>
-                <span className="text-zinc-200 truncate block">{tech.containerName || 'Not available'}</span>
-              </div>
-
-              <div className="p-3 bg-zinc-950 rounded-lg border border-zinc-800/70">
-                <span className="text-zinc-500 text-[10px] block uppercase">Observed Node</span>
-                <span className="text-zinc-200 truncate block">{tech.nodeName || 'Not available'}</span>
-              </div>
-
-              <div className="p-3 bg-zinc-950 rounded-lg border border-zinc-800/70 sm:col-span-2">
-                <span className="text-zinc-500 text-[10px] block uppercase">Container Image</span>
-                <span className="text-zinc-300 truncate block font-mono text-[11px]">
-                  {tech.image || 'Not available'}
-                </span>
-              </div>
-
-              <div className="p-3 bg-zinc-950 rounded-lg border border-zinc-800/70">
-                <span className="text-zinc-500 text-[10px] block uppercase">Resource UID</span>
-                <span className="text-zinc-400 truncate block font-mono text-[11px]">
-                  {tech.resourceUid ? `${tech.resourceUid.slice(0, 16)}...` : 'Not available'}
-                </span>
-              </div>
-            </div>
-
-            {/* Deterministic Fingerprint Strip */}
-            <div className="p-3 bg-zinc-950 rounded-lg border border-zinc-800/70 flex items-center justify-between text-xs font-mono">
-              <span className="text-zinc-500 text-[10px] uppercase">Deterministic Incident Fingerprint:</span>
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 text-[11px]">
-                  {incident.fingerprint}
-                </span>
-                <CopyButton text={incident.fingerprint} />
-              </div>
-            </div>
-          </div>
-
-          {/* ========================================================================= */}
-          {/* 9. TELEMETRY / OBSERVED STATE */}
-          {/* ========================================================================= */}
-          <div className="p-5 rounded-xl bg-zinc-900/50 border border-zinc-800/80 space-y-4 shadow-xs">
-            <h3 className="text-xs font-bold text-zinc-200 font-mono uppercase tracking-wider flex items-center gap-2 border-b border-zinc-800/80 pb-3">
-              <Layers className="w-4 h-4 text-sky-400" />
-              9. Diagnostic Telemetry & Observed State
-            </h3>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
-              <div className="p-3 bg-zinc-950 rounded-lg border border-zinc-800/70">
-                <span className="text-zinc-500 text-[10px] block uppercase">State / Reason</span>
-                <span className="text-rose-400 font-bold truncate block">{tech.reason || incident.incidentType}</span>
-              </div>
-
-              <div className="p-3 bg-zinc-950 rounded-lg border border-zinc-800/70">
-                <span className="text-zinc-500 text-[10px] block uppercase">Observed Status</span>
-                <span className="text-zinc-200 font-semibold truncate block">{tech.observedState || incident.status}</span>
-              </div>
-
-              <div className="p-3 bg-zinc-950 rounded-lg border border-zinc-800/70">
-                <span className="text-zinc-500 text-[10px] block uppercase">Exit Code</span>
-                <span className={`font-bold block ${tech.exitCode !== undefined && tech.exitCode !== 0 ? 'text-rose-400' : 'text-zinc-300'}`}>
-                  {tech.exitCode !== undefined ? tech.exitCode : 'None (Waiting)'}
-                </span>
-              </div>
-
-              <div className="p-3 bg-zinc-950 rounded-lg border border-zinc-800/70">
-                <span className="text-zinc-500 text-[10px] block uppercase">Restart Count</span>
-                <span className={`font-bold block ${tech.restartCount && tech.restartCount > 0 ? 'text-amber-400' : 'text-zinc-300'}`}>
-                  {tech.restartCount !== undefined ? `${tech.restartCount} restarts` : '0 restarts'}
-                </span>
-              </div>
-            </div>
-
-            {/* Diagnostic Message Callout */}
-            {tech.message && (
-              <div className="p-4 bg-rose-950/20 border border-rose-900/50 rounded-lg space-y-1 font-mono text-xs">
-                <span className="text-rose-300 font-bold block text-[10px] uppercase">
-                  Diagnostic Telemetry String:
-                </span>
-                <p className="text-rose-200/90 leading-relaxed font-sans">{tech.message}</p>
-              </div>
-            )}
+          <div className="space-y-4">
+            <IncidentRemediationCard
+              incident={incident}
+              remediation={remediation}
+              aiAnalysis={aiAnalysis}
+              canEdit={canEditIncidents}
+              onRemediationUpdated={(rem) => setRemediation(rem)}
+              onRefresh={fetchIncidentData}
+            />
           </div>
         </div>
 
         {/* ========================================================================= */}
-        {/* 10. RIGHT SIDEBAR: Assigned Engineer, Audit Timeline, Investigation Notes */}
+        {/* SECTION: AUDIT TRAIL & SIDEBAR CONTROLS (4 cols) */}
         {/* ========================================================================= */}
         <div className="lg:col-span-4 space-y-6">
-          {/* Assigned Engineer */}
-          <div className="p-5 rounded-xl bg-zinc-900/50 border border-zinc-800/80 space-y-3 font-mono text-xs shadow-xs">
-            <span className="text-zinc-400 font-bold block uppercase text-[10px] tracking-wider">
+          {/* Assigned SRE Engineer */}
+          <div className="p-6 rounded-2xl bg-[#080B12]/80 border border-white/10 backdrop-blur-md space-y-3.5 font-mono text-xs shadow-sm">
+            <span className="text-slate-400 font-bold block uppercase text-[10px] tracking-wider">
               Assigned SRE Engineer
             </span>
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-300">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[#0B1020] border border-white/10 flex items-center justify-center text-cyan-300">
                   <User className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="text-zinc-200 font-semibold">{incident.assignee?.name || 'Unassigned'}</div>
-                  <div className="text-[11px] text-zinc-500">{incident.assignee?.email || 'No owner assigned'}</div>
+                  <div className="text-white font-medium text-sm font-sans">{incident.assignee?.name || 'Unassigned'}</div>
+                  <div className="text-[11px] text-slate-500">{incident.assignee?.email || 'No owner assigned'}</div>
                 </div>
               </div>
 
@@ -907,11 +883,11 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
                 <select
                   value={incident.assignee?.userId || ''}
                   onChange={(e) => handleAssigneeChange(e.target.value)}
-                  className="px-2.5 py-1 bg-zinc-950 border border-zinc-800 rounded text-zinc-200 focus:outline-none focus:border-sky-500 text-xs font-semibold cursor-pointer"
+                  className="px-2.5 py-1.5 bg-[#05060A] border border-white/15 rounded-lg text-slate-200 focus:outline-none focus:border-cyan-500 text-xs font-semibold cursor-pointer"
                 >
                   <option value="">Unassigned</option>
                   {members.map((m) => (
-                    <option key={m.userId} value={m.userId}>
+                    <option key={m.userId} value={m.userId} className="bg-[#080B12]">
                       {m.name}
                     </option>
                   ))}
@@ -921,32 +897,35 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
           </div>
 
           {/* Chronological Incident Audit Timeline */}
-          <div className="p-5 rounded-xl bg-zinc-900/50 border border-zinc-800/80 space-y-4 shadow-xs">
-            <h3 className="text-xs font-bold text-zinc-200 font-mono uppercase tracking-wider flex items-center gap-2 border-b border-zinc-800/80 pb-3">
-              <Activity className="w-4 h-4 text-emerald-400" />
-              Incident Audit Timeline ({timeline.length})
-            </h3>
+          <div className="p-6 rounded-2xl bg-[#080B12]/80 border border-white/10 backdrop-blur-md space-y-4 shadow-sm">
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <h3 className="text-xs font-bold text-slate-200 font-mono uppercase tracking-wider flex items-center gap-2">
+                <Activity className="w-4 h-4 text-emerald-400" />
+                Audit Trail ({timeline.length})
+              </h3>
+              <span className="text-[10px] font-mono text-slate-500">CHRONOLOGICAL</span>
+            </div>
 
-            <div className="relative pl-6 space-y-5 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-zinc-800">
+            <div className="relative pl-6 space-y-5 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-white/10">
               {timeline.map((evt) => {
-                let dotColor = 'bg-zinc-600 border-zinc-900';
-                if (evt.type === 'DETECTION') dotColor = 'bg-rose-500 border-zinc-900';
-                else if (evt.type === 'RECOVERY') dotColor = 'bg-emerald-500 border-zinc-900';
-                else if (evt.type === 'OCCURRENCE') dotColor = 'bg-amber-500 border-zinc-900';
-                else if (evt.type === 'STATE_CHANGE') dotColor = 'bg-sky-500 border-zinc-900';
-                else if (evt.type === 'NOTE_ADDED') dotColor = 'bg-purple-500 border-zinc-900';
-                else if (evt.type === 'REMEDIATION_APPROVED') dotColor = 'bg-emerald-400 border-zinc-900';
-                else if (evt.type === 'REMEDIATION_EXECUTED') dotColor = 'bg-blue-400 border-zinc-900';
+                let dotColor = 'bg-slate-600 border-[#080B12]';
+                if (evt.type === 'DETECTION') dotColor = 'bg-rose-500 border-[#080B12] shadow-[0_0_8px_rgba(244,63,94,0.4)]';
+                else if (evt.type === 'RECOVERY') dotColor = 'bg-emerald-500 border-[#080B12] shadow-[0_0_8px_rgba(16,185,129,0.4)]';
+                else if (evt.type === 'OCCURRENCE') dotColor = 'bg-amber-500 border-[#080B12]';
+                else if (evt.type === 'STATE_CHANGE') dotColor = 'bg-cyan-500 border-[#080B12] shadow-[0_0_8px_rgba(6,182,212,0.4)]';
+                else if (evt.type === 'NOTE_ADDED') dotColor = 'bg-purple-500 border-[#080B12]';
+                else if (evt.type === 'REMEDIATION_APPROVED') dotColor = 'bg-emerald-400 border-[#080B12]';
+                else if (evt.type === 'REMEDIATION_EXECUTED') dotColor = 'bg-blue-400 border-[#080B12]';
 
                 return (
                   <div key={evt.id} className="relative font-mono text-xs">
                     <span className={`absolute -left-6 top-1 w-2.5 h-2.5 rounded-full border-2 ${dotColor}`} />
-                    <div className="flex items-center justify-between text-[11px] text-zinc-500">
-                      <span className="font-bold text-zinc-300">{evt.type}</span>
-                      <span>{formatTimeAgo(evt.timestamp)}</span>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400">
+                      <span className="font-bold text-slate-200">{evt.type}</span>
+                      <span className="text-slate-500">{formatTimeAgo(evt.timestamp)}</span>
                     </div>
-                    <div className="text-zinc-200 text-xs mt-1 leading-snug font-sans">{evt.description}</div>
-                    <div className="text-[10px] text-zinc-500 mt-0.5">by {evt.actor.name}</div>
+                    <div className="text-slate-300 text-xs mt-1 leading-snug font-sans">{evt.description}</div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">by {evt.actor.name}</div>
                   </div>
                 );
               })}
@@ -954,25 +933,25 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
           </div>
 
           {/* Investigation Notes */}
-          <div className="p-5 rounded-xl bg-zinc-900/50 border border-zinc-800/80 space-y-4 shadow-xs">
-            <h3 className="text-xs font-bold text-zinc-200 font-mono uppercase tracking-wider flex items-center gap-2 border-b border-zinc-800/80 pb-3">
-              <MessageSquare className="w-4 h-4 text-sky-400" />
+          <div className="p-6 rounded-2xl bg-[#080B12]/80 border border-white/10 backdrop-blur-md space-y-4 shadow-sm">
+            <h3 className="text-xs font-bold text-slate-200 font-mono uppercase tracking-wider flex items-center gap-2 border-b border-white/5 pb-3">
+              <MessageSquare className="w-4 h-4 text-cyan-400" />
               Investigation Notes ({notes.length})
             </h3>
 
             {notes.length === 0 ? (
-              <div className="p-5 text-center text-xs font-mono text-zinc-500 border border-dashed border-zinc-800 rounded-lg">
+              <div className="p-5 text-center text-xs font-mono text-slate-500 border border-dashed border-white/10 rounded-xl">
                 No investigation notes recorded yet. Add operational observations or logs below.
               </div>
             ) : (
               <div className="space-y-3">
                 {notes.map((note) => (
-                  <div key={note.id} className="p-3.5 bg-zinc-950 border border-zinc-800/80 rounded-lg space-y-1.5 font-mono text-xs">
-                    <div className="flex items-center justify-between text-zinc-400 text-[11px]">
-                      <span className="font-semibold text-zinc-200">{note.authorName}</span>
-                      <span className="text-zinc-500">{formatTimeAgo(note.createdAt)}</span>
+                  <div key={note.id} className="p-3.5 bg-[#05060A]/80 border border-white/5 rounded-xl space-y-1.5 font-mono text-xs">
+                    <div className="flex items-center justify-between text-slate-400 text-[11px]">
+                      <span className="font-semibold text-slate-200">{note.authorName}</span>
+                      <span className="text-slate-500">{formatTimeAgo(note.createdAt)}</span>
                     </div>
-                    <p className="text-zinc-300 font-sans text-xs leading-relaxed whitespace-pre-wrap">{note.content}</p>
+                    <p className="text-slate-300 font-sans text-xs leading-relaxed whitespace-pre-wrap">{note.content}</p>
                   </div>
                 ))}
               </div>
@@ -980,15 +959,15 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
 
             {/* Note Authoring Form */}
             {canEditIncidents && (
-              <form onSubmit={handleAddNote} className="space-y-2 pt-2 border-t border-zinc-800/60">
-                <label className="block text-xs font-mono text-zinc-400">Add Investigation Finding:</label>
+              <form onSubmit={handleAddNote} className="space-y-2.5 pt-2 border-t border-white/5">
+                <label className="block text-xs font-mono text-slate-400">Add Investigation Finding:</label>
                 <textarea
                   rows={3}
                   required
                   placeholder="Record diagnostic observations, pod logs, remediation notes..."
                   value={newNoteContent}
                   onChange={(e) => setNewNoteContent(e.target.value)}
-                  className="w-full p-3 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 text-xs font-mono placeholder-zinc-600 focus:outline-none focus:border-sky-500"
+                  className="w-full p-3 bg-[#05060A] border border-white/10 rounded-xl text-slate-200 text-xs font-mono placeholder-slate-600 focus:outline-none focus:border-cyan-500 transition-colors"
                 />
                 <div className="flex justify-end">
                   <Button

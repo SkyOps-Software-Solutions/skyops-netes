@@ -6,10 +6,10 @@ export const BILLING_INTERVALS: Array<{
   shortLabel: string;
   months: number;
 }> = [
-  { id: 'MONTHLY', label: 'Monthly', shortLabel: '1 Mo', months: 1 },
-  { id: 'QUARTERLY', label: '3 Months', shortLabel: '3 Mos', months: 3 },
-  { id: 'HALF_YEARLY', label: '6 Months', shortLabel: '6 Mos', months: 6 },
-  { id: 'YEARLY', label: '12 Months (Best Value)', shortLabel: '12 Mos', months: 12 }
+  { id: 'MONTHLY', label: 'Monthly', shortLabel: '/mo', months: 1 },
+  { id: 'QUARTERLY', label: 'Every 3 months', shortLabel: '/3 mos', months: 3 },
+  { id: 'HALF_YEARLY', label: 'Every 6 months', shortLabel: '/6 mos', months: 6 },
+  { id: 'YEARLY', label: 'Every year', shortLabel: '/yr', months: 12 }
 ];
 
 export const DEFAULT_TRIAL_DAYS = 14;
@@ -35,7 +35,7 @@ export const PLANS: Record<PlanId, Plan> = {
       },
       QUARTERLY: {
         interval: 'QUARTERLY',
-        label: '3 Months',
+        label: 'Every 3 months',
         durationMonths: 3,
         totalPrice: 0,
         monthlyEquivalent: 0,
@@ -45,7 +45,7 @@ export const PLANS: Record<PlanId, Plan> = {
       },
       HALF_YEARLY: {
         interval: 'HALF_YEARLY',
-        label: '6 Months',
+        label: 'Every 6 months',
         durationMonths: 6,
         totalPrice: 0,
         monthlyEquivalent: 0,
@@ -55,7 +55,7 @@ export const PLANS: Record<PlanId, Plan> = {
       },
       YEARLY: {
         interval: 'YEARLY',
-        label: '12 Months',
+        label: 'Every year',
         durationMonths: 12,
         totalPrice: 0,
         monthlyEquivalent: 0,
@@ -70,10 +70,13 @@ export const PLANS: Record<PlanId, Plan> = {
       workloads: 100,
       members: 1,
       dataRetentionDays: 7,
+      telemetryRetentionDays: 7,
       aiInvestigationsMonthly: 20,
       aiMonthlyAllowance: 20,
       remediationsMonthly: 0,
-      auditLogsDays: 7
+      auditLogsDays: 7,
+      auditRetentionDays: 7,
+      storageGb: 10
     },
     features: {
       incidentDetection: true,
@@ -93,10 +96,11 @@ export const PLANS: Record<PlanId, Plan> = {
       '1 Managed Kubernetes cluster',
       'Up to 5 nodes & 100 workload pods',
       '1 Organization member seat',
-      '7 days data & audit retention',
-      'Real-time incident detection & metrics',
-      'Basic logs, correlation & RCA',
-      'Standard community support'
+      '7-day data & audit retention',
+      '20 Gemini AI incident investigations/month',
+      '0 automated remediation executions',
+      'Basic incident detection & RCA',
+      'Community support via skyopsnetes2000@gmail.com'
     ]
   },
 
@@ -110,12 +114,14 @@ export const PLANS: Record<PlanId, Plan> = {
     currency: 'INR',
     razorpayPlanIds: {
       MONTHLY: (typeof process !== 'undefined' && process.env?.RAZORPAY_PRO_MONTHLY_PLAN_ID) || 'plan_pro_monthly',
+      QUARTERLY: (typeof process !== 'undefined' && process.env?.RAZORPAY_PRO_QUARTERLY_PLAN_ID) || 'plan_pro_quarterly',
+      HALF_YEARLY: (typeof process !== 'undefined' && process.env?.RAZORPAY_PRO_HALF_YEARLY_PLAN_ID) || 'plan_pro_half_yearly',
       YEARLY: (typeof process !== 'undefined' && process.env?.RAZORPAY_PRO_YEARLY_PLAN_ID) || 'plan_pro_yearly'
     },
     pricing: {
       MONTHLY: {
         interval: 'MONTHLY',
-        label: '1 Month',
+        label: 'Monthly',
         durationMonths: 1,
         totalPrice: 5000,
         monthlyEquivalent: 5000,
@@ -125,7 +131,7 @@ export const PLANS: Record<PlanId, Plan> = {
       },
       QUARTERLY: {
         interval: 'QUARTERLY',
-        label: '3 Months',
+        label: 'Every 3 months',
         durationMonths: 3,
         totalPrice: 14000,
         monthlyEquivalent: 4667,
@@ -135,17 +141,17 @@ export const PLANS: Record<PlanId, Plan> = {
       },
       HALF_YEARLY: {
         interval: 'HALF_YEARLY',
-        label: '6 Months',
+        label: 'Every 6 months',
         durationMonths: 6,
-        totalPrice: 26000,
-        monthlyEquivalent: 4333,
-        savings: 4000,
-        savingsPercentage: 13,
+        totalPrice: 27000,
+        monthlyEquivalent: 4500,
+        savings: 3000,
+        savingsPercentage: 10,
         currency: 'INR'
       },
       YEARLY: {
         interval: 'YEARLY',
-        label: '12 Months',
+        label: 'Every year',
         durationMonths: 12,
         totalPrice: 48000,
         monthlyEquivalent: 4000,
@@ -160,10 +166,13 @@ export const PLANS: Record<PlanId, Plan> = {
       workloads: 1000,
       members: 10,
       dataRetentionDays: 30,
+      telemetryRetentionDays: 30,
       aiInvestigationsMonthly: 200,
       aiMonthlyAllowance: 200,
       remediationsMonthly: 25,
-      auditLogsDays: 30
+      auditLogsDays: 30,
+      auditRetentionDays: 30,
+      storageGb: 50
     },
     features: {
       incidentDetection: true,
@@ -182,12 +191,12 @@ export const PLANS: Record<PlanId, Plan> = {
     highlights: [
       '5 Managed Kubernetes clusters',
       'Up to 50 nodes & 1,000 workloads',
-      '10 Team member seats with RBAC',
-      '30 days data & cryptographic audit retention',
-      'Gemini AI Root Cause Analysis (200/mo)',
-      'Automated remediation proposals (25/mo)',
-      'Outbound webhooks & Slack integration',
-      'Standard email & helpdesk SLA'
+      '10 Team member seats with Team RBAC',
+      '30-day telemetry & audit retention',
+      '200 Gemini AI root cause analyses/month',
+      '25 controlled remediation executions/month',
+      'Advanced incident correlation & webhooks',
+      'Standard support via skyopsnetes2000@gmail.com'
     ]
   },
 
@@ -201,12 +210,14 @@ export const PLANS: Record<PlanId, Plan> = {
     currency: 'INR',
     razorpayPlanIds: {
       MONTHLY: (typeof process !== 'undefined' && process.env?.RAZORPAY_BUSINESS_MONTHLY_PLAN_ID) || 'plan_biz_monthly',
+      QUARTERLY: (typeof process !== 'undefined' && process.env?.RAZORPAY_BUSINESS_QUARTERLY_PLAN_ID) || 'plan_biz_quarterly',
+      HALF_YEARLY: (typeof process !== 'undefined' && process.env?.RAZORPAY_BUSINESS_HALF_YEARLY_PLAN_ID) || 'plan_biz_half_yearly',
       YEARLY: (typeof process !== 'undefined' && process.env?.RAZORPAY_BUSINESS_YEARLY_PLAN_ID) || 'plan_biz_yearly'
     },
     pricing: {
       MONTHLY: {
         interval: 'MONTHLY',
-        label: '1 Month',
+        label: 'Monthly',
         durationMonths: 1,
         totalPrice: 12000,
         monthlyEquivalent: 12000,
@@ -216,7 +227,7 @@ export const PLANS: Record<PlanId, Plan> = {
       },
       QUARTERLY: {
         interval: 'QUARTERLY',
-        label: '3 Months',
+        label: 'Every 3 months',
         durationMonths: 3,
         totalPrice: 33000,
         monthlyEquivalent: 11000,
@@ -226,17 +237,17 @@ export const PLANS: Record<PlanId, Plan> = {
       },
       HALF_YEARLY: {
         interval: 'HALF_YEARLY',
-        label: '6 Months',
+        label: 'Every 6 months',
         durationMonths: 6,
-        totalPrice: 60000,
-        monthlyEquivalent: 10000,
-        savings: 12000,
-        savingsPercentage: 17,
+        totalPrice: 63000,
+        monthlyEquivalent: 10500,
+        savings: 9000,
+        savingsPercentage: 13,
         currency: 'INR'
       },
       YEARLY: {
         interval: 'YEARLY',
-        label: '12 Months',
+        label: 'Every year',
         durationMonths: 12,
         totalPrice: 108000,
         monthlyEquivalent: 9000,
@@ -251,10 +262,13 @@ export const PLANS: Record<PlanId, Plan> = {
       workloads: 5000,
       members: 50,
       dataRetentionDays: 90,
+      telemetryRetentionDays: 90,
       aiInvestigationsMonthly: 1000,
       aiMonthlyAllowance: 1000,
       remediationsMonthly: 200,
-      auditLogsDays: 90
+      auditLogsDays: 90,
+      auditRetentionDays: 90,
+      storageGb: 250
     },
     features: {
       incidentDetection: true,
@@ -273,12 +287,12 @@ export const PLANS: Record<PlanId, Plan> = {
     highlights: [
       '20 Managed Kubernetes clusters',
       'Up to 200 nodes & 5,000 workloads',
-      '50 Team member seats with custom RBAC',
-      '90 days data & compliance audit retention',
-      'Advanced AI root cause & question investigator (1,000/mo)',
-      'Automated remediation execution (200/mo)',
-      'High-throughput webhooks & notification digests',
-      'Priority 4-hour helpdesk SLA'
+      '50 Team member seats with Advanced RBAC',
+      '90-day telemetry & audit retention',
+      '1,000 Gemini AI root cause analyses/month',
+      '200 automated remediation executions/month',
+      'Advanced incident correlation & automated remediation',
+      'Priority support via skyopsnetes2000@gmail.com'
     ]
   },
 
@@ -337,10 +351,13 @@ export const PLANS: Record<PlanId, Plan> = {
       workloads: -1,
       members: -1,
       dataRetentionDays: 365,
+      telemetryRetentionDays: 365,
       aiInvestigationsMonthly: -1,
       aiMonthlyAllowance: -1,
       remediationsMonthly: -1,
-      auditLogsDays: 365
+      auditLogsDays: 365,
+      auditRetentionDays: 365,
+      storageGb: -1
     },
     features: {
       incidentDetection: true,
@@ -359,11 +376,11 @@ export const PLANS: Record<PlanId, Plan> = {
     highlights: [
       'Custom clusters, nodes & workloads capacity',
       'Unlimited organization member seats',
-      '1+ Year compliance & audit retention',
+      '365+ days telemetry & audit retention',
       'Custom AI & automated remediation policies',
-      'Custom integrations & single tenant deployment options',
-      '99.95% High-availability cluster uptime SLA',
-      '24x7 Dedicated SRE support engineer & executive sponsor'
+      'Single tenant deployment & VPC peering options',
+      'Dedicated support & custom SLA agreements',
+      'Direct channel via skyopsnetes2000@gmail.com'
     ]
   }
 };
@@ -372,10 +389,10 @@ export const BILLING_INTERVAL_CONFIG: Record<
   BillingInterval,
   { months: number; label: string; shortLabel: string }
 > = {
-  MONTHLY: { months: 1, label: '1 Month', shortLabel: '/mo' },
-  QUARTERLY: { months: 3, label: '3 Months', shortLabel: '/qtr' },
-  HALF_YEARLY: { months: 6, label: '6 Months', shortLabel: '/half-yr' },
-  YEARLY: { months: 12, label: '12 Months', shortLabel: '/yr' }
+  MONTHLY: { months: 1, label: 'Monthly', shortLabel: '/mo' },
+  QUARTERLY: { months: 3, label: 'Every 3 months', shortLabel: '/3 mos' },
+  HALF_YEARLY: { months: 6, label: 'Every 6 months', shortLabel: '/6 mos' },
+  YEARLY: { months: 12, label: 'Every year', shortLabel: '/yr' }
 };
 
 export const TRIAL_CONFIG = {
@@ -411,6 +428,20 @@ export function formatINR(amount: number): string {
     currency: 'INR',
     maximumFractionDigits: 0
   }).format(amount);
+}
+
+/**
+ * Helper to get customer-friendly label for billing interval
+ */
+export function getBillingIntervalLabel(interval: BillingInterval): string {
+  return BILLING_INTERVAL_CONFIG[interval]?.label || interval;
+}
+
+/**
+ * Helper to get short label for billing interval
+ */
+export function getBillingIntervalShortLabel(interval: BillingInterval): string {
+  return BILLING_INTERVAL_CONFIG[interval]?.shortLabel || '';
 }
 
 /**

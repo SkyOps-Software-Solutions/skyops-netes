@@ -24,6 +24,7 @@ import {
   Zap
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
+import { SKYOPS_CONTACT_EMAIL } from '../../config/contact';
 
 export type DocTopic =
   | 'quickstart'
@@ -702,11 +703,11 @@ export const KnowledgeBaseModal: React.FC<KnowledgeBaseModalProps> = ({
             <div className="text-xs text-zinc-500 font-mono uppercase tracking-wider">Official Support Email</div>
             <div className="flex items-center gap-3">
               <a
-                href="mailto:skyopsnetes2000@gmail.com"
+                href={`mailto:${SKYOPS_CONTACT_EMAIL}`}
                 className="text-lg font-mono font-bold text-sky-400 hover:text-sky-300 underline underline-offset-4 flex items-center gap-2"
               >
                 <Mail className="w-5 h-5 text-sky-400" />
-                skyopsnetes2000@gmail.com
+                {SKYOPS_CONTACT_EMAIL}
               </a>
             </div>
             <p className="text-xs text-zinc-400 pt-1">
@@ -734,20 +735,17 @@ export const KnowledgeBaseModal: React.FC<KnowledgeBaseModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="kb-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/85 backdrop-blur-md animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150"
     >
-      <div className="w-full max-w-5xl h-[85vh] max-h-[800px] bg-[#040812]/95 border border-cyan-500/30 rounded-2xl shadow-2xl shadow-cyan-950/80 flex flex-col overflow-hidden text-zinc-100 relative electric-circuit-border">
-        {/* Top glowing electric bus line */}
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-sky-400 via-cyan-400 to-sky-300" />
-
+      <div className="w-full max-w-5xl h-[85vh] max-h-[800px] bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden text-zinc-100">
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-cyan-500/15 bg-[#02050b]/90">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800/80 bg-zinc-950">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+            <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
               <BookOpen className="w-4 h-4" />
             </div>
             <div>
-              <h2 id="kb-modal-title" className="text-sm font-bold text-white flex items-center gap-2">
+              <h2 id="kb-modal-title" className="text-sm font-bold text-zinc-100 flex items-center gap-2">
                 SkyOps Knowledge Base &amp; Technical Reference
               </h2>
               <p className="text-xs font-mono text-zinc-400">
@@ -757,7 +755,7 @@ export const KnowledgeBaseModal: React.FC<KnowledgeBaseModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/80 transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer"
             aria-label="Close Reference Modal"
           >
             <X className="w-5 h-5" />
@@ -767,8 +765,8 @@ export const KnowledgeBaseModal: React.FC<KnowledgeBaseModalProps> = ({
         {/* Modal Body: Two-column layout */}
         <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
           {/* Left Navigation Sidebar */}
-          <div className="w-full md:w-64 border-b md:border-b-0 md:border-r border-cyan-500/15 bg-[#02050b]/60 p-3 overflow-y-auto space-y-1">
-            <div className="px-2 py-1.5 text-[10px] font-mono uppercase tracking-wider text-cyan-400">
+          <div className="w-full md:w-64 border-b md:border-b-0 md:border-r border-zinc-800/80 bg-zinc-950/50 p-3 overflow-y-auto space-y-1">
+            <div className="px-2 py-1.5 text-[10px] font-mono uppercase tracking-wider text-zinc-500">
               Documentation Index
             </div>
             {articles.map((article) => {
@@ -780,16 +778,16 @@ export const KnowledgeBaseModal: React.FC<KnowledgeBaseModalProps> = ({
                   onClick={() => setActiveTopic(article.id)}
                   className={`w-full text-left px-3 py-2 rounded-lg text-xs font-mono transition-all flex items-center justify-between cursor-pointer ${
                     isActive
-                      ? 'bg-gradient-to-r from-sky-500/20 to-cyan-500/20 text-cyan-300 font-bold border border-cyan-400/40 shadow-xs'
-                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/40'
+                      ? 'bg-sky-500/10 text-sky-400 font-semibold border border-sky-500/30'
+                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
                   }`}
                 >
                   <div className="flex items-center gap-2.5 truncate">
-                    <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-cyan-400' : 'text-zinc-500'}`} />
+                    <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-sky-400' : 'text-zinc-500'}`} />
                     <span className="truncate">{article.title}</span>
                   </div>
                   {article.badge && (
-                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#060c18] text-zinc-400 border border-zinc-800 shrink-0 ml-1">
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60 shrink-0 ml-1">
                       {article.badge.split(' ')[0]}
                     </span>
                   )}
@@ -799,19 +797,19 @@ export const KnowledgeBaseModal: React.FC<KnowledgeBaseModalProps> = ({
           </div>
 
           {/* Right Content View */}
-          <div className="flex-1 p-6 overflow-y-auto bg-[#02050b]/20 space-y-6">
-            <div className="border-b border-cyan-500/15 pb-4">
+          <div className="flex-1 p-6 overflow-y-auto bg-zinc-950/20 space-y-6">
+            <div className="border-b border-zinc-800/60 pb-4">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#060c18] text-cyan-300 border border-cyan-500/30 uppercase">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60 uppercase">
                   {currentArticle.category}
                 </span>
                 {currentArticle.badge && (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/30">
                     {currentArticle.badge}
                   </span>
                 )}
               </div>
-              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+              <h3 className="text-xl font-bold text-zinc-100 flex items-center gap-2">
                 {currentArticle.title}
               </h3>
               <p className="text-xs text-zinc-400 mt-1 font-mono">
@@ -827,15 +825,15 @@ export const KnowledgeBaseModal: React.FC<KnowledgeBaseModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-3 border-t border-cyan-500/15 bg-[#02050b]/90 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-mono text-zinc-500">
+        <div className="px-6 py-3 border-t border-zinc-800/80 bg-zinc-950 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-mono text-zinc-500">
           <div className="flex items-center gap-2">
-            <Server className="w-3.5 h-3.5 text-cyan-400" />
+            <Server className="w-3.5 h-3.5 text-sky-400" />
             <span>Built for Kubernetes operations • © 2026 SkyOps</span>
           </div>
           <div className="flex items-center gap-4">
             <a
               href="mailto:skyopsnetes2000@gmail.com"
-              className="text-zinc-400 hover:text-cyan-400 transition-colors flex items-center gap-1.5"
+              className="text-zinc-400 hover:text-sky-400 transition-colors flex items-center gap-1.5"
             >
               <Mail className="w-3.5 h-3.5" />
               skyopsnetes2000@gmail.com

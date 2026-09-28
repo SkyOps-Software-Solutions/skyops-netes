@@ -49,9 +49,9 @@ export const BillingSimulator: React.FC<BillingSimulatorProps> = ({ onSimulate, 
             onChange={(e) => setSelectedPlan(e.target.value as PlanId)}
             className="w-full px-2.5 py-1.5 rounded bg-zinc-900 border border-zinc-700 text-zinc-200 focus:outline-none focus:border-sky-500 text-xs"
           >
-            <option value="FREE">Free Tier (1 cluster, 5 nodes)</option>
-            <option value="PRO">Pro Tier (3 clusters, 25 nodes)</option>
-            <option value="BUSINESS">Business Tier (10 clusters, 100 nodes)</option>
+            <option value="FREE">Free Tier (1 cluster, 5 nodes, 7-day retention)</option>
+            <option value="PRO">Pro Tier (5 clusters, 50 nodes, 30-day retention)</option>
+            <option value="BUSINESS">Business Tier (20 clusters, 200 nodes, 90-day retention)</option>
           </select>
         </div>
 

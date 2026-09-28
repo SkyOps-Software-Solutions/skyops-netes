@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { OrgBillingOverview, PlanId, BillingInterval } from '../../types/index';
+import { useAuth } from '../../context/AuthContext';
 import { Button } from '../common/UI';
 import { SubscriptionCard } from '../billing/SubscriptionCard';
 import { QuotaProgress } from '../billing/QuotaProgress';
@@ -21,6 +22,7 @@ import { BillingSimulator } from '../billing/BillingSimulator';
 import { openRazorpayCheckout } from '../../utils/razorpay';
 
 export const UsageManager: React.FC = () => {
+  const { currentOrg } = useAuth();
   const [overview, setOverview] = useState<OrgBillingOverview | null>(null);
   const [rawUsage, setRawUsage] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -301,8 +303,8 @@ export const UsageManager: React.FC = () => {
         <InvoicesTable invoices={overview?.invoices || []} loading={loading} />
       </div>
 
-      {/* 5. Dev / QA Simulation Tooling */}
-      <BillingSimulator onSimulate={handleSimulate} loading={actionLoading} />
+      {/* 5. Dev / QA Simulation Tooling (Development Only) */}
+      {import.meta.env.DEV && <BillingSimulator onSimulate={handleSimulate} loading={actionLoading} />}
 
       {/* Plans & Pricing Modal */}
       {overview && (
@@ -311,6 +313,9 @@ export const UsageManager: React.FC = () => {
           onClose={() => setPlansModalOpen(false)}
           currentPlanId={overview.subscription.planId}
           currentInterval={overview.subscription.billingInterval}
+          orgName={currentOrg?.name}
+          clusterCount={overview.usage.clusters.current}
+          nodeCount={overview.usage.nodes.current}
           onSelectPlan={handleSelectPlan}
           loading={actionLoading}
         />

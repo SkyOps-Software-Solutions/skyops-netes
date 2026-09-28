@@ -251,6 +251,12 @@ export class InMemoryStore implements IPersistenceStore {
     return this.clusterTokens.get(tokenHash) || null;
   }
 
+  public async listClusterTokens(clusterId?: string): Promise<ClusterTokenRecord[]> {
+    const list = Array.from(this.clusterTokens.values()).map(r => ({ ...r }));
+    if (clusterId) return list.filter(r => r.clusterId === clusterId);
+    return list;
+  }
+
   public async saveClusterToken(record: ClusterTokenRecord): Promise<void> {
     this.clusterTokens.set(record.tokenHash, { ...record });
   }

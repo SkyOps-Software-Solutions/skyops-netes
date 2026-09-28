@@ -346,12 +346,12 @@ export const AuditView: React.FC = () => {
       {/* Summary Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Events */}
-        <div className="p-4 rounded-xl storm-kpi-card shadow-md">
+        <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 shadow-xs hover:border-zinc-700/60 transition-colors">
           <div className="flex items-center justify-between text-zinc-400">
             <span className="text-[11px] font-mono uppercase tracking-wider">Total Recorded Events</span>
             <Activity className="w-4 h-4 text-sky-400" />
           </div>
-          <div className="text-2xl font-bold font-mono text-white mt-1.5">{total}</div>
+          <div className="text-2xl font-bold font-mono text-zinc-100 mt-1.5">{total}</div>
           <div className="text-[11px] font-mono text-zinc-500 mt-1">
             Across current organization tenant
           </div>
@@ -360,7 +360,7 @@ export const AuditView: React.FC = () => {
         {/* Ledger Cryptographic Integrity */}
         <div 
           onClick={() => setShowIntegrityModal(true)}
-          className="p-4 rounded-xl storm-kpi-card shadow-md hover:border-emerald-500/50 cursor-pointer transition-all group"
+          className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 shadow-xs hover:border-emerald-700/60 cursor-pointer transition-colors group"
         >
           <div className="flex items-center justify-between text-zinc-400">
             <span className="text-[11px] font-mono uppercase tracking-wider">Cryptographic Integrity</span>
@@ -392,7 +392,7 @@ export const AuditView: React.FC = () => {
         </div>
 
         {/* Actor Breakdown */}
-        <div className="p-4 rounded-xl storm-kpi-card shadow-md">
+        <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 shadow-xs hover:border-zinc-700/60 transition-colors">
           <div className="flex items-center justify-between text-zinc-400">
             <span className="text-[11px] font-mono uppercase tracking-wider">Actor Distribution</span>
             <Bot className="w-4 h-4 text-indigo-400" />
@@ -416,7 +416,7 @@ export const AuditView: React.FC = () => {
         </div>
 
         {/* Compliance Standard & Retention */}
-        <div className="p-4 rounded-xl storm-kpi-card shadow-md">
+        <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 shadow-xs hover:border-zinc-700/60 transition-colors">
           <div className="flex items-center justify-between text-zinc-400">
             <span className="text-[11px] font-mono uppercase tracking-wider">Compliance Guarantee</span>
             <Lock className="w-4 h-4 text-emerald-400" />

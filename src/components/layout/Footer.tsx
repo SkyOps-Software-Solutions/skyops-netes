@@ -82,9 +82,19 @@ export const Footer: React.FC<FooterProps> = ({
   return (
     <footer
       id="skyops-main-footer"
-      className={`border-t border-zinc-800/80 bg-zinc-950 text-zinc-300 font-sans selection:bg-sky-500/30 selection:text-sky-200 ${className}`}
+      className={`border-t border-zinc-800/80 bg-zinc-950 text-zinc-300 font-sans selection:bg-sky-500/30 selection:text-sky-200 relative overflow-hidden shrink-0 ${className}`}
     >
-      <div className="max-w-7xl mx-auto px-6 lg:px-12 pt-16 pb-12">
+      {/* Ambient Cosmic Diffusion Glow (Drifts gently in background without fading text) */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -top-32 -left-32 w-96 h-96 rounded-full bg-sky-500/10 blur-3xl footer-cosmic-drift"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -bottom-32 -right-32 w-96 h-96 rounded-full bg-indigo-500/10 blur-3xl footer-cosmic-drift"
+      />
+
+      <div className="relative z-10 max-w-7xl mx-auto px-6 lg:px-12 pt-16 pb-12">
         {/* Main 5-Column Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 lg:gap-8 mb-12">
           {/* Column 1: Brand & Identity */}

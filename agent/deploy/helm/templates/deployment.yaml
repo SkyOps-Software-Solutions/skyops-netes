@@ -53,6 +53,16 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          volumeMounts:
+            - name: spool-data
+              mountPath: /var/spool/skyops-agent
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: spool-data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

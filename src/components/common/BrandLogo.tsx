@@ -22,6 +22,8 @@ export interface BrandLogoProps {
   onClick?: () => void;
   /** Priority loading flag */
   priority?: boolean;
+  /** Optional rounded style override */
+  rounded?: string;
 }
 
 const sizeMap = {
@@ -42,7 +44,8 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
   version,
   subtitle,
   onClick,
-  priority = false
+  priority = false,
+  rounded
 }) => {
   const [imgSrc, setImgSrc] = useState<string>('/logo.png');
   const [hasError, setHasError] = useState<boolean>(false);
@@ -60,7 +63,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
 
   const logoImage = (
     <div
-      className={`relative shrink-0 flex items-center justify-center rounded-lg overflow-hidden select-none ${imgDimensions} ${containerClassName}`}
+      className={`relative shrink-0 flex items-center justify-center ${rounded || 'rounded-lg'} overflow-hidden select-none ${imgDimensions} ${containerClassName}`}
       onClick={onClick}
     >
       {!hasError ? (
@@ -69,7 +72,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
           alt="SkyOps Logo"
           onError={handleImageError}
           loading={priority ? 'eager' : 'lazy'}
-          className={`w-full h-full object-contain drop-shadow-md transition-transform duration-200 ${className}`}
+          className={`w-full h-full object-contain drop-shadow-md transition-transform duration-200 ${rounded || ''} ${className}`}
         />
       ) : (
         <div className="w-full h-full rounded-lg bg-sky-600 flex items-center justify-center text-white font-mono font-bold text-xs">

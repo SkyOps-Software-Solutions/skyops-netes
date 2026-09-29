@@ -275,7 +275,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 title={`${item.label}${typeof item.badge === 'number' && item.badge > 0 ? ` (${item.badge} active)` : ''}`}
                 className={`relative flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-xs font-medium transition-colors cursor-pointer ${
                   isActive
-                    ? 'bg-sky-950/70 text-sky-300 border border-sky-800/80 shadow-xs'
+                    ? 'bg-sky-950/70 text-sky-300 border border-sky-800/80 border-l-2 border-l-sky-400 shadow-xs'
                     : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 border border-transparent'
                 }`}
               >
@@ -295,7 +295,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onClick={() => onSelectTab(item.id)}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
                 isActive
-                  ? 'bg-sky-950/60 text-sky-300 border border-sky-800/60 font-semibold'
+                  ? 'bg-sky-950/60 text-sky-300 border border-sky-800/60 border-l-2 border-l-sky-400 font-semibold'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 border border-transparent'
               }`}
             >

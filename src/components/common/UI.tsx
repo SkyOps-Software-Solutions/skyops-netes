@@ -26,7 +26,7 @@ export const Button: React.FC<{
   icon
 }) => {
   const base =
-    'inline-flex items-center justify-center gap-2 font-medium transition-colors rounded border cursor-pointer focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed';
+    'inline-flex items-center justify-center gap-2 font-medium transition-all active:scale-[0.985] rounded border cursor-pointer focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed';
 
   const sizes = {
     sm: 'px-2.5 py-1 text-xs',
@@ -35,7 +35,8 @@ export const Button: React.FC<{
   };
 
   const variants = {
-    primary: 'bg-sky-600 hover:bg-sky-500 text-white border-sky-500 shadow-sm',
+    primary:
+      'bg-sky-600 hover:bg-sky-500 hover:shadow-[0_0_14px_rgba(56,189,248,0.22)] text-white border-sky-500 shadow-sm',
     secondary: 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border-zinc-700',
     danger: 'bg-rose-600/90 hover:bg-rose-600 text-white border-rose-500',
     ghost: 'bg-transparent hover:bg-zinc-800 text-zinc-300 border-transparent',

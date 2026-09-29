@@ -22,39 +22,30 @@ import {
   getMetadata,
   FirebaseStorage
 } from 'firebase/storage';
-import fallbackConfig from '../firebase-applet-config.json';
+import { fallbackFirebaseConfig } from './config/firebaseFallbackConfig';
 
 const env = (typeof import.meta !== 'undefined' && (import.meta as any)?.env) || {};
 
-const rawBucket = env.VITE_FIREBASE_STORAGE_BUCKET || fallbackConfig.storageBucket || 'skyops-a1143.firebasestorage.app';
+const rawBucket = env.VITE_FIREBASE_STORAGE_BUCKET || fallbackFirebaseConfig.storageBucket || 'skyops-a1143.firebasestorage.app';
 const cleanStorageBucket = String(rawBucket).replace(/^gs:\/\//, '').trim();
-
-const DEFAULT_API_KEY = 'AIzaSyCti1ZOIOIFNVj-TPgHTF2mlbrzBEC-vHc';
 
 // Resolve Firebase configuration: environment variables take precedence, falling back to applet config
 export const resolvedFirebaseConfig = {
-  apiKey: env.VITE_FIREBASE_API_KEY || fallbackConfig.apiKey || DEFAULT_API_KEY,
-  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || fallbackConfig.authDomain || 'skyops-a1143.firebaseapp.com',
-  projectId: env.VITE_FIREBASE_PROJECT_ID || fallbackConfig.projectId || 'skyops-a1143',
+  apiKey: env.VITE_FIREBASE_API_KEY || fallbackFirebaseConfig.apiKey,
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || fallbackFirebaseConfig.authDomain,
+  projectId: env.VITE_FIREBASE_PROJECT_ID || fallbackFirebaseConfig.projectId,
   storageBucket: cleanStorageBucket,
-  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || fallbackConfig.messagingSenderId || '586158496088',
-  appId: env.VITE_FIREBASE_APP_ID || fallbackConfig.appId || '1:586158496088:web:28cdaaaa605c5b084ead2d',
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || fallbackFirebaseConfig.messagingSenderId,
+  appId: env.VITE_FIREBASE_APP_ID || fallbackFirebaseConfig.appId,
   firestoreDatabaseId:
-    env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || (fallbackConfig as any).firestoreDatabaseId || 'ai-studio-skyopsnetes-4a761b81-84c9-4610-bae6-624468cf7a67'
+    env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || fallbackFirebaseConfig.firestoreDatabaseId
 };
 
 // Initialize Firebase App instance safely (singleton pattern)
 export const app = !getApps().length ? initializeApp(resolvedFirebaseConfig) : getApp();
 
-// Initialize Firebase Authentication safely
-let authInstance: any;
-try {
-  authInstance = getAuth(app);
-} catch (err) {
-  console.warn('[SkyOps Firebase] Auth initialization warning:', err);
-  authInstance = getAuth();
-}
-export const auth = authInstance;
+// Initialize Firebase Authentication
+export const auth = getAuth(app);
 
 // Suppress internal Firestore gRPC idle stream warnings
 try {

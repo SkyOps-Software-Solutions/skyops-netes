@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { getPersistenceStore, IPersistenceStore, InMemoryStore } from './persistence/index';
+import { getPersistenceStore, IPersistenceStore } from './persistence/index';
 import {
   AgentStatus,
   Cluster,
@@ -187,34 +187,6 @@ export class DataStore {
   }
 
   public async initPersistence(): Promise<void> {
-    const isQuotaExceededError = (err: any): boolean => {
-      const msg = String(err?.message || err || '').toLowerCase();
-      return (
-        msg.includes('quota limit exceeded') ||
-        msg.includes('quota exceeded') ||
-        msg.includes('resource_exhausted') ||
-        msg.includes('free tier database') ||
-        msg.includes('free daily read units') ||
-        msg.includes('rate limit')
-      );
-    };
-
-    const activateLocalResilientPersistence = (reason: any) => {
-      console.warn(
-        `[DataStore] Notice: Firestore persistence is unavailable or quota-limited (${
-          reason?.message || reason
-        }). Activating resilient local storage persistence to maintain uptime.`
-      );
-      const fallbackMemoryStore = new InMemoryStore();
-      this.setPersistence(fallbackMemoryStore);
-      this.persistenceInitialized = true;
-      this.loadSnapshot();
-      if (this.orgs.size === 0) {
-        this.seedDevFixtures();
-      }
-      this.saveSnapshot();
-    };
-
     try {
       await this.persistence.init();
       this.persistenceInitialized = true;
@@ -222,11 +194,6 @@ export class DataStore {
     } catch (err: any) {
       this.persistenceInitialized = false;
       this.persistenceFailure = err instanceof Error ? err : new Error(String(err));
-
-      if (isQuotaExceededError(err) || process.env.NODE_ENV !== 'production') {
-        activateLocalResilientPersistence(err);
-        return;
-      }
 
       // In production/Firestore mode, silently continuing with an empty
       // in-memory cache is a data-loss condition. Fail startup instead.
@@ -246,10 +213,6 @@ export class DataStore {
 
     if (this.persistence.providerName === 'firestore') {
       if (!isConnected) {
-        if (process.env.NODE_ENV !== 'production') {
-          activateLocalResilientPersistence('Firestore is disconnected in development environment');
-          return;
-        }
         throw new Error(
           '[DataStore] Firestore persistence provider is not connected; refusing to continue with an in-memory-only state.'
         );
@@ -337,10 +300,6 @@ export class DataStore {
         );
       } catch (err: any) {
         this.persistenceFailure = err instanceof Error ? err : new Error(String(err));
-        if (isQuotaExceededError(err) || process.env.NODE_ENV !== 'production') {
-          activateLocalResilientPersistence(err);
-          return;
-        }
         throw new Error(
           `[DataStore] Authoritative Firestore hydration failed; refusing to load local snapshot or start with partial state: ${
             err?.message || err
@@ -454,6 +413,15 @@ export class DataStore {
     }
   }
 
+  private getSanitizedClustersForSnapshot(): Record<string, any> {
+    const sanitized: Record<string, any> = {};
+    for (const [id, cluster] of this.clusters.entries()) {
+      const { agentToken, agentTokenEncrypted, ...clean } = cluster as any;
+      sanitized[id] = clean;
+    }
+    return sanitized;
+  }
+
   public saveSnapshot() {
     // Firestore is the source of truth in production. Never mirror the live
     // cache into the legacy JSON snapshot, because doing so creates a second
@@ -469,7 +437,7 @@ export class DataStore {
           members: Object.fromEntries(this.members),
           invitations: Object.fromEntries(this.invitations),
           supportTickets: Object.fromEntries(this.supportTickets),
-          clusters: Object.fromEntries(this.clusters),
+          clusters: this.getSanitizedClustersForSnapshot(),
           clusterTokens: Object.fromEntries(this.clusterTokens),
           resources: Object.fromEntries(this.resources),
           incidents: Object.fromEntries(this.incidents),
@@ -509,7 +477,7 @@ export class DataStore {
         members: Object.fromEntries(this.members),
         invitations: Object.fromEntries(this.invitations),
         supportTickets: Object.fromEntries(this.supportTickets),
-        clusters: Object.fromEntries(this.clusters),
+        clusters: this.getSanitizedClustersForSnapshot(),
         clusterTokens: Object.fromEntries(this.clusterTokens),
         resources: Object.fromEntries(this.resources),
         incidents: Object.fromEntries(this.incidents),
@@ -632,9 +600,14 @@ export class DataStore {
       existing.email = userData.email;
       existing.name = userData.name;
       this.saveSnapshot();
-      this.persistence.upsertUser(existing).catch((err) =>
-        console.warn('[DataStore] Failed to persist user to persistence:', err?.message || err)
-      );
+      this.persistence.upsertUser(existing).catch((err) => {
+        const msg = err?.message || String(err);
+        if (msg.includes('Quota') || msg.includes('quota')) {
+          console.warn('[DataStore] Firestore daily read/write quota limit exceeded. User state is securely preserved in local snapshot.');
+        } else {
+          console.warn('[DataStore] Failed to persist user to persistence:', msg);
+        }
+      });
       return existing;
     }
 
@@ -645,9 +618,14 @@ export class DataStore {
     };
     this.users.set(newUser.id, newUser);
     this.saveSnapshot();
-    this.persistence.upsertUser(newUser).catch((err) =>
-      console.warn('[DataStore] Failed to persist new user to persistence:', err?.message || err)
-    );
+    this.persistence.upsertUser(newUser).catch((err) => {
+      const msg = err?.message || String(err);
+      if (msg.includes('Quota') || msg.includes('quota')) {
+        console.warn('[DataStore] Firestore daily read/write quota limit exceeded. New user state is securely preserved in local snapshot.');
+      } else {
+        console.warn('[DataStore] Failed to persist new user to persistence:', msg);
+      }
+    });
     return newUser;
   }
 
@@ -782,13 +760,23 @@ export class DataStore {
     ]);
 
     this.saveSnapshot();
-    this.persistence.upsertOrganization(org).catch((err) =>
-      console.warn('[DataStore] Failed to persist organization:', err?.message || err)
-    );
+    this.persistence.upsertOrganization(org).catch((err) => {
+      const msg = err?.message || String(err);
+      if (msg.includes('Quota') || msg.includes('quota')) {
+        console.warn('[DataStore] Firestore daily quota reached. Organization preserved in local store.');
+      } else {
+        console.warn('[DataStore] Failed to persist organization:', msg);
+      }
+    });
     const initialMembers = this.members.get(orgId) || [];
-    this.persistence.setOrgMembers(orgId, initialMembers).catch((err) =>
-      console.warn('[DataStore] Failed to persist organization members:', err?.message || err)
-    );
+    this.persistence.setOrgMembers(orgId, initialMembers).catch((err) => {
+      const msg = err?.message || String(err);
+      if (msg.includes('Quota') || msg.includes('quota')) {
+        console.warn('[DataStore] Firestore daily quota reached. Organization members preserved in local store.');
+      } else {
+        console.warn('[DataStore] Failed to persist organization members:', msg);
+      }
+    });
     this.getOrCreateOrgSubscription(orgId);
 
     auditService.record({

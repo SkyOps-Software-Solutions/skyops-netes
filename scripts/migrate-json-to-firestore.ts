@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { getPersistenceStore, IPersistenceStore } from '../server/persistence/index';
 import { FirestoreStore } from '../server/persistence/FirestoreStore';
-import fallbackConfig from '../firebase-applet-config.json';
+import fallbackConfig from '../server/firebaseAppletConfig';
 
 export interface MigrationSummary {
   users: number;

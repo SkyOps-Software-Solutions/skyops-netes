@@ -223,7 +223,7 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold tracking-tight text-white font-mono flex items-center gap-2.5">
-              <BrandLogo size="sm" rounded="rounded-md" />
+              <BrandLogo size="lg" className="rounded-lg shadow-sm" />
               <span>SkyOps Command Center</span>
             </h1>
             <span

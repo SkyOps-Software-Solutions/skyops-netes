@@ -18,7 +18,7 @@ import { AuditView } from '../audit/AuditView';
 import { NavigationTab, Sidebar } from './Sidebar';
 import { Footer } from './Footer';
 import { DocTopic, KnowledgeBaseModal } from '../docs/KnowledgeBaseModal';
-import { LivingAtmosphere } from '../common/LivingAtmosphere';
+import { BrandLogo } from '../common/BrandLogo';
 
 interface AppShellProps {
   initialOpenAddCluster?: boolean;
@@ -243,10 +243,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   ).length;
 
   return (
-    <div className="relative flex h-screen bg-zinc-950 text-zinc-100 antialiased overflow-hidden font-sans">
-      {/* 1. Living Cosmic Atmosphere & Digital Signal Particle Engine */}
-      <LivingAtmosphere />
-
+    <div className="flex h-screen bg-zinc-950 text-zinc-100 antialiased overflow-hidden font-sans">
       {/* Navigation Sidebar */}
       <Sidebar
         activeTab={activeTab}
@@ -259,12 +256,13 @@ export const AppShell: React.FC<AppShellProps> = ({
       />
 
       {/* Main Content Area */}
-      <main className="relative z-10 flex-1 flex flex-col min-w-0 overflow-y-auto bg-zinc-950/70 backdrop-blur-[0.5px]">
+      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-zinc-950">
         {/* Top Operational Bar */}
         <header className="h-12 border-b border-zinc-800/80 px-4 sm:px-6 flex items-center justify-between shrink-0 bg-zinc-950/80 backdrop-blur-xs">
           <div className="flex items-center gap-3 text-xs font-mono text-zinc-400">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 status-breathe-emerald" />
+            <span className="flex items-center gap-2">
+              <BrandLogo size="xs" className="rounded-sm" />
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               Central Ingestion API: <strong className="text-zinc-200">Online</strong>
             </span>
             <span className="text-zinc-700 hidden md:inline">|</span>
@@ -285,7 +283,7 @@ export const AppShell: React.FC<AppShellProps> = ({
             </button>
             <span className="text-zinc-700 hidden sm:inline">|</span>
             <span className="text-emerald-400 hidden sm:flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 status-breathe-emerald" />
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
               Autonomous Engine Active
             </span>
             <span className="text-zinc-700 hidden sm:inline">|</span>
@@ -295,11 +293,8 @@ export const AppShell: React.FC<AppShellProps> = ({
           </div>
         </header>
 
-        {/* View Routing with 150-250ms page transition */}
-        <div
-          key={`${activeTab}-${selectedClusterId || ''}-${selectedIncidentId || ''}`}
-          className="flex-1 page-view-enter"
-        >
+        {/* View Routing */}
+        <div className="flex-1">
           {activeTab === 'overview' && (
             <OverviewView
               metrics={metrics}

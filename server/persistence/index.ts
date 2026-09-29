@@ -1,7 +1,7 @@
 import { FirestoreStore } from './FirestoreStore';
 import { InMemoryStore } from './InMemoryStore';
 import { IPersistenceStore } from './types';
-import fallbackConfig from '../../firebase-applet-config.json';
+import fallbackConfig from '../firebaseAppletConfig';
 
 let storeInstance: IPersistenceStore | null = null;
 
@@ -24,9 +24,9 @@ export function determinePersistenceProvider(): 'firestore' | 'memory' {
     return 'firestore';
   }
 
-  // If test environment, default to in-memory unless explicitly overridden
+  // If test environment, default to in-memory unless explicitly overridden for integration tests
   if (process.env.NODE_ENV === 'test') {
-    return envProvider === 'firestore' ? 'firestore' : 'memory';
+    return process.env.TEST_PERSISTENCE_PROVIDER === 'firestore' ? 'firestore' : 'memory';
   }
 
   // Development: Use firestore by default as authoritative persistence provider unless explicitly set to memory

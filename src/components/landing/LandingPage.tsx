@@ -43,18 +43,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           {/* Left: Brand & Tagline */}
           <div className="flex items-center gap-3">
-            <BrandLogo size="lg" rounded="rounded-xl" className="shadow-lg shadow-sky-950/50" />
-            <div>
-              <div className="text-base font-bold tracking-tight text-zinc-100 flex items-center gap-2">
-                SkyOps
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-sky-400 border border-zinc-700">
-                  v1.4
-                </span>
-              </div>
-              <div className="text-xs font-mono text-zinc-400 leading-tight">
-                Kubernetes Incident Platform
-              </div>
-            </div>
+            <BrandLogo
+              size="lg"
+              showText
+              version="v1.5.1"
+              subtitle="Kubernetes Incident Platform"
+              className="rounded-lg shadow-md"
+            />
           </div>
 
           {/* Right: Docs & Auth CTAs */}

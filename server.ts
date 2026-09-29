@@ -84,8 +84,20 @@ app.use((req, res, next) => {
 app.use(correlationIdMiddleware);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(process.cwd(), 'public')));
 app.use(storageRouter);
+app.use(express.static(path.join(process.cwd(), 'public')));
+
+// Explicit brand logo and browser favicon endpoints
+app.get('/favicon.ico', (req, res) => {
+  res.setHeader('Content-Type', 'image/x-icon');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.sendFile(path.join(process.cwd(), 'public', 'favicon.ico'));
+});
+app.get(['/favicon.png', '/logo.png'], (req, res) => {
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.sendFile(path.join(process.cwd(), 'public', 'logo.png'));
+});
 
 // --- Platform Health & Self-Observability Probes ---
 app.get('/health/live', (req, res) => {

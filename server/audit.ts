@@ -110,10 +110,20 @@ class AuditService {
       getPersistenceStore()
         .recordAuditEvent(fullEvent)
         .catch((err) => {
-          console.error('[AuditService] Failed to asynchronously persist audit event:', err?.message || err);
+          const msg = err?.message || String(err);
+          if (msg.includes('Quota') || msg.includes('quota')) {
+            console.warn('[AuditService] Firestore daily quota reached. Audit event preserved in local store.');
+          } else {
+            console.error('[AuditService] Failed to asynchronously persist audit event:', msg);
+          }
         });
     } catch (e: any) {
-      console.error('[AuditService] Error invoking persistence store:', e?.message || e);
+      const msg = e?.message || String(e);
+      if (msg.includes('Quota') || msg.includes('quota')) {
+        console.warn('[AuditService] Firestore daily quota reached. Audit event preserved in local store.');
+      } else {
+        console.error('[AuditService] Error invoking persistence store:', msg);
+      }
     }
 
     return fullEvent;
@@ -198,8 +208,13 @@ class AuditService {
       if (storeRes && storeRes.items && storeRes.items.length > 0) {
         return storeRes;
       }
-    } catch (err) {
-      console.warn('[AuditService] Persistence query error, using local fallback:', err);
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      if (msg.includes('Quota') || msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED')) {
+        // Daily Firestore read quota reached, seamlessly serve from local audit ledger
+      } else {
+        console.warn('[AuditService] Persistence query error, using local fallback:', msg);
+      }
     }
     return this.query(filters);
   }

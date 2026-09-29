@@ -135,8 +135,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
         </button>
 
         <div className="flex items-center gap-2.5">
-          <BrandLogo size="sm" rounded="rounded-lg" />
-          <span className="text-sm font-bold tracking-tight text-zinc-200">SkyOps</span>
+          <BrandLogo size="md" showText />
         </div>
       </header>
 
@@ -146,7 +145,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
           {/* Card Container */}
           <div className="p-8 rounded-2xl bg-zinc-900/60 border border-zinc-800 shadow-2xl backdrop-blur-sm space-y-6">
             {/* Header */}
-            <div className="text-center space-y-1.5">
+            <div className="text-center space-y-3">
+              <div className="flex justify-center">
+                <BrandLogo size="xl" className="rounded-xl shadow-lg" />
+              </div>
               <h1 className="text-2xl font-bold tracking-tight text-zinc-100">
                 {mode === 'signup'
                   ? 'Create SkyOps Account'

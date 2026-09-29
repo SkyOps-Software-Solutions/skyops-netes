@@ -231,7 +231,12 @@ export async function requireOrgMembership(
         userOrgs = store.getOrganizationsForUser(req.user.id, req.user.email);
       }
     } catch (err: any) {
-      console.warn('[SkyOps Auth] Notice: Firestore user organizations lookup failed:', err?.message || err);
+      const msg = err?.message || String(err);
+      if (msg.includes('Quota') || msg.includes('quota')) {
+        console.warn('[SkyOps Auth] Firestore read quota reached. Seamlessly resolving tenant workspace from local cache.');
+      } else {
+        console.warn('[SkyOps Auth] Notice: Firestore user organizations lookup failed:', msg);
+      }
     }
   }
 
@@ -254,13 +259,13 @@ export async function requireOrgMembership(
       )
     : userOrgs[0];
 
-  // For /api/v1/auth/session, or if requestedOrgId was not found,
+  // For /api/v1/auth/session, or if no specific org was requested,
   // fall back to user's first valid organization for session establishment
   const isSessionEndpoint =
     req.path === '/api/v1/auth/session' ||
     req.originalUrl?.includes('/api/v1/auth/session') ||
     req.url?.includes('/api/v1/auth/session');
-  if (!targetOrg && (isSessionEndpoint || !requestedOrgId || userOrgs.length > 0)) {
+  if (!targetOrg && (isSessionEndpoint || !requestedOrgId)) {
     targetOrg = userOrgs[0];
   }
 

@@ -23,6 +23,7 @@ import {
 import React from 'react';
 import { DocTopic } from '../docs/KnowledgeBaseModal';
 import { NavigationTab } from './Sidebar';
+import { BrandLogo } from '../common/BrandLogo';
 
 export interface FooterProps {
   /**
@@ -81,42 +82,21 @@ export const Footer: React.FC<FooterProps> = ({
   return (
     <footer
       id="skyops-main-footer"
-      className={`relative overflow-hidden border-t border-zinc-800/80 bg-zinc-950 text-zinc-300 font-sans selection:bg-sky-500/30 selection:text-sky-200 ${className}`}
+      className={`border-t border-zinc-800/80 bg-zinc-950 text-zinc-300 font-sans selection:bg-sky-500/30 selection:text-sky-200 ${className}`}
     >
-      {/* Subtle Blue Cosmic Atmosphere Movement */}
-      <div
-        aria-hidden="true"
-        className="absolute -top-20 left-1/3 w-[550px] h-[260px] rounded-full footer-cosmic-drift pointer-events-none"
-        style={{
-          background: 'radial-gradient(ellipse at 50% 50%, rgba(14, 116, 144, 0.16) 0%, rgba(2, 132, 199, 0.06) 50%, transparent 80%)',
-          filter: 'blur(60px)'
-        }}
-      />
-      {/* Subtle Top Border Gradient Diffusion */}
-      <div
-        aria-hidden="true"
-        className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-sky-500/35 to-transparent pointer-events-none"
-      />
-      <div className="relative z-10 max-w-7xl mx-auto px-6 lg:px-12 pt-16 pb-12">
+      <div className="max-w-7xl mx-auto px-6 lg:px-12 pt-16 pb-12">
         {/* Main 5-Column Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 lg:gap-8 mb-12">
           {/* Column 1: Brand & Identity */}
           <div className="lg:col-span-2 space-y-4">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-sky-700 flex items-center justify-center text-zinc-950 shadow-md shadow-sky-950/50">
-                <Server className="w-4 h-4 text-white" />
-              </div>
-              <div>
-                <span className="text-base font-bold tracking-tight text-zinc-100 flex items-center gap-2">
-                  SkyOps
-                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-zinc-800 text-sky-400 border border-zinc-700">
-                    v1.5
-                  </span>
-                </span>
-                <span className="block text-xs font-mono text-zinc-400 leading-none mt-0.5">
-                  Kubernetes Incident Management Platform
-                </span>
-              </div>
+              <BrandLogo
+                size="lg"
+                showText
+                version="v1.5.1"
+                subtitle="Kubernetes Incident Management Platform"
+                className="rounded-lg shadow-sm"
+              />
             </div>
 
             <p className="text-xs text-zinc-400 leading-relaxed max-w-sm">

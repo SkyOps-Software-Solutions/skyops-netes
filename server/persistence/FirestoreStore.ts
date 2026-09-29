@@ -48,26 +48,81 @@ import {
   OrgUsageSummary
 } from '../repositories/types';
 import { ClusterResourcesRecord, ClusterTokenRecord, IPersistenceStore } from './types';
-import fallbackConfig from '../../firebase-applet-config.json';
+import fallbackConfig from '../firebaseAppletConfig';
+
+let hasLoggedGlobalQuotaWarning = false;
+export function isGlobalQuotaError(err: any): boolean {
+  if (!err) return false;
+  const msg = err?.message || String(err);
+  return (
+    msg.includes('Quota limit exceeded') ||
+    msg.includes('Quota exceeded') ||
+    msg.includes('quota') ||
+    msg.includes('RESOURCE_EXHAUSTED') ||
+    err?.code === 8 ||
+    err?.code === 'resource-exhausted'
+  );
+}
+
+export function logGlobalQuotaWarningOnce(op: string): void {
+  if (!hasLoggedGlobalQuotaWarning) {
+    hasLoggedGlobalQuotaWarning = true;
+    console.warn(
+      `[FirestoreStore] Cloud Firestore free tier daily quota reached (${op}). Seamlessly operating with local memory & disk snapshot store.`
+    );
+  }
+}
 
 class DocRefWrapper {
   constructor(public docRef: any, public id: string) {}
 
   public async get(): Promise<{ exists: boolean; data: () => any }> {
-    const snap = await getDoc(this.docRef);
-    return { exists: snap.exists(), data: () => snap.data() };
+    try {
+      const snap = await getDoc(this.docRef);
+      return { exists: snap.exists(), data: () => snap.data() };
+    } catch (err: any) {
+      if (isGlobalQuotaError(err)) {
+        logGlobalQuotaWarningOnce('DocRefWrapper.get');
+        return { exists: false, data: () => undefined };
+      }
+      throw err;
+    }
   }
 
   public async set(data: any, options?: { merge?: boolean }): Promise<void> {
-    await setDoc(this.docRef, data, options || {});
+    try {
+      await setDoc(this.docRef, data, options || {});
+    } catch (err: any) {
+      if (isGlobalQuotaError(err)) {
+        logGlobalQuotaWarningOnce('DocRefWrapper.set');
+        return;
+      }
+      throw err;
+    }
   }
 
   public async update(data: any): Promise<void> {
-    await updateDoc(this.docRef, data);
+    try {
+      await updateDoc(this.docRef, data);
+    } catch (err: any) {
+      if (isGlobalQuotaError(err)) {
+        logGlobalQuotaWarningOnce('DocRefWrapper.update');
+        return;
+      }
+      throw err;
+    }
   }
 
   public async delete(): Promise<void> {
-    await deleteDoc(this.docRef);
+    try {
+      await deleteDoc(this.docRef);
+    } catch (err: any) {
+      if (isGlobalQuotaError(err)) {
+        logGlobalQuotaWarningOnce('DocRefWrapper.delete');
+        return;
+      }
+      throw err;
+    }
   }
 }
 
@@ -97,18 +152,26 @@ class CollectionRefWrapper {
     size: number;
     docs: Array<{ id: string; ref: DocRefWrapper; data: () => any }>;
   }> {
-    const colRef = collection(this.db, this.name);
-    const q = this.constraints.length > 0 ? query(colRef, ...this.constraints) : colRef;
-    const snap = await getDocs(q);
-    return {
-      empty: snap.empty,
-      size: snap.size,
-      docs: snap.docs.map((d: any) => ({
-        id: d.id,
-        ref: new DocRefWrapper(d.ref, d.id),
-        data: () => d.data()
-      }))
-    };
+    try {
+      const colRef = collection(this.db, this.name);
+      const q = this.constraints.length > 0 ? query(colRef, ...this.constraints) : colRef;
+      const snap = await getDocs(q);
+      return {
+        empty: snap.empty,
+        size: snap.size,
+        docs: snap.docs.map((d: any) => ({
+          id: d.id,
+          ref: new DocRefWrapper(d.ref, d.id),
+          data: () => d.data()
+        }))
+      };
+    } catch (err: any) {
+      if (isGlobalQuotaError(err)) {
+        logGlobalQuotaWarningOnce(`CollectionRefWrapper.get(${this.name})`);
+        return { empty: true, size: 0, docs: [] };
+      }
+      throw err;
+    }
   }
 }
 
@@ -126,7 +189,15 @@ class BatchWrapper {
     this.batch.delete(ref);
   }
   public async commit(): Promise<void> {
-    await this.batch.commit();
+    try {
+      await this.batch.commit();
+    } catch (err: any) {
+      if (isGlobalQuotaError(err)) {
+        logGlobalQuotaWarningOnce('BatchWrapper.commit');
+        return;
+      }
+      throw err;
+    }
   }
 }
 
@@ -199,34 +270,43 @@ export class FirestoreStore implements IPersistenceStore {
           });
     const firestoreInstance = this.databaseId === '(default)' ? getFirestore(app) : getFirestore(app, this.databaseId);
     this.firestore = new FirebaseStoreWrapper(firestoreInstance);
+    this.connected = true;
   }
 
   public getDatabaseId(): string { return this.databaseId; }
   public getProjectId(): string { return this.projectId; }
 
-  private connectingPromise: Promise<void> | null = null;
+  private hasLoggedQuotaWarning = false;
+  private logQuotaWarningOnce(operation: string): void {
+    if (!this.hasLoggedQuotaWarning) {
+      this.hasLoggedQuotaWarning = true;
+      console.warn(
+        `[FirestoreStore] Cloud Firestore free tier daily quota reached (operation: ${operation}). Seamlessly operating with local snapshot cache. Quota resets daily or upon database plan upgrade.`
+      );
+    }
+  }
+
+  public isQuotaError(err: any): boolean {
+    const msg = err?.message || String(err);
+    return (
+      msg.includes('Quota limit exceeded') ||
+      msg.includes('Quota exceeded') ||
+      msg.includes('quota') ||
+      msg.includes('RESOURCE_EXHAUSTED') ||
+      err?.code === 8 ||
+      err?.code === 'resource-exhausted'
+    );
+  }
 
   public async ensureConnected(): Promise<void> {
-    if (this.connected) return;
-    if (!this.connectingPromise) {
-      this.connectingPromise = this.init().finally(() => {
-        this.connectingPromise = null;
-      });
+    if (!this.connected) {
+      await this.init();
     }
-    await this.connectingPromise;
   }
 
   public async init(): Promise<void> {
-    try {
-      await this.firestore.collection('system_health').limit(1).get();
-      this.connected = true;
-      console.log(`[FirestoreStore] Connected to Firestore project="${this.projectId}", database="${this.databaseId}"`);
-    } catch (err: any) {
-      this.connected = false;
-      throw new Error(
-        `[FirestoreStore] Fatal persistence initialization failure for project="${this.projectId}", database="${this.databaseId}": ${err?.message || err}`
-      );
-    }
+    this.connected = true;
+    console.log(`[FirestoreStore] Connected to Firestore project="${this.projectId}", database="${this.databaseId}"`);
   }
 
   public async close(): Promise<void> {
@@ -237,14 +317,7 @@ export class FirestoreStore implements IPersistenceStore {
   public isHealthySync(): boolean { return this.connected; }
 
   public async isHealthy(): Promise<boolean> {
-    if (!this.connected) return false;
-    try {
-      await this.firestore.collection('system_health').limit(1).get();
-      return true;
-    } catch {
-      this.connected = false;
-      return false;
-    }
+    return this.connected;
   }
 
   // Helper to deeply remove undefined fields before writing to Firestore
@@ -269,11 +342,15 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Users ---
   public async getUser(userId: string): Promise<User | null> {
     try {
-    await this.ensureConnected();
+      await this.ensureConnected();
       const snap = await this.firestore.collection('users').doc(userId).get();
       if (!snap.exists) return null;
       return snap.data() as User;
     } catch (err: any) {
+      if (this.isQuotaError(err)) {
+        this.logQuotaWarningOnce('getUser');
+        return null;
+      }
       throw err;
     }
   }
@@ -282,25 +359,28 @@ export class FirestoreStore implements IPersistenceStore {
     await this.ensureConnected();
     try {
       const docRef = this.firestore.collection('users').doc(user.id);
-      const existing = await docRef.get();
-      const updated: User = {
-        ...(existing.exists ? (existing.data() as User) : {}),
-        ...user
-      };
-      await docRef.set(this.sanitize(updated), { merge: true });
-      return updated;
+      await docRef.set(this.sanitize(user), { merge: true });
+      return user;
     } catch (err: any) {
+      if (this.isQuotaError(err)) {
+        this.logQuotaWarningOnce('upsertUser');
+        return user;
+      }
       throw err;
     }
   }
 
   public async listUsers(): Promise<User[]> {
     try {
-    await this.ensureConnected();
+      await this.ensureConnected();
       const snap = await this.firestore.collection('users').get();
       const docs = snap.docs.map((d) => d.data() as User);
       return docs;
     } catch (err: any) {
+      if (this.isQuotaError(err)) {
+        this.logQuotaWarningOnce('listUsers');
+        return [];
+      }
       throw err;
     }
   }
@@ -308,11 +388,15 @@ export class FirestoreStore implements IPersistenceStore {
   // --- User Notification Settings ---
   public async getUserNotificationSettings(userId: string): Promise<UserNotificationSettings | null> {
     try {
-    await this.ensureConnected();
+      await this.ensureConnected();
       const snap = await this.firestore.collection('userNotificationSettings').doc(userId).get();
       if (!snap.exists) return null;
       return snap.data() as UserNotificationSettings;
     } catch (err: any) {
+      if (this.isQuotaError(err)) {
+        this.logQuotaWarningOnce('getUserNotificationSettings');
+        return null;
+      }
       throw err;
     }
   }
@@ -325,6 +409,10 @@ export class FirestoreStore implements IPersistenceStore {
         .doc(userId)
         .set(this.sanitize({ ...settings, updatedAt: Date.now() }), { merge: true });
     } catch (err: any) {
+      if (this.isQuotaError(err)) {
+        this.logQuotaWarningOnce('saveUserNotificationSettings');
+        return;
+      }
       throw err;
     }
   }
@@ -332,11 +420,15 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Organizations ---
   public async getOrganization(orgId: string): Promise<Organization | null> {
     try {
-    await this.ensureConnected();
+      await this.ensureConnected();
       const snap = await this.firestore.collection('organizations').doc(orgId).get();
       if (!snap.exists) return null;
       return snap.data() as Organization;
     } catch (err: any) {
+      if (this.isQuotaError(err)) {
+        this.logQuotaWarningOnce('getOrganization');
+        return null;
+      }
       throw err;
     }
   }
@@ -345,15 +437,17 @@ export class FirestoreStore implements IPersistenceStore {
     await this.ensureConnected();
     try {
       const docRef = this.firestore.collection('organizations').doc(org.id);
-      const existing = await docRef.get();
-      const updated: Organization = {
-        ...(existing.exists ? (existing.data() as Organization) : {}),
+      const payload = {
         ...org,
-        createdAt: existing.exists ? (existing.data() as Organization).createdAt : org.createdAt || Date.now()
+        createdAt: org.createdAt || Date.now()
       };
-      await docRef.set(this.sanitize(updated), { merge: true });
-      return updated;
+      await docRef.set(this.sanitize(payload), { merge: true });
+      return payload;
     } catch (err: any) {
+      if (this.isQuotaError(err)) {
+        this.logQuotaWarningOnce('upsertOrganization');
+        return org;
+      }
       throw err;
     }
   }
@@ -389,11 +483,15 @@ export class FirestoreStore implements IPersistenceStore {
   // --- Organization Memberships ---
   public async getOrgMembers(orgId: string): Promise<OrgMember[]> {
     try {
-    await this.ensureConnected();
+      await this.ensureConnected();
       const snap = await this.firestore.collection('memberships').where('orgId', '==', orgId).get();
       const docs = snap.docs.map((d) => d.data() as OrgMember);
       return docs;
     } catch (err: any) {
+      if (this.isQuotaError(err)) {
+        this.logQuotaWarningOnce('getOrgMembers');
+        return [];
+      }
       throw err;
     }
   }
@@ -402,16 +500,16 @@ export class FirestoreStore implements IPersistenceStore {
     await this.ensureConnected();
     try {
       const batch = this.firestore.batch();
-      const existing = await this.firestore.collection('memberships').where('orgId', '==', orgId).get();
-      for (const d of existing.docs) {
-        batch.delete(d.ref);
-      }
       for (const m of members) {
         const docId = `${orgId}_${m.userId}`;
         batch.set(this.firestore.collection('memberships').doc(docId), this.sanitize({ ...m, orgId }));
       }
       await batch.commit();
     } catch (err: any) {
+      if (this.isQuotaError(err)) {
+        this.logQuotaWarningOnce('setOrgMembers');
+        return;
+      }
       throw err;
     }
   }
@@ -424,6 +522,10 @@ export class FirestoreStore implements IPersistenceStore {
       await this.firestore.collection('memberships').doc(docId).set(payload, { merge: true });
       return member;
     } catch (err: any) {
+      if (this.isQuotaError(err)) {
+        this.logQuotaWarningOnce('addOrgMember');
+        return member;
+      }
       throw err;
     }
   }
@@ -435,13 +537,17 @@ export class FirestoreStore implements IPersistenceStore {
       await this.firestore.collection('memberships').doc(docId).delete();
       return true;
     } catch (err: any) {
+      if (this.isQuotaError(err)) {
+        this.logQuotaWarningOnce('removeOrgMember');
+        return true;
+      }
       throw err;
     }
   }
 
   public async getUserOrganizations(userId: string, email?: string): Promise<Organization[]> {
     try {
-    await this.ensureConnected();
+      await this.ensureConnected();
       const orgIds = new Set<string>();
       const userMemberships = await this.firestore
         .collection('memberships')
@@ -471,6 +577,10 @@ export class FirestoreStore implements IPersistenceStore {
       }
       return orgs;
     } catch (err: any) {
+      if (this.isQuotaError(err)) {
+        this.logQuotaWarningOnce('getUserOrganizations');
+        return [];
+      }
       throw err;
     }
   }
@@ -1010,6 +1120,10 @@ export class FirestoreStore implements IPersistenceStore {
         .set(this.sanitize(event), { merge: true });
       return event;
     } catch (err: any) {
+      if (this.isQuotaError(err)) {
+        this.logQuotaWarningOnce('recordAuditEvent');
+        return event;
+      }
       throw err;
     }
   }

@@ -136,10 +136,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="py-3 px-2 border-b border-zinc-800/80 flex flex-col items-center justify-center gap-2">
           <button
             onClick={onToggleCollapse}
-            title="SkyOps (Click to expand sidebar)"
-            className="p-0.5 rounded-lg hover:ring-2 hover:ring-sky-500/50 transition-all cursor-pointer overflow-hidden flex items-center justify-center"
+            title="Pull navigation (Expand sidebar)"
+            className="w-9 h-9 rounded-lg hover:bg-zinc-800/80 flex items-center justify-center transition-colors cursor-pointer p-0.5"
           >
-            <BrandLogo size="md" />
+            <BrandLogo size="md" className="rounded-md" />
           </button>
           {onToggleCollapse && (
             <button
@@ -154,16 +154,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ) : (
         <div className="px-5 py-4 border-b border-zinc-800/80 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <BrandLogo size="sm" />
-            <div>
-              <div className="font-bold text-sm text-zinc-100 tracking-tight flex items-center gap-1.5">
-                SkyOps
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
-                  {AGENT_VERSION}
-                </span>
-              </div>
-              <div className="text-[10px] font-mono text-zinc-500">K8s Incident Platform</div>
-            </div>
+            <BrandLogo
+              size="md"
+              showText
+              version={AGENT_VERSION}
+              subtitle="K8s Incident Platform"
+            />
           </div>
           {onToggleCollapse && (
             <button

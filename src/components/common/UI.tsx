@@ -1,5 +1,6 @@
 import { AlertCircle, Check, Copy, Loader2, X } from 'lucide-react';
 import React, { useState } from 'react';
+import { BrandLogo } from './BrandLogo';
 
 export const Button: React.FC<{
   id?: string;
@@ -25,7 +26,7 @@ export const Button: React.FC<{
   icon
 }) => {
   const base =
-    'inline-flex items-center justify-center gap-2 font-medium transition-all duration-200 ease-out active:scale-[0.985] active:duration-75 rounded border cursor-pointer focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100';
+    'inline-flex items-center justify-center gap-2 font-medium transition-colors rounded border cursor-pointer focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed';
 
   const sizes = {
     sm: 'px-2.5 py-1 text-xs',
@@ -34,12 +35,11 @@ export const Button: React.FC<{
   };
 
   const variants = {
-    primary:
-      'bg-sky-600 hover:bg-sky-500 text-white border-sky-500/80 shadow-xs hover:shadow-[0_0_14px_rgba(56,189,248,0.22)]',
-    secondary: 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border-zinc-700 hover:border-zinc-600',
-    danger: 'bg-rose-600/90 hover:bg-rose-600 text-white border-rose-500 hover:shadow-[0_0_12px_rgba(244,63,94,0.25)]',
-    ghost: 'bg-transparent hover:bg-zinc-800/80 text-zinc-300 border-transparent hover:text-zinc-100',
-    outline: 'bg-transparent hover:bg-zinc-800/80 text-zinc-200 border-zinc-700 hover:border-zinc-600'
+    primary: 'bg-sky-600 hover:bg-sky-500 text-white border-sky-500 shadow-sm',
+    secondary: 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border-zinc-700',
+    danger: 'bg-rose-600/90 hover:bg-rose-600 text-white border-rose-500',
+    ghost: 'bg-transparent hover:bg-zinc-800 text-zinc-300 border-transparent',
+    outline: 'bg-transparent hover:bg-zinc-800 text-zinc-200 border-zinc-700'
   };
 
   return (
@@ -167,8 +167,13 @@ export const EmptyState: React.FC<{
 export const LoadingState: React.FC<{ message?: string }> = ({ message = 'Loading SkyOps telemetry...' }) => {
   return (
     <div className="flex flex-col items-center justify-center p-16 text-center text-zinc-400">
-      <Loader2 className="w-8 h-8 animate-spin text-sky-500 mb-3" />
-      <span className="text-sm font-mono">{message}</span>
+      <div className="relative mb-4 flex items-center justify-center">
+        <BrandLogo size="lg" className="rounded-xl shadow-lg ring-1 ring-sky-500/20 animate-pulse" />
+      </div>
+      <span className="text-sm font-mono flex items-center gap-2">
+        <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
+        {message}
+      </span>
     </div>
   );
 };

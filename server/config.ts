@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
-import fallbackConfig from '../firebase-applet-config.json';
+import fallbackConfig from './firebaseAppletConfig';
 
 dotenv.config();
 

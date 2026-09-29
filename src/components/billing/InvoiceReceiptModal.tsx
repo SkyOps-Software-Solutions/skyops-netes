@@ -3,6 +3,7 @@ import React from 'react';
 import { Invoice } from '../../types/billing';
 import { Button, Modal } from '../common/UI';
 import { SKYOPS_CONTACT_EMAIL } from '../../config/contact';
+import { BrandLogo } from '../common/BrandLogo';
 
 interface InvoiceReceiptModalProps {
   isOpen: boolean;
@@ -74,8 +75,9 @@ ${SKYOPS_CONTACT_EMAIL}
         <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-4">
           <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
             <div>
-              <div className="text-sm font-bold text-zinc-100 flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-sky-400" /> SkyOps Cloud Platform
+              <div className="text-sm font-bold text-zinc-100 flex items-center gap-2">
+                <BrandLogo size="xs" className="rounded-xs" />
+                <span>SkyOps Cloud Platform</span>
               </div>
               <div className="text-[11px] text-zinc-400">Tax Invoice & Payment Receipt</div>
             </div>

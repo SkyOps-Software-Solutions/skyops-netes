@@ -3,6 +3,7 @@ import { z } from 'zod';
 import fallbackConfig from './firebaseAppletConfig';
 
 dotenv.config();
+const productionEnvironment = process.env.NODE_ENV === 'production';
 
 const ConfigSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -57,6 +58,13 @@ const ConfigSchema = z.object({
     if (!values.CORS_ORIGINS) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['CORS_ORIGINS'], message: 'CORS_ORIGINS is required in production' });
     }
+    if (!values.SKYOPS_STORAGE_BUCKET && !values.FIREBASE_STORAGE_BUCKET) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['SKYOPS_STORAGE_BUCKET'],
+        message: 'SKYOPS_STORAGE_BUCKET or FIREBASE_STORAGE_BUCKET is required in production'
+      });
+    }
     if (!values.SKYOPS_DATA_DIR || values.SKYOPS_DATA_DIR.trim() === '') {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -82,13 +90,12 @@ try {
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     FIREBASE_PROJECT_ID:
       process.env.FIREBASE_PROJECT_ID ||
-      process.env.VITE_FIREBASE_PROJECT_ID ||
-      fallbackConfig.projectId ||
-      'skyops-a1143',
+      (!productionEnvironment
+        ? process.env.VITE_FIREBASE_PROJECT_ID || fallbackConfig.projectId || 'skyops-a1143'
+        : undefined),
     FIREBASE_TRUSTED_PROJECT_IDS:
       process.env.FIREBASE_TRUSTED_PROJECT_IDS ||
-      fallbackConfig.projectId ||
-      'skyops-a1143',
+      (!productionEnvironment ? fallbackConfig.projectId || 'skyops-a1143' : undefined),
     CORS_ORIGINS: process.env.CORS_ORIGINS,
     ENABLE_DEV_SIMULATION: process.env.ENABLE_DEV_SIMULATION,
     SKYOPS_ALLOW_DEMO_AUTH: process.env.SKYOPS_ALLOW_DEMO_AUTH,
@@ -107,15 +114,15 @@ try {
     SKYOPS_STORAGE_BUCKET:
       process.env.SKYOPS_STORAGE_BUCKET ||
       process.env.FIREBASE_STORAGE_BUCKET ||
-      process.env.VITE_FIREBASE_STORAGE_BUCKET ||
-      fallbackConfig.storageBucket ||
-      'skyops-a1143.firebasestorage.app',
+      (!productionEnvironment
+        ? process.env.VITE_FIREBASE_STORAGE_BUCKET || fallbackConfig.storageBucket || 'skyops-a1143.firebasestorage.app'
+        : undefined),
     FIREBASE_STORAGE_BUCKET:
       process.env.FIREBASE_STORAGE_BUCKET ||
       process.env.SKYOPS_STORAGE_BUCKET ||
-      process.env.VITE_FIREBASE_STORAGE_BUCKET ||
-      fallbackConfig.storageBucket ||
-      'skyops-a1143.firebasestorage.app'
+      (!productionEnvironment
+        ? process.env.VITE_FIREBASE_STORAGE_BUCKET || fallbackConfig.storageBucket || 'skyops-a1143.firebasestorage.app'
+        : undefined)
   });
 } catch (err) {
   console.error('[SkyOps Configuration] Fatal Configuration Validation Error:', err);
@@ -156,7 +163,9 @@ export function resolveStorageBucket(): string {
   const raw =
     process.env.SKYOPS_STORAGE_BUCKET ||
     process.env.FIREBASE_STORAGE_BUCKET ||
-    process.env.VITE_FIREBASE_STORAGE_BUCKET ||
-    'skyops-a1143.firebasestorage.app';
+    (!isProduction ? process.env.VITE_FIREBASE_STORAGE_BUCKET || 'skyops-a1143.firebasestorage.app' : '');
+  if (!raw) {
+    throw new Error('SKYOPS_STORAGE_BUCKET or FIREBASE_STORAGE_BUCKET is required in production');
+  }
   return raw.replace(/^gs:\/\//, '').trim();
 }

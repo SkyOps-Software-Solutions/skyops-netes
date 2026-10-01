@@ -11,7 +11,6 @@ import {
   updateProfile,
   User as FirebaseUser
 } from 'firebase/auth';
-import { getFirestore, initializeFirestore, setLogLevel, Firestore } from 'firebase/firestore';
 import {
   getStorage,
   ref,
@@ -46,27 +45,6 @@ export const app = !getApps().length ? initializeApp(resolvedFirebaseConfig) : g
 
 // Initialize Firebase Authentication
 export const auth = getAuth(app);
-
-// Suppress internal Firestore gRPC idle stream warnings
-try {
-  setLogLevel('silent');
-} catch {}
-
-// Initialize Cloud Firestore with configured databaseId or default
-const databaseId = resolvedFirebaseConfig.firestoreDatabaseId;
-let firestoreInstance: Firestore;
-try {
-  firestoreInstance =
-    databaseId && databaseId !== '(default)'
-      ? initializeFirestore(app, { experimentalForceLongPolling: true }, databaseId)
-      : initializeFirestore(app, { experimentalForceLongPolling: true });
-} catch {
-  firestoreInstance =
-    databaseId && databaseId !== '(default)'
-      ? getFirestore(app, databaseId)
-      : getFirestore(app);
-}
-export const db: Firestore = firestoreInstance;
 
 // Initialize Firebase Cloud Storage with canonical bucket
 export const storage: FirebaseStorage = getStorage(app, `gs://${cleanStorageBucket}`);

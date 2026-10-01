@@ -8,10 +8,9 @@ import {
   signOut as firebaseSignOut,
   updateProfile
 } from 'firebase/auth';
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { auth, db, googleProvider, resolvedFirebaseConfig } from '../firebase';
+import { auth, googleProvider, resolvedFirebaseConfig } from '../firebase';
 import { Organization, OrgMember, Role, User } from '../types/index';
 
 interface AuthContextType {
@@ -60,57 +59,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       role?: Role;
     }
   ) => {
-    try {
-      const userRef = doc(db, 'users', fbUser.uid);
-      const snap = await getDoc(userRef);
-      const email = fbUser.email || `${fbUser.uid}@skyops.internal`;
-      const fullName =
-        options?.displayName ||
-        fbUser.displayName ||
-        email.split('@')[0] ||
-        'SkyOps Engineer';
-      const organisationName =
-        options?.organisationName ||
-        `${fullName}'s Team`;
-      const role: Role = options?.role || 'OWNER';
-
-      if (!snap.exists()) {
-        await setDoc(
-          userRef,
-          {
-            uid: fbUser.uid,
-            organisationName,
-            fullName,
-            email,
-            role,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp()
-          }
-        );
-      } else {
-        const existingData = snap.data();
-        const updates: Record<string, any> = {
-          updatedAt: serverTimestamp()
-        };
-
-        if (!existingData.fullName && fullName) {
-          updates.fullName = fullName;
-        }
-        if (!existingData.email && email) {
-          updates.email = email;
-        }
-        if (!existingData.organisationName && organisationName) {
-          updates.organisationName = organisationName;
-        }
-        if (!existingData.role) {
-          updates.role = role;
-        }
-
-        await setDoc(userRef, updates, { merge: true });
-      }
-    } catch (err: any) {
-      console.warn('[SkyOps Auth] Firestore user profile sync notice:', err?.message || err);
-    }
+    // Profiles and organization roles are server-owned.  Firebase Auth is the
+    // only browser-side identity write; session establishment creates/updates
+    // the control-plane profile after verifying the ID token.  Keeping role
+    // data out of Firestore client writes prevents privilege escalation.
+    void fbUser;
+    void options;
   };
 
   const refreshSession = async () => {

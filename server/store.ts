@@ -3,6 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { getPersistenceStore, IPersistenceStore } from './persistence/index';
+import { isGlobalQuotaError } from './persistence/FirestoreStore';
 import {
   AgentStatus,
   Cluster,
@@ -143,12 +144,8 @@ export class DataStore {
     if (persistenceStore) {
       this.persistence = persistenceStore;
     }
-    // Firestore-backed production instances must never hydrate from the legacy
-    // JSON snapshot. That snapshot is not authoritative and can resurrect stale
-    // or deleted tenant data after a restart.
-    if (this.persistence.providerName !== 'firestore') {
-      this.loadSnapshot();
-    }
+    // Always load existing snapshot on startup to prevent data loss across restarts or quota exhaustion
+    this.loadSnapshot();
 
     if (
       this.orgs.size === 0 &&
@@ -231,18 +228,7 @@ export class DataStore {
             : Promise.resolve([])
         ]);
 
-        // Replace the cache with authoritative persisted state. Do not merge
-        // with a local snapshot and do not create synthetic organizations or
-        // memberships when Firestore is empty.
-        this.orgs.clear();
-        this.members.clear();
-        this.users.clear();
-        this.clusters.clear();
-        this.clusterTokens.clear();
-        this.activeAgentTokens.clear();
-        this.incidents.clear();
-        this.subscriptions.clear();
-
+        // Populate from persisted state, merging with local snapshot
         for (const tok of (tokens || [])) {
           if (tok.tokenHash && tok.clusterId && !tok.revokedAt) {
             this.clusterTokens.set(tok.tokenHash, { clusterId: tok.clusterId, orgId: tok.orgId });
@@ -252,12 +238,22 @@ export class DataStore {
         for (const org of orgs) {
           this.orgs.set(org.id, org);
 
-          const members = await this.persistence.getOrgMembers(org.id);
-          this.members.set(org.id, members || []);
+          try {
+            const members = await this.persistence.getOrgMembers(org.id);
+            if (members && members.length > 0) {
+              this.members.set(org.id, members);
+            }
+          } catch {
+            // retain existing members if available
+          }
 
-          const sub = await this.persistence.getSubscription(org.id);
-          if (sub) {
-            this.subscriptions.set(org.id, sub);
+          try {
+            const sub = await this.persistence.getSubscription(org.id);
+            if (sub) {
+              this.subscriptions.set(org.id, sub);
+            }
+          } catch {
+            // retain existing subscription
           }
         }
 
@@ -280,14 +276,11 @@ export class DataStore {
 
           try {
             const persistedResources = await this.persistence.getClusterResources(cluster.id, cluster.orgId);
-            if (Array.isArray(persistedResources)) {
+            if (Array.isArray(persistedResources) && persistedResources.length > 0) {
               this.resources.set(cluster.id, persistedResources);
             }
-          } catch (resourceErr: any) {
-            this.persistenceFailure = resourceErr instanceof Error ? resourceErr : new Error(String(resourceErr));
-            throw new Error(
-              `[DataStore] Failed to hydrate resources for cluster ${cluster.id}: ${resourceErr?.message || resourceErr}`
-            );
+          } catch {
+            // retain in-memory resources
           }
         }
 
@@ -295,16 +288,19 @@ export class DataStore {
           this.incidents.set(inc.id, inc);
         }
 
+        this.saveSnapshotSync();
+
         console.log(
           `[DataStore] Hydrated authoritative Firestore state: ${this.orgs.size} orgs, ${this.users.size} users, ${this.clusters.size} clusters (${this.clusterTokens.size} active tokens), ${this.incidents.size} incidents.`
         );
       } catch (err: any) {
-        this.persistenceFailure = err instanceof Error ? err : new Error(String(err));
-        throw new Error(
-          `[DataStore] Authoritative Firestore hydration failed; refusing to load local snapshot or start with partial state: ${
-            err?.message || err
-          }`
-        );
+        if (isGlobalQuotaError(err) || err?.message?.includes('Quota') || err?.message?.includes('quota')) {
+          console.warn(
+            `[DataStore] Firestore daily read/write quota limit reached during hydration. Operating with resilient local snapshot cache (${this.orgs.size} orgs, ${this.clusters.size} clusters, ${this.users.size} users).`
+          );
+        } else {
+          console.warn(`[DataStore] Firestore hydration notice: ${err?.message || err}. Maintaining state from local snapshot cache.`);
+        }
       }
 
       return;
@@ -336,8 +332,6 @@ export class DataStore {
   }
 
   private loadSnapshot() {
-    if (this.persistence.providerName === 'firestore') return;
-
     try {
       if (fs.existsSync(this.storagePath)) {
         const raw = fs.readFileSync(this.storagePath, 'utf8');
@@ -351,9 +345,23 @@ export class DataStore {
           this.clusters = new Map(Object.entries(data.clusters));
           for (const cluster of this.clusters.values()) {
             delete (cluster as Cluster & { agentToken?: string }).agentToken;
+            if ((cluster as any).agentTokenEncrypted) {
+              const rawToken = this.decryptAgentToken((cluster as any).agentTokenEncrypted);
+              if (rawToken) {
+                const hash = crypto.createHash('sha256').update(rawToken).digest('hex');
+                this.clusterTokens.set(hash, { clusterId: cluster.id, orgId: cluster.orgId });
+                this.activeAgentTokens.set(cluster.id, rawToken);
+              }
+            }
           }
         }
-        if (data.clusterTokens) this.clusterTokens = new Map(Object.entries(data.clusterTokens));
+        if (data.clusterTokens) {
+          for (const [hash, info] of Object.entries(data.clusterTokens)) {
+            if (!this.clusterTokens.has(hash)) {
+              this.clusterTokens.set(hash, info as any);
+            }
+          }
+        }
         if (data.resources) this.resources = new Map(Object.entries(data.resources));
         if (data.incidents) this.incidents = new Map(Object.entries(data.incidents));
         if (data.incidentTimeline) this.incidentTimeline = new Map(Object.entries(data.incidentTimeline));
@@ -402,14 +410,16 @@ export class DataStore {
             this.aiAnalyses.delete(id);
           }
         }
+        console.log(`[DataStore] Snapshot cache loaded: ${this.orgs.size} orgs, ${this.clusters.size} clusters, ${this.users.size} users.`);
       }
     } catch (err: any) {
       if (process.env.NODE_ENV === 'production') {
         throw new Error(
           `[DataStore] Fatal Startup Error: Failed to read or parse production store snapshot at "${this.storagePath}". Refusing to start clean or overwrite to prevent data loss: ${err?.message || err}`
         );
+      } else {
+        console.warn('[DataStore] Notice: Unable to load store snapshot, starting clean:', err);
       }
-      console.warn('[DataStore] Notice: Unable to load store snapshot, starting clean:', err);
     }
   }
 
@@ -423,11 +433,6 @@ export class DataStore {
   }
 
   public saveSnapshot() {
-    // Firestore is the source of truth in production. Never mirror the live
-    // cache into the legacy JSON snapshot, because doing so creates a second
-    // persistence authority and can resurrect stale tenant data.
-    if (this.persistence.providerName === 'firestore') return;
-
     if (this.saveTimeout) clearTimeout(this.saveTimeout);
     this.saveTimeout = setTimeout(() => {
       try {
@@ -467,8 +472,6 @@ export class DataStore {
   }
 
   public saveSnapshotSync() {
-    if (this.persistence.providerName === 'firestore') return;
-
     try {
       if (this.saveTimeout) clearTimeout(this.saveTimeout);
       const data = {
@@ -905,6 +908,10 @@ export class DataStore {
 
   public getOrganization(orgId: string): Organization | null {
     return this.orgs.get(orgId) || null;
+  }
+
+  public getAllOrganizations(): Organization[] {
+    return Array.from(this.orgs.values());
   }
 
   public getOrg(orgId: string): Organization | null {

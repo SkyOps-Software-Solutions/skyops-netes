@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
 export const BRAND_LOGO_URL =
-  'https://firebasestorage.googleapis.com/v0/b/skyops-a1143.firebasestorage.app/o/ChatGPT%20Image%20Sep%2013%2C%202026%2C%2002_42_16%20PM.png?alt=media&token=7498fcd9-ba56-4fd8-8c2e-ea22a11f3a77';
+  'https://firebasestorage.googleapis.com/v0/b/skyops-a1143.firebasestorage.app/o/ChatGPT%20Image%20Sep%2029%2C%202026%2C%2010_37_21%20AM.png?alt=media&token=80d46921-e8f1-4ac9-8920-8be0b1c9115a';
 
 export interface BrandLogoProps {
   /** Size preset */

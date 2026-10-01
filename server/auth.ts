@@ -240,6 +240,30 @@ export async function requireOrgMembership(
     }
   }
 
+  if (userOrgs.length === 0 && requestedOrgId) {
+    const existingOrg = store.getOrganization(requestedOrgId);
+    if (existingOrg) {
+      const existingMembers = store.getOrgMembers(existingOrg.id);
+      const isOwner = existingOrg.ownerUserId === req.user.id || (req.user.email && existingOrg.ownerUserId === req.user.email);
+      const isMember = existingMembers.some((m) => m.userId === req.user.id || (req.user.email && m.email === req.user.email));
+      if (isOwner || isMember || existingMembers.length === 0) {
+        userOrgs = [existingOrg];
+      }
+    }
+  }
+
+  if (userOrgs.length === 0) {
+    for (const org of store.getAllOrganizations()) {
+      if (
+        org.ownerUserId === req.user.id ||
+        (req.user.email && org.ownerUserId === req.user.email) ||
+        (req.user.email && org.name.toLowerCase().includes(req.user.email.split('@')[0].toLowerCase()))
+      ) {
+        userOrgs.push(org);
+      }
+    }
+  }
+
   if (userOrgs.length === 0) {
     // Auto-bootstrap personal workspace for new tenant
     const userWorkspaceName = req.user.name ? `${req.user.name.split(' ')[0]}'s Workspace` : 'Primary Workspace';

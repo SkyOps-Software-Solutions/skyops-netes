@@ -117,7 +117,6 @@ export async function verifyFirebaseIdToken(rawToken: string, projectId: string)
   const validProjects = new Set<string>([
     projectId,
     config.FIREBASE_PROJECT_ID,
-    'skyops-a1143',
     ...(config.FIREBASE_TRUSTED_PROJECT_IDS || '').split(',').map((value) => value.trim()).filter(Boolean)
   ].filter(Boolean) as string[]);
 
@@ -240,32 +239,21 @@ export async function requireOrgMembership(
     }
   }
 
-  if (userOrgs.length === 0 && requestedOrgId) {
-    const existingOrg = store.getOrganization(requestedOrgId);
-    if (existingOrg) {
-      const existingMembers = store.getOrgMembers(existingOrg.id);
-      const isOwner = existingOrg.ownerUserId === req.user.id || (req.user.email && existingOrg.ownerUserId === req.user.email);
-      const isMember = existingMembers.some((m) => m.userId === req.user.id || (req.user.email && m.email === req.user.email));
-      if (isOwner || isMember || existingMembers.length === 0) {
-        userOrgs = [existingOrg];
-      }
-    }
-  }
-
   if (userOrgs.length === 0) {
-    for (const org of store.getAllOrganizations()) {
-      if (
-        org.ownerUserId === req.user.id ||
-        (req.user.email && org.ownerUserId === req.user.email) ||
-        (req.user.email && org.name.toLowerCase().includes(req.user.email.split('@')[0].toLowerCase()))
-      ) {
-        userOrgs.push(org);
-      }
+    // Bootstrap only while establishing a session.  In particular, never let
+    // an arbitrary organization id in a resource request create an access
+    // path, even when an old/malformed organization has no member records.
+    const isSessionEndpoint =
+      req.path === '/api/v1/auth/session' ||
+      req.originalUrl?.includes('/api/v1/auth/session') ||
+      req.url?.includes('/api/v1/auth/session');
+    if (!isSessionEndpoint) {
+      return res.status(403).json({
+        error: 'Forbidden: You are not a member of an organization',
+        code: 'ORG_MEMBERSHIP_REQUIRED'
+      });
     }
-  }
-
-  if (userOrgs.length === 0) {
-    // Auto-bootstrap personal workspace for new tenant
+    // Auto-bootstrap an isolated personal workspace for a newly authenticated user.
     const userWorkspaceName = req.user.name ? `${req.user.name.split(' ')[0]}'s Workspace` : 'Primary Workspace';
     const newOrg = store.createOrganization(userWorkspaceName, req.user.id, req.user.email, req.user.name);
     req.orgId = newOrg.id;
@@ -363,6 +351,7 @@ export type Permission =
   | 'billing.read'
   | 'billing.manage'
   | 'integration.manage'
+  | 'artifact.manage'
   | 'support.create'
   | 'support.manage';
 
@@ -383,6 +372,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'billing.read',
     'billing.manage',
     'integration.manage',
+    'artifact.manage',
     'support.create',
     'support.manage'
   ],
@@ -402,6 +392,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'billing.read',
     'billing.manage',
     'integration.manage',
+    'artifact.manage',
     'support.create',
     'support.manage'
   ],
@@ -415,6 +406,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'remediation.execute',
     'audit.read',
     'billing.read',
+    'artifact.manage',
     'support.create'
   ],
   ENGINEER: [
@@ -427,6 +419,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'remediation.execute',
     'audit.read',
     'billing.read',
+    'artifact.manage',
     'support.create'
   ],
   VIEWER: [

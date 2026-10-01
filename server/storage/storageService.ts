@@ -58,7 +58,10 @@ export class StorageService {
     } else {
       this.driver = new CloudStorageDriver({
         bucketName: this.bucketName,
-        useFallbackOnFailure: true
+        // An in-memory fallback silently loses artifacts at restart.  It is
+        // useful only for local development; production must fail closed so an
+        // operator can repair the backend service identity/storage binding.
+        useFallbackOnFailure: process.env.NODE_ENV !== 'production'
       });
     }
   }

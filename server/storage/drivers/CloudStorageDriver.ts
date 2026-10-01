@@ -15,8 +15,9 @@ export interface CloudStorageConfig {
 
 /**
  * Production driver for Firebase Cloud Storage.
- * Interacts with Firebase Cloud Storage REST endpoints with automatic
- * resilient fallback to in-memory store in local dev and isolated test suites.
+ * Interacts with Firebase Cloud Storage REST endpoints. A memory fallback is
+ * deliberately restricted to development/test; production artifact writes
+ * must never acknowledge durable storage after a failed cloud write.
  */
 export class CloudStorageDriver implements IStorageDriver {
   public readonly driverName = 'firebase-cloud-storage';

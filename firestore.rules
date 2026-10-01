@@ -1,10 +1,15 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // SkyOps is an API-mediated control plane.  The browser must never be able
+    // to write control-plane records (including audit events, remediation
+    // actions, agent credentials, or tenant membership) directly to Firestore.
+    // Server processes use service credentials/Admin SDKs and therefore do not
+    // depend on these client rules.  Use the Firebase emulator for local SDK
+    // experimentation rather than relaxing production rules.
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }
-
 

@@ -2,6 +2,7 @@ import express, { Response } from 'express';
 import {
   AuthenticatedUserRequest,
   requireOrgMembership,
+  requirePermission,
   requireRole,
   requireUserAuth
 } from './auth';
@@ -141,6 +142,7 @@ router.post(
   '/api/v1/storage/upload',
   requireUserAuth,
   requireOrgMembership,
+  requirePermission('artifact.manage'),
   async (req: AuthenticatedUserRequest, res: Response) => {
     try {
       const orgId = req.orgId!;

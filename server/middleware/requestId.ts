@@ -12,7 +12,12 @@ export function correlationIdMiddleware(
   res: Response,
   next: NextFunction
 ): void {
-  const reqId = (req.headers['x-request-id'] as string) || crypto.randomUUID();
+  const suppliedRequestId = req.headers['x-request-id'];
+  // Do not reflect arbitrary or multi-value input into a response header/log.
+  const reqId =
+    typeof suppliedRequestId === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(suppliedRequestId)
+      ? suppliedRequestId
+      : crypto.randomUUID();
   req.id = reqId;
   req.startTime = Date.now();
 

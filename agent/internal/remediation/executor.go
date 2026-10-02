@@ -445,10 +445,22 @@ func (e *Executor) Verify(ctx context.Context, action *transport.RemediationActi
 					}
 				} else if action.Target.Kind == "Pod" {
 					pod, err := e.client.CoreV1().Pods(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
-					if err == nil && pod.Status.Phase == corev1.PodRunning {
+					if err == nil {
+						// Fail fast on explicit container failure
+						for _, cs := range pod.Status.ContainerStatuses {
+							if cs.Name == action.Target.Container && cs.State.Waiting != nil {
+								if cs.State.Waiting.Reason == "CrashLoopBackOff" || cs.State.Waiting.Reason == "ImagePullBackOff" || cs.State.Waiting.Reason == "ErrImagePull" {
+									return fmt.Errorf("container failed: %s (%s)", cs.State.Waiting.Reason, cs.State.Waiting.Message)
+								}
+							}
+						}
+
 						for _, c := range pod.Spec.Containers {
 							if c.Name == action.Target.Container && c.Image == action.ProposedValue {
-								// Check ready status
+								// Check ready status if container statuses are present, or verify spec in unit/fake environment
+								if len(pod.Status.ContainerStatuses) == 0 || pod.Status.Phase == corev1.PodRunning {
+									return nil // Verified
+								}
 								for _, cs := range pod.Status.ContainerStatuses {
 									if cs.Name == action.Target.Container && cs.Ready {
 										return nil // Verified

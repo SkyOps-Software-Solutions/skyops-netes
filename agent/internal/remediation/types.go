@@ -1,6 +1,10 @@
 package remediation
 
-import "time"
+import (
+	"time"
+
+	"github.com/skyops-io/skyops/agent/internal/transport"
+)
 
 // ActionState represents the explicit lifecycle phase of a remediation action
 type ActionState string

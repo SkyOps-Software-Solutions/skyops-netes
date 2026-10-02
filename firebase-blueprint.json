@@ -102,6 +102,18 @@
       },
       "required": ["clusterId", "orgId", "resources"]
     },
+    "ClusterMetricHistory": {
+      "title": "ClusterMetricHistory",
+      "description": "Historical metric series points for cluster observability",
+      "type": "object",
+      "properties": {
+        "clusterId": { "type": "string" },
+        "orgId": { "type": "string" },
+        "history": { "type": "array" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["clusterId", "orgId", "history"]
+    },
     "Incident": {
       "title": "Incident",
       "description": "Operational incident detected in a Kubernetes cluster",
@@ -352,6 +364,7 @@
     "/clusters/{clusterId}": { "schema": "Cluster" },
     "/clusterTokens/{tokenHash}": { "schema": "ClusterToken" },
     "/clusterResources/{clusterId}": { "schema": "ClusterResources" },
+    "/clusterMetricHistory/{clusterId}": { "schema": "ClusterMetricHistory" },
     "/incidents/{incidentId}": { "schema": "Incident" },
     "/incidentTimeline/{eventId}": { "schema": "IncidentTimeline" },
     "/incidentNotes/{noteId}": { "schema": "IncidentNote" },

@@ -347,15 +347,28 @@ export type Permission =
   | 'cluster.read'
   | 'cluster.manage'
   | 'incident.read'
+  | 'incident.view'
   | 'incident.manage'
+  | 'incident.heal'
+  | 'telemetry.read'
+  | 'telemetry.view'
   | 'remediation.view'
   | 'remediation.approve'
   | 'remediation.execute'
   | 'policy.manage'
+  | 'policy.autoheal.manage'
+  | 'policy.security.manage'
+  | 'cost.read'
+  | 'cost.view'
+  | 'cost.manage'
+  | 'cost.optimize'
+  | 'security.read'
+  | 'security.manage'
   | 'team.manage'
   | 'member.manage'
   | 'org.manage'
   | 'audit.read'
+  | 'audit.view'
   | 'billing.read'
   | 'billing.manage'
   | 'integration.manage'
@@ -368,15 +381,28 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'cluster.read',
     'cluster.manage',
     'incident.read',
+    'incident.view',
     'incident.manage',
+    'incident.heal',
+    'telemetry.read',
+    'telemetry.view',
     'remediation.view',
     'remediation.approve',
     'remediation.execute',
     'policy.manage',
+    'policy.autoheal.manage',
+    'policy.security.manage',
+    'cost.read',
+    'cost.view',
+    'cost.manage',
+    'cost.optimize',
+    'security.read',
+    'security.manage',
     'team.manage',
     'member.manage',
     'org.manage',
     'audit.read',
+    'audit.view',
     'billing.read',
     'billing.manage',
     'integration.manage',
@@ -388,15 +414,28 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'cluster.read',
     'cluster.manage',
     'incident.read',
+    'incident.view',
     'incident.manage',
+    'incident.heal',
+    'telemetry.read',
+    'telemetry.view',
     'remediation.view',
     'remediation.approve',
     'remediation.execute',
     'policy.manage',
+    'policy.autoheal.manage',
+    'policy.security.manage',
+    'cost.read',
+    'cost.view',
+    'cost.manage',
+    'cost.optimize',
+    'security.read',
+    'security.manage',
     'team.manage',
     'member.manage',
     'org.manage',
     'audit.read',
+    'audit.view',
     'billing.read',
     'billing.manage',
     'integration.manage',
@@ -404,28 +443,94 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'support.create',
     'support.manage'
   ],
+  SRE: [
+    'cluster.read',
+    'cluster.manage',
+    'incident.read',
+    'incident.view',
+    'incident.manage',
+    'incident.heal',
+    'telemetry.read',
+    'telemetry.view',
+    'remediation.view',
+    'remediation.approve',
+    'remediation.execute',
+    'policy.manage',
+    'policy.autoheal.manage',
+    'policy.security.manage',
+    'cost.read',
+    'cost.view',
+    'cost.manage',
+    'cost.optimize',
+    'security.read',
+    'security.manage',
+    'audit.read',
+    'audit.view',
+    'billing.read',
+    'artifact.manage',
+    'support.create'
+  ],
   OPERATOR: [
     'cluster.read',
     'cluster.manage',
     'incident.read',
+    'incident.view',
     'incident.manage',
+    'incident.heal',
+    'telemetry.read',
+    'telemetry.view',
     'remediation.view',
     'remediation.approve',
     'remediation.execute',
+    'policy.manage',
+    'policy.autoheal.manage',
+    'policy.security.manage',
+    'cost.read',
+    'cost.view',
+    'cost.manage',
+    'cost.optimize',
+    'security.read',
+    'security.manage',
     'audit.read',
+    'audit.view',
+    'billing.read',
+    'artifact.manage',
+    'support.create'
+  ],
+  DEVELOPER: [
+    'cluster.read',
+    'incident.read',
+    'incident.view',
+    'incident.manage',
+    'incident.heal',
+    'telemetry.read',
+    'telemetry.view',
+    'remediation.view',
+    'remediation.execute',
+    'cost.read',
+    'cost.view',
+    'security.read',
+    'audit.read',
+    'audit.view',
     'billing.read',
     'artifact.manage',
     'support.create'
   ],
   ENGINEER: [
     'cluster.read',
-    'cluster.manage',
     'incident.read',
+    'incident.view',
     'incident.manage',
+    'incident.heal',
+    'telemetry.read',
+    'telemetry.view',
     'remediation.view',
-    'remediation.approve',
     'remediation.execute',
+    'cost.read',
+    'cost.view',
+    'security.read',
     'audit.read',
+    'audit.view',
     'billing.read',
     'artifact.manage',
     'support.create'
@@ -433,8 +538,31 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   VIEWER: [
     'cluster.read',
     'incident.read',
+    'incident.view',
+    'telemetry.read',
+    'telemetry.view',
     'remediation.view',
+    'cost.read',
+    'cost.view',
+    'security.read',
     'audit.read',
+    'audit.view',
+    'billing.read',
+    'support.create'
+  ],
+  AUDITOR: [
+    'cluster.read',
+    'incident.read',
+    'incident.view',
+    'telemetry.read',
+    'telemetry.view',
+    'remediation.view',
+    'policy.manage', // read policies
+    'cost.read',
+    'cost.view',
+    'security.read',
+    'audit.read',
+    'audit.view',
     'billing.read',
     'support.create'
   ]

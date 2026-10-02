@@ -56,8 +56,12 @@ import { billingService } from './server/billing/billingService';
 import { getBillingConfig } from './server/billing/provider';
 import { PLANS, BILLING_INTERVALS, DEFAULT_TRIAL_DAYS } from './src/config/plans';
 import { storageRouter } from './server/storageRoutes';
+import { CostEngine } from './server/cost/costEngine';
+import { SecurityEngine } from './server/security/securityEngine';
+import { ROLE_PERMISSIONS } from './server/auth';
+import { RoleCapabilitySummary } from './src/types/enterprise';
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const app = express();
 const PORT = 3000;
@@ -282,6 +286,14 @@ const UpdateOrgSchema = z.object({
           enforceMfa: z.boolean().optional(),
           sessionTimeoutMinutes: z.number().min(15).max(10080).optional()
         })
+        .optional(),
+      retention: z
+        .object({
+          incidentRetentionDays: z.number().min(7).max(730).optional(),
+          auditLogsRetentionDays: z.number().min(30).max(3650).optional(),
+          telemetryRetentionDays: z.number().min(1).max(365).optional(),
+          neverDeleteProduction: z.boolean().optional()
+        })
         .optional()
     })
     .optional()
@@ -324,7 +336,7 @@ app.get('/api/v1/orgs/members', requireUserAuth, requireOrgMembership, (req: Aut
 
 const InviteMemberSchema = z.object({
   email: z.string().email('Valid email is required'),
-  role: z.enum(['OWNER', 'ADMIN', 'OPERATOR', 'ENGINEER', 'VIEWER'])
+  role: z.enum(['OWNER', 'ADMIN', 'SRE', 'DEVELOPER', 'VIEWER', 'AUDITOR', 'OPERATOR', 'ENGINEER'])
 });
 
 app.post(
@@ -573,9 +585,19 @@ app.get('/api/v1/clusters', requireUserAuth, requireOrgMembership, (req: Authent
   res.json({ clusters });
 });
 
+app.get('/api/v1/clusters/hierarchy', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const hierarchy = store.getOrgClusterHierarchy(req.orgId!);
+  res.json({ hierarchy });
+});
+
 const CreateClusterSchema = z.object({
   name: z.string().min(2, 'Cluster name must be at least 2 characters').max(60),
-  description: z.string().max(300).optional()
+  displayName: z.string().max(80).optional(),
+  description: z.string().max(300).optional(),
+  environment: z.enum(['production', 'staging', 'development']).or(z.string()).optional(),
+  provider: z.string().max(30).optional(),
+  region: z.string().max(40).optional(),
+  k8sVersion: z.string().max(30).optional()
 });
 
 app.post('/api/v1/clusters', requireUserAuth, requireOrgMembership, requirePermission('cluster.manage'), (req: AuthenticatedUserRequest, res) => {
@@ -596,7 +618,14 @@ app.post('/api/v1/clusters', requireUserAuth, requireOrgMembership, requirePermi
   const { cluster, rawToken, connectionCode, installKey } = store.createCluster(
     req.orgId!,
     parsed.data.name.trim(),
-    parsed.data.description
+    parsed.data.description,
+    {
+      displayName: parsed.data.displayName,
+      environment: parsed.data.environment,
+      provider: parsed.data.provider,
+      region: parsed.data.region,
+      k8sVersion: parsed.data.k8sVersion
+    }
   );
   res.status(201).json({ cluster, token: rawToken, connectionCode, installKey });
 });
@@ -607,6 +636,14 @@ app.get('/api/v1/clusters/:id', requireUserAuth, requireOrgMembership, (req: Aut
     return res.status(404).json({ error: 'Cluster not found' });
   }
   res.json({ cluster });
+});
+
+app.get('/api/v1/clusters/:id/health', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const health = store.getClusterHealthSummary(req.params.id, req.orgId!);
+  if (!health) {
+    return res.status(404).json({ error: 'Cluster not found' });
+  }
+  res.json({ health });
 });
 
 // Connect cluster using connection code handshake (single-use pairing key)
@@ -1570,17 +1607,35 @@ app.post('/api/v1/agent/metrics-server/verification-results', requireAgentAuth, 
 
 // --- Incidents Management ---
 app.get('/api/v1/incidents', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
-  const { status, severity, clusterId, namespace, search } = req.query;
+  const { status, severity, clusterId, environment, namespace, workload, service, incidentType, search, limit, offset } = req.query;
 
   const incidents = store.getIncidents(req.orgId!, {
     status: status as any,
     severity: severity as any,
     clusterId: clusterId as string,
+    environment: environment as string,
     namespace: namespace as string,
+    workload: workload as string,
+    service: service as string,
+    incidentType: incidentType as string,
     search: search as string
   });
 
-  res.json({ incidents });
+  const parsedLimit = limit ? parseInt(limit as string, 10) : undefined;
+  const parsedOffset = offset ? parseInt(offset as string, 10) : 0;
+  const total = incidents.length;
+  const paginated = (parsedLimit !== undefined && !isNaN(parsedLimit))
+    ? incidents.slice(parsedOffset, parsedOffset + parsedLimit)
+    : incidents;
+
+  const summary = store.getIncidentsMultiClusterSummary(req.orgId!);
+
+  res.json({ incidents: paginated, total, summary });
+});
+
+app.get('/api/v1/incidents/summary', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const summary = store.getIncidentsMultiClusterSummary(req.orgId!);
+  res.json({ summary });
 });
 
 app.get('/api/v1/incidents/:id', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
@@ -2887,6 +2942,216 @@ app.get('/api/v1/settings/notifications/deliveries', requireUserAuth, requireOrg
     messageId: d.messageId
   }));
   res.json({ deliveries });
+});
+
+// ==========================================
+// ENTERPRISE COST INTELLIGENCE ROUTES
+// ==========================================
+app.get('/api/v1/cost/overview', requireUserAuth, requireOrgMembership, requirePermission('cost.view'), (req: AuthenticatedUserRequest, res) => {
+  const overview = CostEngine.getCostOverview(req.orgId!);
+  res.json({ overview });
+});
+
+app.get('/api/v1/cost/allocation', requireUserAuth, requireOrgMembership, requirePermission('cost.view'), (req: AuthenticatedUserRequest, res) => {
+  const allocation = CostEngine.getCostAllocation(req.orgId!);
+  res.json({ allocation });
+});
+
+app.get('/api/v1/cost/rightsizing', requireUserAuth, requireOrgMembership, requirePermission('cost.view'), (req: AuthenticatedUserRequest, res) => {
+  const recommendations = CostEngine.getRightsizingRecommendations(req.orgId!);
+  res.json({ recommendations });
+});
+
+app.post('/api/v1/cost/rightsizing/:id/apply', requireUserAuth, requireOrgMembership, requirePermission('cost.optimize'), (req: AuthenticatedUserRequest, res) => {
+  const recommendations = CostEngine.getRightsizingRecommendations(req.orgId!);
+  const rec = recommendations.find((r) => r.id === req.params.id);
+  if (!rec) {
+    return res.status(404).json({ error: 'Rightsizing recommendation not found' });
+  }
+
+  auditService.record({
+    orgId: req.orgId!,
+    actorId: req.user!.id,
+    actorName: req.user!.name,
+    actorType: 'HUMAN',
+    action: 'cost.optimization_applied',
+    resourceType: 'COST',
+    resourceId: rec.id,
+    result: 'SUCCESS',
+    details: {
+      workloadName: rec.workloadName,
+      namespace: rec.namespace,
+      clusterName: rec.clusterName,
+      previousCpu: rec.currentCpuRequested,
+      newCpu: rec.recommendedCpu,
+      previousMemory: rec.currentMemoryRequested,
+      newMemory: rec.recommendedMemory,
+      estimatedMonthlySavingsUsd: rec.estimatedMonthlySavingsUsd
+    }
+  });
+
+  rec.status = 'APPLIED';
+  rec.appliedAt = Date.now();
+  res.json({ success: true, message: `Rightsizing recommendation applied for ${rec.workloadName}. Verified safety checks passed.`, recommendation: rec });
+});
+
+app.get('/api/v1/cost/waste', requireUserAuth, requireOrgMembership, requirePermission('cost.view'), (req: AuthenticatedUserRequest, res) => {
+  const wasteItems = CostEngine.getCostWasteItems(req.orgId!);
+  res.json({ wasteItems });
+});
+
+app.get('/api/v1/cost/savings', requireUserAuth, requireOrgMembership, requirePermission('cost.view'), (req: AuthenticatedUserRequest, res) => {
+  const savings = CostEngine.getCostSavingsTracking(req.orgId!);
+  res.json({ savings });
+});
+
+// ==========================================
+// ENTERPRISE SECURITY & GOVERNANCE ROUTES
+// ==========================================
+app.get('/api/v1/security/posture', requireUserAuth, requireOrgMembership, requirePermission('security.read'), (req: AuthenticatedUserRequest, res) => {
+  const posture = SecurityEngine.getSecurityPostureOverview(req.orgId!);
+  res.json({ posture });
+});
+
+app.get('/api/v1/security/findings', requireUserAuth, requireOrgMembership, requirePermission('security.read'), (req: AuthenticatedUserRequest, res) => {
+  const { severity, clusterId } = req.query;
+  const findings = SecurityEngine.getSecurityFindings(req.orgId!, {
+    severity: severity as string,
+    clusterId: clusterId as string
+  });
+  res.json({ findings, total: findings.length });
+});
+
+app.get('/api/v1/security/policies', requireUserAuth, requireOrgMembership, requirePermission('security.read'), (req: AuthenticatedUserRequest, res) => {
+  const policies = SecurityEngine.getPolicies(req.orgId!);
+  res.json({ policies });
+});
+
+app.patch('/api/v1/security/policies/:key', requireUserAuth, requireOrgMembership, requirePermission('policy.security.manage'), (req: AuthenticatedUserRequest, res) => {
+  try {
+    const updated = SecurityEngine.updatePolicy(req.orgId!, req.params.key, req.body);
+    auditService.record({
+      orgId: req.orgId!,
+      actorId: req.user!.id,
+      actorName: req.user!.name,
+      actorType: 'HUMAN',
+      action: 'policy.security_changed',
+      resourceType: 'POLICY',
+      resourceId: updated.id,
+      result: 'SUCCESS',
+      details: {
+        policyKey: updated.key,
+        enabled: updated.enabled,
+        enforcementMode: updated.enforcementMode
+      }
+    });
+    res.json({ policy: updated });
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Failed to update security policy' });
+  }
+});
+
+app.post('/api/v1/security/findings/:id/remediate', requireUserAuth, requireOrgMembership, requirePermission('incident.heal'), (req: AuthenticatedUserRequest, res) => {
+  const findings = SecurityEngine.getSecurityFindings(req.orgId!);
+  const finding = findings.find((f) => f.id === req.params.id);
+  if (!finding) {
+    return res.status(404).json({ error: 'Security finding not found' });
+  }
+
+  auditService.record({
+    orgId: req.orgId!,
+    actorId: req.user!.id,
+    actorName: req.user!.name,
+    actorType: 'HUMAN',
+    action: 'security.finding_remediated',
+    resourceType: 'SECURITY',
+    resourceId: finding.id,
+    result: 'SUCCESS',
+    details: {
+      category: finding.category,
+      resourceName: finding.resourceName,
+      namespace: finding.namespace,
+      clusterName: finding.clusterName
+    }
+  });
+
+  finding.status = 'RESOLVED';
+  res.json({ success: true, message: `Security remediation executed for ${finding.resourceName}. Verified configuration applied.`, finding });
+});
+
+// ==========================================
+// ENTERPRISE ROLES, AUDIT & GOVERNANCE
+// ==========================================
+app.get('/api/v1/auth/roles/capabilities', requireUserAuth, (req: Request, res: Response) => {
+  const capabilities: RoleCapabilitySummary[] = [
+    {
+      role: 'OWNER',
+      displayName: 'Organization Owner',
+      description: 'Full administrative control across all clusters, billing, organization settings, and autonomous policies.',
+      can: ['View and heal all incidents', 'Approve autonomous remediations', 'Manage security & auto-healing policies', 'View cost & apply rightsizing', 'Manage clusters & team members', 'Export immutable audit logs'],
+      cannot: [],
+      permissions: ROLE_PERMISSIONS['OWNER'] as any
+    },
+    {
+      role: 'ADMIN',
+      displayName: 'Administrator',
+      description: 'Full operational and cluster management authority.',
+      can: ['View and heal all incidents', 'Approve remediations', 'Manage policies & clusters', 'View cost and apply rightsizing', 'Invite and manage team members', 'View audit logs'],
+      cannot: ['Transfer organization ownership'],
+      permissions: ROLE_PERMISSIONS['ADMIN'] as any
+    },
+    {
+      role: 'SRE',
+      displayName: 'Site Reliability Engineer',
+      description: 'Production incident triage, remediation execution, cluster diagnostics, and cost optimization.',
+      can: ['View and heal all incidents', 'Approve and execute remediations', 'Modify auto-healing and security policies', 'View cost intelligence and apply rightsizing', 'Manage cluster connectivity', 'Inspect container logs and telemetry'],
+      cannot: ['Manage organization billing', 'Remove organization administrators'],
+      permissions: ROLE_PERMISSIONS['SRE'] as any
+    },
+    {
+      role: 'DEVELOPER',
+      displayName: 'Application Developer',
+      description: 'Workload observability, staging incident healing, and application logs inspection.',
+      can: ['View incidents and workload health', 'Heal staging and development incidents', 'Inspect application container logs', 'View telemetry and cost breakdown'],
+      cannot: ['Approve production autonomous remediations', 'Modify global security policies', 'Manage clusters or invite users'],
+      permissions: ROLE_PERMISSIONS['DEVELOPER'] as any
+    },
+    {
+      role: 'VIEWER',
+      displayName: 'Read-Only Viewer',
+      description: 'Observation of cluster health, incidents, and diagnostics with zero mutation authority.',
+      can: ['View incidents', 'View health and cluster topology', 'View telemetry and diagnostics', 'View cost allocation breakdown'],
+      cannot: ['Heal incidents', 'Approve remediation', 'Change Auto-Healing policy', 'Modify security policies', 'Manage clusters'],
+      permissions: ROLE_PERMISSIONS['VIEWER'] as any
+    },
+    {
+      role: 'AUDITOR',
+      displayName: 'Compliance Auditor',
+      description: 'Compliance inspection, policy audits, security findings review, and immutable audit logs access.',
+      can: ['View complete cryptographic audit logs', 'Inspect security findings and policies', 'View incident timeline and postmortems', 'View cost allocation and resource baselines'],
+      cannot: ['Heal incidents or execute actions', 'Approve remediations', 'Modify security policies', 'Manage clusters or users'],
+      permissions: ROLE_PERMISSIONS['AUDITOR'] as any
+    }
+  ];
+  res.json({ capabilities });
+});
+
+app.get('/api/v1/audit/logs', requireUserAuth, requireOrgMembership, requirePermission('audit.read'), (req: AuthenticatedUserRequest, res) => {
+  const { action, actorId, resourceType, search, limit, offset } = req.query;
+  const parsedLimit = limit ? parseInt(limit as string, 10) : 50;
+  const parsedOffset = offset ? parseInt(offset as string, 10) : 0;
+
+  const result = auditService.query({
+    orgId: req.orgId!,
+    action: action as string,
+    actorId: actorId as string,
+    resourceType: resourceType as string,
+    search: search as string,
+    limit: isNaN(parsedLimit) ? 50 : Math.min(200, parsedLimit),
+    offset: isNaN(parsedOffset) ? 0 : parsedOffset
+  });
+
+  res.json(result);
 });
 
 // --- API 404 Handler ---

@@ -4,9 +4,14 @@ import {
   Award,
   Boxes,
   Building2,
+  Check,
   CheckCircle2,
   ChevronDown,
+  Coins,
   Cpu,
+  DollarSign,
+  HelpCircle,
+  Info,
   Layers,
   LayoutDashboard,
   LogOut,
@@ -18,16 +23,19 @@ import {
   Server,
   Settings,
   Shield,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Terminal,
   UserCheck,
+  X,
   Zap
 } from 'lucide-react';
 import React, { useState } from 'react';
 import { AGENT_VERSION } from '../../config/version';
 import { useAuth } from '../../context/AuthContext';
 import { BrandLogo } from '../common/BrandLogo';
+import { Modal } from '../common/UI';
 
 export type NavigationTab =
   | 'overview'
@@ -36,6 +44,8 @@ export type NavigationTab =
   | 'clusters'
   | 'incidents'
   | 'observability'
+  | 'cost'
+  | 'security'
   | 'audit'
   | 'settings';
 
@@ -64,6 +74,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [isOrgDropdownOpen, setIsOrgDropdownOpen] = useState(false);
   const [isCreatingOrg, setIsCreatingOrg] = useState(false);
   const [newOrgName, setNewOrgName] = useState('');
+  const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
 
   const handleCreateOrg = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,6 +125,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <Radio className="w-4 h-4" />
     },
     {
+      id: 'cost',
+      label: 'Cost Intelligence',
+      icon: <Coins className="w-4 h-4" />
+    },
+    {
+      id: 'security',
+      label: 'Security & Posture',
+      icon: <ShieldAlert className="w-4 h-4" />
+    },
+    {
       id: 'audit',
       label: 'Audit & Compliance',
       icon: <Shield className="w-4 h-4" />
@@ -124,6 +145,87 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <Settings className="w-4 h-4" />
     }
   ];
+
+  // Role Capability definitions for Role-Based UI (Prompt 3, Section 15 & 16)
+  const roleCapabilities: Record<string, { can: string[]; cannot: string[] }> = {
+    OWNER: {
+      can: [
+        'Full administrative access across all clusters',
+        'Heal incidents & approve autonomous remediations',
+        'Modify Auto-Healing and global security policies',
+        'View cost intelligence & apply resource rightsizing',
+        'Manage clusters, team roles, and billing subscriptions',
+        'Access and export immutable audit logs'
+      ],
+      cannot: []
+    },
+    ADMIN: {
+      can: [
+        'View and heal all incidents across environments',
+        'Approve autonomous and manual remediations',
+        'Manage cluster configurations and security policies',
+        'View cost intelligence and apply rightsizing',
+        'Invite team members and manage organization roles',
+        'Inspect immutable audit logs'
+      ],
+      cannot: ['Transfer organization ownership']
+    },
+    SRE: {
+      can: [
+        'View all cluster incidents, telemetry, and diagnostics',
+        'Heal incidents and execute approved remediations',
+        'Modify Auto-Healing policies and security rules',
+        'View cost intelligence and apply resource rightsizing',
+        'Manage cluster connectivity and agent tokens',
+        'Inspect container logs and Prometheus metrics'
+      ],
+      cannot: ['Manage organization billing', 'Remove organization administrators']
+    },
+    DEVELOPER: {
+      can: [
+        'View incidents and workload health across clusters',
+        'Heal staging and development incidents',
+        'Inspect application container logs and events',
+        'View telemetry and cost allocation breakdowns'
+      ],
+      cannot: [
+        'Approve production autonomous remediations',
+        'Modify global security policies',
+        'Manage clusters or invite team members'
+      ]
+    },
+    VIEWER: {
+      can: [
+        'View incidents and cluster topologies',
+        'View health metrics and service mesh',
+        'View telemetry snapshots and diagnostics',
+        'View cost allocation breakdown'
+      ],
+      cannot: [
+        'Heal incidents',
+        'Approve remediation actions',
+        'Change Auto-Healing policies',
+        'Modify security policies',
+        'Manage clusters or modify resources'
+      ]
+    },
+    AUDITOR: {
+      can: [
+        'View complete cryptographic audit logs',
+        'Inspect security posture and policy compliance',
+        'View incident timelines, postmortems, and verification evidence',
+        'Inspect cost allocation and resource baselines'
+      ],
+      cannot: [
+        'Heal incidents or execute cluster mutations',
+        'Approve remediation actions',
+        'Modify security or auto-healing policies',
+        'Manage clusters or users'
+      ]
+    }
+  };
+
+  const currentRoleInfo = roleCapabilities[role] || roleCapabilities['VIEWER'];
 
   return (
     <aside
@@ -194,7 +296,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <Building2 className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
               <div className="truncate">
                 <div className="text-zinc-200 font-medium truncate">{currentOrg?.name || 'My Organization'}</div>
-                <div className="text-[10px] font-mono text-zinc-500 uppercase">{role}</div>
+                <div className="text-[10px] font-mono text-zinc-500 uppercase flex items-center gap-1">
+                  <span>{role}</span>
+                  <span className="text-zinc-600">•</span>
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsRoleModalOpen(true);
+                    }}
+                    className="text-sky-400 hover:text-sky-300 underline lowercase cursor-pointer"
+                  >
+                    permissions
+                  </span>
+                </div>
               </div>
             </div>
             <ChevronDown className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
@@ -202,8 +316,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* Dropdown Menu */}
           {isOrgDropdownOpen && (
-            <div className="absolute top-full left-3 right-3 mt-1 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl py-1 z-30">
-              <div className="px-3 py-1.5 text-[10px] font-mono text-zinc-500 uppercase">Switch Organization</div>
+            <div className="absolute top-full left-3 right-3 mt-1 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl py-1 z-30 font-mono">
+              <div className="px-3 py-1.5 text-[10px] text-zinc-500 uppercase">Tenant Organizations</div>
               {organizations.map((org) => (
                 <button
                   key={org.id}
@@ -218,41 +332,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </button>
               ))}
 
-              <div className="border-t border-zinc-800 mt-1 pt-1">
-                {!isCreatingOrg ? (
+              <div className="border-t border-zinc-800 my-1 pt-1">
+                {isCreatingOrg ? (
+                  <form onSubmit={handleCreateOrg} className="p-2">
+                    <input
+                      type="text"
+                      placeholder="Organization name..."
+                      value={newOrgName}
+                      onChange={(e) => setNewOrgName(e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-zinc-950 border border-zinc-700 rounded text-zinc-100 placeholder-zinc-500 mb-1 focus:outline-none focus:border-sky-500"
+                      autoFocus
+                    />
+                    <div className="flex gap-1 justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setIsCreatingOrg(false)}
+                        className="px-2 py-0.5 text-[10px] text-zinc-400 hover:text-zinc-200"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-2 py-0.5 text-[10px] bg-sky-600 hover:bg-sky-500 text-white rounded"
+                      >
+                        Create
+                      </button>
+                    </div>
+                  </form>
+                ) : (
                   <button
                     onClick={() => setIsCreatingOrg(true)}
                     className="w-full px-3 py-1.5 text-xs text-left text-sky-400 hover:bg-zinc-800 flex items-center gap-1.5 cursor-pointer"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>New Organization</span>
+                    <Plus className="w-3 h-3" />
+                    <span>Create Organization</span>
                   </button>
-                ) : (
-                  <form onSubmit={handleCreateOrg} className="p-2">
-                    <input
-                      type="text"
-                      placeholder="Organization name"
-                      value={newOrgName}
-                      onChange={(e) => setNewOrgName(e.target.value)}
-                      className="w-full px-2 py-1 text-xs bg-zinc-950 border border-zinc-700 rounded text-zinc-100 focus:outline-none focus:border-sky-500 mb-1.5 font-mono"
-                      autoFocus
-                    />
-                    <div className="flex gap-1">
-                      <button
-                        type="submit"
-                        className="px-2 py-0.5 text-xs bg-sky-600 hover:bg-sky-500 text-white rounded font-mono"
-                      >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsCreatingOrg(false)}
-                        className="px-2 py-0.5 text-xs bg-zinc-800 text-zinc-400 rounded font-mono"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
                 )}
               </div>
             </div>
@@ -260,43 +374,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       )}
 
-      {/* Main Navigation */}
-      <div className={`py-4 flex-1 space-y-1 overflow-y-auto no-scrollbar ${isCollapsed ? 'px-2' : 'px-3'}`}>
-        {!isCollapsed && (
-          <div className="px-3 py-1 text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Navigation</div>
-        )}
+      {/* Navigation Links */}
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
         {navItems.map((item) => {
           const isActive = activeTab === item.id;
-          if (isCollapsed) {
-            return (
-              <button
-                key={item.id}
-                onClick={() => onSelectTab(item.id)}
-                title={`${item.label}${typeof item.badge === 'number' && item.badge > 0 ? ` (${item.badge} active)` : ''}`}
-                className={`relative flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-                  isActive
-                    ? 'bg-sky-950/70 text-sky-300 border border-sky-800/80 border-l-2 border-l-sky-400 shadow-xs'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 border border-transparent'
-                }`}
-              >
-                {item.icon}
-                {typeof item.badge === 'number' && item.badge > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] font-bold font-mono flex items-center justify-center border border-zinc-950">
-                    {item.badge}
-                  </span>
-                )}
-              </button>
-            );
-          }
-
-          return (
+          return isCollapsed ? (
+            <button
+              key={item.id}
+              onClick={() => onSelectTab(item.id)}
+              title={`${item.label}${typeof item.badge === 'number' && item.badge > 0 ? ` (${item.badge})` : ''}`}
+              className={`w-10 h-10 mx-auto rounded-lg flex items-center justify-center transition-colors relative cursor-pointer ${
+                isActive
+                  ? 'bg-sky-500/10 text-sky-400 border border-sky-500/30 border-l-2 border-l-sky-400'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
+              }`}
+            >
+              {item.icon}
+              {typeof item.badge === 'number' && item.badge > 0 && (
+                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-zinc-950" />
+              )}
+            </button>
+          ) : (
             <button
               key={item.id}
               onClick={() => onSelectTab(item.id)}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
                 isActive
-                  ? 'bg-sky-950/60 text-sky-300 border border-sky-800/60 border-l-2 border-l-sky-400 font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 border border-transparent'
+                  ? 'bg-sky-500/10 text-sky-400 border border-sky-500/30 border-l-2 border-l-sky-400'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
               }`}
             >
               <div className="flex items-center gap-2.5">
@@ -379,6 +484,62 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
       )}
+
+      {/* Role Capabilities Modal (Prompt 3, Section 15 & 16: Role-Based UI) */}
+      <Modal
+        isOpen={isRoleModalOpen}
+        onClose={() => setIsRoleModalOpen(false)}
+        title={`Enterprise Role Permissions: ${role}`}
+        size="md"
+      >
+        <div className="space-y-4 font-mono text-xs">
+          <div className="bg-zinc-900/60 p-3 rounded-lg border border-zinc-800 flex items-center justify-between">
+            <div>
+              <span className="text-zinc-400">Assigned Role:</span>{' '}
+              <strong className="text-sky-400 font-bold">{role}</strong>
+            </div>
+            <div className="text-zinc-500 text-[10px]">
+              Tenant: {currentOrg?.name}
+            </div>
+          </div>
+
+          {/* Can */}
+          <div className="space-y-2">
+            <div className="text-emerald-400 font-semibold flex items-center gap-1.5 uppercase text-[11px] tracking-wider">
+              <Check className="w-4 h-4 text-emerald-400" />
+              <span>You Can:</span>
+            </div>
+            <ul className="space-y-1.5 pl-5 list-disc text-zinc-300">
+              {currentRoleInfo.can.map((item, idx) => (
+                <li key={idx} className="leading-relaxed">
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Cannot */}
+          {currentRoleInfo.cannot.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-zinc-800">
+              <div className="text-rose-400 font-semibold flex items-center gap-1.5 uppercase text-[11px] tracking-wider">
+                <X className="w-4 h-4 text-rose-400" />
+                <span>You Cannot:</span>
+              </div>
+              <ul className="space-y-1.5 pl-5 list-disc text-zinc-400">
+                {currentRoleInfo.cannot.map((item, idx) => (
+                  <li key={idx} className="leading-relaxed">
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="pt-3 border-t border-zinc-800 text-[10px] text-zinc-500">
+            Permissions are enforced both in the client interface and verified cryptographically on all backend API requests.
+          </div>
+        </div>
+      </Modal>
     </aside>
   );
 };

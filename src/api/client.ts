@@ -48,7 +48,20 @@ import {
   DeploymentGateEvaluation,
   ServiceDependency,
   ServiceHealthRecord,
-  ReliabilityMetrics
+  ReliabilityMetrics,
+  ClusterHierarchyGroup,
+  ClusterHealthSummary,
+  IncidentMultiClusterSummary,
+  CostOverview,
+  CostAllocationBreakdown,
+  ResourceRightsizingRecommendation,
+  CostWasteItem,
+  CostSavingsTracking,
+  SecurityPostureOverview,
+  SecurityFinding,
+  SecurityPolicyRule,
+  RoleCapabilitySummary,
+  EnterpriseAuditRecord
 } from '../types/index';
 
 /**
@@ -1148,6 +1161,108 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ state, planId, interval })
     });
+  }
+
+  // ==========================================
+  // ENTERPRISE MULTI-CLUSTER & HEALTH
+  // ==========================================
+  async getClusterHierarchy(): Promise<{ hierarchy: ClusterHierarchyGroup[] }> {
+    return this.request('/api/v1/clusters/hierarchy');
+  }
+
+  async getClusterHealth(clusterId: string): Promise<{ health: ClusterHealthSummary }> {
+    return this.request(`/api/v1/clusters/${clusterId}/health`);
+  }
+
+  async getIncidentsSummary(): Promise<{ summary: IncidentMultiClusterSummary }> {
+    return this.request('/api/v1/incidents/summary');
+  }
+
+  // ==========================================
+  // ENTERPRISE COST INTELLIGENCE
+  // ==========================================
+  async getCostOverview(): Promise<{ overview: CostOverview }> {
+    return this.request('/api/v1/cost/overview');
+  }
+
+  async getCostAllocation(): Promise<{ allocation: CostAllocationBreakdown }> {
+    return this.request('/api/v1/cost/allocation');
+  }
+
+  async getRightsizingRecommendations(): Promise<{ recommendations: ResourceRightsizingRecommendation[] }> {
+    return this.request('/api/v1/cost/rightsizing');
+  }
+
+  async applyRightsizing(id: string): Promise<{ success: boolean; message: string; recommendation: ResourceRightsizingRecommendation }> {
+    return this.request(`/api/v1/cost/rightsizing/${id}/apply`, {
+      method: 'POST'
+    });
+  }
+
+  async getCostWaste(): Promise<{ wasteItems: CostWasteItem[] }> {
+    return this.request('/api/v1/cost/waste');
+  }
+
+  async getCostSavings(): Promise<{ savings: CostSavingsTracking }> {
+    return this.request('/api/v1/cost/savings');
+  }
+
+  // ==========================================
+  // ENTERPRISE SECURITY & GOVERNANCE
+  // ==========================================
+  async getSecurityPosture(): Promise<{ posture: SecurityPostureOverview }> {
+    return this.request('/api/v1/security/posture');
+  }
+
+  async getSecurityFindings(params?: { severity?: string; clusterId?: string }): Promise<{ findings: SecurityFinding[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.severity) searchParams.set('severity', params.severity);
+    if (params?.clusterId) searchParams.set('clusterId', params.clusterId);
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
+    return this.request(`/api/v1/security/findings${query}`);
+  }
+
+  async getSecurityPolicies(): Promise<{ policies: SecurityPolicyRule[] }> {
+    return this.request('/api/v1/security/policies');
+  }
+
+  async updateSecurityPolicy(key: string, updates: Partial<SecurityPolicyRule>): Promise<{ policy: SecurityPolicyRule }> {
+    return this.request(`/api/v1/security/policies/${key}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates)
+    });
+  }
+
+  async remediateSecurityFinding(id: string): Promise<{ success: boolean; message: string; finding: SecurityFinding }> {
+    return this.request(`/api/v1/security/findings/${id}/remediate`, {
+      method: 'POST'
+    });
+  }
+
+  // ==========================================
+  // ENTERPRISE ROLES & AUDIT
+  // ==========================================
+  async getRoleCapabilities(): Promise<{ capabilities: RoleCapabilitySummary[] }> {
+    return this.request('/api/v1/auth/roles/capabilities');
+  }
+
+  async getAuditLogs(params?: {
+    action?: string;
+    actorId?: string;
+    resourceType?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ items: EnterpriseAuditRecord[]; total: number; limit: number; offset: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.action) searchParams.set('action', params.action);
+    if (params?.actorId) searchParams.set('actorId', params.actorId);
+    if (params?.resourceType) searchParams.set('resourceType', params.resourceType);
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.offset) searchParams.set('offset', String(params.offset));
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
+    return this.request(`/api/v1/audit/logs${query}`);
   }
 }
 

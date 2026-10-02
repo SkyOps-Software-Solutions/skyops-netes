@@ -40,6 +40,7 @@ import {
   UserNotificationSettings,
   Subscription,
   Invoice,
+  MetricHistoryPoint,
   StoredArtifact,
   StoredArtifactFilters,
   StoredArtifactLifecycleStatus,
@@ -814,6 +815,20 @@ export class FirestoreStore implements IPersistenceStore {
     }
   }
 
+  public async listClusterTokens(orgId?: string): Promise<ClusterTokenRecord[]> {
+    try {
+      let query: any = this.firestore.collection('clusterTokens');
+      if (orgId) {
+        query = query.where('orgId', '==', orgId);
+      }
+      const snap = await query.get();
+      const docs = snap.docs.map((d: any) => d.data() as ClusterTokenRecord);
+      return docs;
+    } catch (err: any) {
+      throw err;
+    }
+  }
+
   // --- Cluster Resources ---
   public async getClusterResources(clusterId: string, orgId?: string): Promise<KubernetesResource[]> {
     try {
@@ -838,6 +853,34 @@ export class FirestoreStore implements IPersistenceStore {
         updatedAt: Date.now()
       };
       await this.firestore.collection('clusterResources').doc(clusterId).set(this.sanitize(payload), { merge: true });
+    } catch (err: any) {
+      throw err;
+    }
+  }
+
+  // --- Cluster Metric History ---
+  public async getClusterMetricHistory(clusterId: string, orgId?: string): Promise<MetricHistoryPoint[]> {
+    try {
+      const snap = await this.firestore.collection('clusterMetricHistory').doc(clusterId).get();
+      if (!snap.exists) return [];
+      const record = snap.data();
+      if (orgId && record.orgId && record.orgId !== orgId) return [];
+      return Array.isArray(record.history) ? record.history : [];
+    } catch (err: any) {
+      throw err;
+    }
+  }
+
+  public async saveClusterMetricHistory(clusterId: string, orgId: string, history: MetricHistoryPoint[]): Promise<void> {
+    if (!this.connected) throw new Error('[FirestoreStore] Persistence is not connected');
+    try {
+      const payload = {
+        clusterId,
+        orgId,
+        history,
+        updatedAt: Date.now()
+      };
+      await this.firestore.collection('clusterMetricHistory').doc(clusterId).set(this.sanitize(payload), { merge: true });
     } catch (err: any) {
       throw err;
     }

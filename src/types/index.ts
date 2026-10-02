@@ -1,4 +1,12 @@
-export type Role = 'OWNER' | 'ADMIN' | 'OPERATOR' | 'ENGINEER' | 'VIEWER';
+export type Role =
+  | 'OWNER'
+  | 'ADMIN'
+  | 'SRE'
+  | 'DEVELOPER'
+  | 'VIEWER'
+  | 'AUDITOR'
+  | 'OPERATOR'
+  | 'ENGINEER';
 
 export interface User {
   id: string;
@@ -38,6 +46,12 @@ export interface OrganizationSettings {
   security?: {
     enforceMfa?: boolean;
     sessionTimeoutMinutes?: number;
+  };
+  retention?: {
+    incidentRetentionDays?: number; // default 90 days
+    auditLogsRetentionDays?: number; // default 365 days (1 year)
+    telemetryRetentionDays?: number; // default 30 days
+    neverDeleteProduction?: boolean;
   };
 }
 
@@ -325,8 +339,10 @@ export interface Cluster {
   id: string;
   orgId: string;
   name: string;
+  displayName?: string;
   description?: string;
   environment?: string;
+  provider?: string;
   region?: string;
   status: ClusterStatus;
   agentStatus: AgentStatus;
@@ -352,6 +368,9 @@ export interface Cluster {
   isSimulated?: boolean;
   isLastKnownState?: boolean;
   lastTelemetrySnapshot?: number;
+  agentOfflineSince?: number;
+  disconnectedAt?: number;
+  reconnectedAt?: number;
 }
 
 export type IncidentSeverity = 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
@@ -1866,5 +1885,6 @@ export interface ReliabilityMetrics {
 }
 
 export * from './billing';
+export * from './enterprise';
 
 

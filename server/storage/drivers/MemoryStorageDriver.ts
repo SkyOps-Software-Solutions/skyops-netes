@@ -15,7 +15,7 @@ export class MemoryStorageDriver implements IStorageDriver {
   private objects = new Map<string, MemoryObject>();
   private bucketName: string;
 
-  constructor(bucketName: string = 'skyops-a1143.firebasestorage.app') {
+  constructor(bucketName: string = 'skyops-netes-c67a3.firebasestorage.app') {
     this.bucketName = bucketName;
   }
 

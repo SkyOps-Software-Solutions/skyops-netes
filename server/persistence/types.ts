@@ -17,6 +17,7 @@ import {
   UserNotificationSettings,
   Subscription,
   Invoice,
+  MetricHistoryPoint,
   StoredArtifact,
   StoredArtifactFilters,
   StoredArtifactLifecycleStatus,
@@ -101,10 +102,15 @@ export interface IPersistenceStore {
   listClusterTokens(clusterId?: string): Promise<ClusterTokenRecord[]>;
   saveClusterToken(record: ClusterTokenRecord): Promise<void>;
   deleteClusterToken(tokenHash: string): Promise<boolean>;
+  listClusterTokens(orgId?: string): Promise<ClusterTokenRecord[]>;
 
   // --- Cluster Resources ---
   getClusterResources(clusterId: string, orgId?: string): Promise<KubernetesResource[]>;
   saveClusterResources(clusterId: string, orgId: string, resources: KubernetesResource[]): Promise<void>;
+
+  // --- Cluster Metric History ---
+  getClusterMetricHistory(clusterId: string, orgId?: string): Promise<MetricHistoryPoint[]>;
+  saveClusterMetricHistory(clusterId: string, orgId: string, history: MetricHistoryPoint[]): Promise<void>;
 
   // --- Incidents ---
   getIncident(incidentId: string, orgId?: string): Promise<Incident | null>;

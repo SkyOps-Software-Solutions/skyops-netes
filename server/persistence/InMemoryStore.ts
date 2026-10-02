@@ -16,6 +16,7 @@ import {
   UserNotificationSettings,
   Subscription,
   Invoice,
+  MetricHistoryPoint,
   StoredArtifact,
   StoredArtifactFilters,
   StoredArtifactLifecycleStatus,
@@ -44,6 +45,7 @@ export class InMemoryStore implements IPersistenceStore {
   private clusters: Map<string, Cluster> = new Map(); // clusterId -> Cluster
   private clusterTokens: Map<string, ClusterTokenRecord> = new Map(); // tokenHash -> Record
   private clusterResources: Map<string, ClusterResourcesRecord> = new Map(); // clusterId -> Record
+  private clusterMetricHistory: Map<string, { clusterId: string; orgId: string; history: MetricHistoryPoint[] }> = new Map();
   private incidents: Map<string, Incident> = new Map(); // incidentId -> Incident
   private incidentTimeline: Map<string, TimelineEvent[]> = new Map(); // incidentId -> events
   private incidentNotes: Map<string, IncidentNote[]> = new Map(); // incidentId -> notes
@@ -265,6 +267,14 @@ export class InMemoryStore implements IPersistenceStore {
     return this.clusterTokens.delete(tokenHash);
   }
 
+  public async listClusterTokens(orgId?: string): Promise<ClusterTokenRecord[]> {
+    const list = Array.from(this.clusterTokens.values());
+    if (orgId) {
+      return list.filter((t) => t.orgId === orgId);
+    }
+    return list;
+  }
+
   // --- Cluster Resources ---
   public async getClusterResources(clusterId: string, orgId?: string): Promise<KubernetesResource[]> {
     const record = this.clusterResources.get(clusterId);
@@ -279,6 +289,22 @@ export class InMemoryStore implements IPersistenceStore {
       orgId,
       resources: [...resources],
       updatedAt: Date.now()
+    });
+  }
+
+  // --- Cluster Metric History ---
+  public async getClusterMetricHistory(clusterId: string, orgId?: string): Promise<MetricHistoryPoint[]> {
+    const record = this.clusterMetricHistory.get(clusterId);
+    if (!record) return [];
+    if (orgId && record.orgId !== orgId) return [];
+    return record.history;
+  }
+
+  public async saveClusterMetricHistory(clusterId: string, orgId: string, history: MetricHistoryPoint[]): Promise<void> {
+    this.clusterMetricHistory.set(clusterId, {
+      clusterId,
+      orgId,
+      history: [...history]
     });
   }
 

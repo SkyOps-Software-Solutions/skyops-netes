@@ -29,10 +29,23 @@ export function determinePersistenceProvider(): 'firestore' | 'memory' {
     return process.env.TEST_PERSISTENCE_PROVIDER === 'firestore' ? 'firestore' : 'memory';
   }
 
-  // Development: Use firestore by default as authoritative persistence provider unless explicitly set to memory
+  // Development: Use explicitly configured provider if supplied
   if (envProvider === 'memory') {
     return 'memory';
   }
+  if (envProvider === 'firestore') {
+    return 'firestore';
+  }
+
+  // In development, default to in-memory store unless server GCP credentials are present
+  const hasGcpCreds = Boolean(
+    process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+    process.env.FIREBASE_SERVICE_ACCOUNT_KEY
+  );
+  if (!hasGcpCreds) {
+    return 'memory';
+  }
+
   return 'firestore';
 }
 

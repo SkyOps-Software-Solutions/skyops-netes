@@ -31,10 +31,10 @@ describe('SkyOps Firebase Cloud Storage Foundation', () => {
   };
 
   beforeEach(() => {
-    memoryDriver = new MemoryStorageDriver('skyops-a1143.firebasestorage.app');
+    memoryDriver = new MemoryStorageDriver('skyops-netes-c67a3.firebasestorage.app');
     storageService = new StorageService({
       driver: memoryDriver,
-      bucketName: 'skyops-a1143.firebasestorage.app'
+      bucketName: 'skyops-netes-c67a3.firebasestorage.app'
     });
   });
 
@@ -43,11 +43,11 @@ describe('SkyOps Firebase Cloud Storage Foundation', () => {
       const bucket = resolveStorageBucket();
       assert.ok(bucket);
       assert.ok(!bucket.includes('gs://'));
-      assert.equal(bucket, 'skyops-a1143.firebasestorage.app');
+      assert.equal(bucket, 'skyops-netes-c67a3.firebasestorage.app');
     });
 
     it('initializes StorageService with canonical bucket', () => {
-      assert.equal(storageService.getBucketName(), 'skyops-a1143.firebasestorage.app');
+      assert.equal(storageService.getBucketName(), 'skyops-netes-c67a3.firebasestorage.app');
       assert.equal(storageService.getDriverName(), 'memory');
     });
   });
@@ -130,7 +130,7 @@ describe('SkyOps Firebase Cloud Storage Foundation', () => {
       assert.equal(artifact.orgId, orgA);
       assert.equal(artifact.category, 'incident-artifacts');
       assert.ok(artifact.storagePath.includes(`tenants/${orgA}/incident-artifacts/`));
-      assert.equal(artifact.storageBucket, 'skyops-a1143.firebasestorage.app');
+      assert.equal(artifact.storageBucket, 'skyops-netes-c67a3.firebasestorage.app');
       assert.equal(artifact.checksumSha256, expectedChecksum);
       assert.equal(artifact.sizeBytes, buffer.length);
       assert.equal(artifact.lifecycleStatus, 'ACTIVE');

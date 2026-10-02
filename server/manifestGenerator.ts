@@ -9,6 +9,8 @@ export interface ManifestConfig {
   serverUrl: string;
   agentVersion?: string;
   namespace?: string;
+  spoolStorageSize?: string;
+  spoolStorageClass?: string;
 }
 
 export function generateKubernetesManifest(config: ManifestConfig): string {
@@ -152,6 +154,26 @@ export function generateKubernetesManifest(config: ManifestConfig): string {
       },
     },
     {
+      apiVersion: 'v1',
+      kind: 'PersistentVolumeClaim',
+      metadata: {
+        name: 'skyops-agent-spool',
+        namespace,
+        labels: {
+          'app.kubernetes.io/name': 'skyops-agent',
+        },
+      },
+      spec: {
+        accessModes: ['ReadWriteOnce'],
+        resources: {
+          requests: {
+            storage: config.spoolStorageSize || '1Gi',
+          },
+        },
+        ...(config.spoolStorageClass ? { storageClassName: config.spoolStorageClass } : {}),
+      },
+    },
+    {
       apiVersion: 'apps/v1',
       kind: 'Deployment',
       metadata: {
@@ -284,7 +306,9 @@ export function generateKubernetesManifest(config: ManifestConfig): string {
             volumes: [
               {
                 name: 'spool-data',
-                emptyDir: {},
+                persistentVolumeClaim: {
+                  claimName: 'skyops-agent-spool',
+                },
               },
               {
                 name: 'tmp',

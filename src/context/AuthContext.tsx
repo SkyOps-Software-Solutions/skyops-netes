@@ -35,8 +35,16 @@ interface AuthContextType {
   canEditIncidents: boolean;
   canDeleteClusters: boolean;
   canApproveRemediations: boolean;
+  canHeal: boolean;
+  canModifyAutoHealing: boolean;
+  canModifySecurityPolicy: boolean;
+  canViewCost: boolean;
+  canApplyCostOptimization: boolean;
   canManageTeam: boolean;
   canManageOrgSettings: boolean;
+  canViewAuditLogs: boolean;
+  isViewer: boolean;
+  isAuditor: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -291,12 +299,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const isAuthenticated = !!firebaseUser || !!user;
-  const canManageClusters = role === 'OWNER' || role === 'ADMIN' || role === 'OPERATOR' || role === 'ENGINEER';
+  const canManageClusters = role === 'OWNER' || role === 'ADMIN' || role === 'SRE' || role === 'OPERATOR';
   const canDeleteClusters = role === 'OWNER' || role === 'ADMIN';
-  const canEditIncidents = role === 'OWNER' || role === 'ADMIN' || role === 'OPERATOR' || role === 'ENGINEER';
-  const canApproveRemediations = role === 'OWNER' || role === 'ADMIN' || role === 'OPERATOR' || role === 'ENGINEER';
+  const canEditIncidents = role === 'OWNER' || role === 'ADMIN' || role === 'SRE' || role === 'OPERATOR' || role === 'DEVELOPER' || role === 'ENGINEER';
+  const canHeal = role === 'OWNER' || role === 'ADMIN' || role === 'SRE' || role === 'OPERATOR' || role === 'DEVELOPER' || role === 'ENGINEER';
+  const canApproveRemediations = role === 'OWNER' || role === 'ADMIN' || role === 'SRE' || role === 'OPERATOR';
+  const canModifyAutoHealing = role === 'OWNER' || role === 'ADMIN' || role === 'SRE' || role === 'OPERATOR';
+  const canModifySecurityPolicy = role === 'OWNER' || role === 'ADMIN' || role === 'SRE' || role === 'OPERATOR';
+  const canViewCost = true;
+  const canApplyCostOptimization = role === 'OWNER' || role === 'ADMIN' || role === 'SRE' || role === 'OPERATOR';
   const canManageTeam = role === 'OWNER' || role === 'ADMIN';
   const canManageOrgSettings = role === 'OWNER' || role === 'ADMIN';
+  const canViewAuditLogs = true;
+  const isViewer = role === 'VIEWER';
+  const isAuditor = role === 'AUDITOR';
 
   return (
     <AuthContext.Provider
@@ -322,8 +338,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         canEditIncidents,
         canDeleteClusters,
         canApproveRemediations,
+        canHeal,
+        canModifyAutoHealing,
+        canModifySecurityPolicy,
+        canViewCost,
+        canApplyCostOptimization,
         canManageTeam,
-        canManageOrgSettings
+        canManageOrgSettings,
+        canViewAuditLogs,
+        isViewer,
+        isAuditor
       }}
     >
       {children}

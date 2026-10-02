@@ -84,6 +84,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
   const [timezone, setTimezone] = useState(currentOrg?.settings?.general?.timezone || 'UTC');
   const [enforceMfa, setEnforceMfa] = useState(currentOrg?.settings?.security?.enforceMfa || false);
   const [sessionTimeout, setSessionTimeout] = useState(currentOrg?.settings?.security?.sessionTimeoutMinutes || 1440);
+  const [incidentRetention, setIncidentRetention] = useState(currentOrg?.settings?.retention?.incidentRetentionDays || 90);
+  const [auditLogsRetention, setAuditLogsRetention] = useState(currentOrg?.settings?.retention?.auditLogsRetentionDays || 365);
+  const [telemetryRetention, setTelemetryRetention] = useState(currentOrg?.settings?.retention?.telemetryRetentionDays || 30);
+  const [neverDeleteProd, setNeverDeleteProd] = useState(currentOrg?.settings?.retention?.neverDeleteProduction ?? true);
   const [savingOrg, setSavingOrg] = useState(false);
   const [orgSuccessMsg, setOrgSuccessMsg] = useState<string | null>(null);
   const [orgError, setOrgError] = useState<string | null>(null);
@@ -94,6 +98,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
       setTimezone(currentOrg.settings?.general?.timezone || 'UTC');
       setEnforceMfa(currentOrg.settings?.security?.enforceMfa || false);
       setSessionTimeout(currentOrg.settings?.security?.sessionTimeoutMinutes || 1440);
+      setIncidentRetention(currentOrg.settings?.retention?.incidentRetentionDays || 90);
+      setAuditLogsRetention(currentOrg.settings?.retention?.auditLogsRetentionDays || 365);
+      setTelemetryRetention(currentOrg.settings?.retention?.telemetryRetentionDays || 30);
+      setNeverDeleteProd(currentOrg.settings?.retention?.neverDeleteProduction ?? true);
     }
   }, [currentOrg]);
 
@@ -114,10 +122,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
         name: orgName.trim(),
         settings: {
           general: { name: orgName.trim(), timezone },
-          security: { enforceMfa, sessionTimeoutMinutes: Number(sessionTimeout) }
+          security: { enforceMfa, sessionTimeoutMinutes: Number(sessionTimeout) },
+          retention: {
+            incidentRetentionDays: Number(incidentRetention),
+            auditLogsRetentionDays: Number(auditLogsRetention),
+            telemetryRetentionDays: Number(telemetryRetention),
+            neverDeleteProduction: Boolean(neverDeleteProd)
+          }
         }
       });
-      setOrgSuccessMsg('Organization profile and security policies saved.');
+      setOrgSuccessMsg('Organization profile, security policies, and data retention rules saved.');
       setTimeout(() => setOrgSuccessMsg(null), 4000);
       onRefresh();
     } catch (err: any) {
@@ -416,6 +430,83 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
                 <p className="text-[11px] text-zinc-500 mt-1 pl-6">
                   When enabled, all users accessing this organization must satisfy enterprise 2FA verification.
                 </p>
+              </div>
+
+              {/* Prompt 3, Section 20: Data Retention & Compliance Policies */}
+              <div className="pt-4 border-t border-zinc-800/80 space-y-3">
+                <div className="flex items-center gap-2 text-zinc-200 font-semibold">
+                  <HardDrive className="w-4 h-4 text-sky-400" />
+                  <span>Enterprise Data Retention Policies</span>
+                </div>
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  Configurable retention controls for compliance and storage governance. Data is safely archived before scheduled expiration. Production telemetry is never purged unexpectedly, and audit logs are cryptographically protected.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+                  <div>
+                    <label className="text-zinc-400 block mb-1 text-[11px] uppercase">Incident Data Retention</label>
+                    <select
+                      disabled={!isOwnerOrAdmin}
+                      value={incidentRetention}
+                      onChange={(e) => setIncidentRetention(Number(e.target.value))}
+                      className="w-full px-3 py-1.5 bg-zinc-950 border border-zinc-800 rounded text-zinc-200 focus:outline-none focus:border-sky-500 disabled:opacity-60 text-xs"
+                    >
+                      <option value={30}>30 Days</option>
+                      <option value={60}>60 Days</option>
+                      <option value={90}>90 Days (Recommended)</option>
+                      <option value={180}>180 Days (6 Months)</option>
+                      <option value={365}>365 Days (1 Year)</option>
+                    </select>
+                    <span className="text-[10px] text-zinc-500 mt-0.5 block">Incidents & root cause postmortems</span>
+                  </div>
+
+                  <div>
+                    <label className="text-zinc-400 block mb-1 text-[11px] uppercase">Audit Logs Retention</label>
+                    <select
+                      disabled={!isOwnerOrAdmin}
+                      value={auditLogsRetention}
+                      onChange={(e) => setAuditLogsRetention(Number(e.target.value))}
+                      className="w-full px-3 py-1.5 bg-zinc-950 border border-zinc-800 rounded text-zinc-200 focus:outline-none focus:border-sky-500 disabled:opacity-60 text-xs"
+                    >
+                      <option value={365}>1 Year / 365 Days (Standard)</option>
+                      <option value={730}>2 Years (SOC2 Compliant)</option>
+                      <option value={2555}>7 Years (Financial / HIPAA)</option>
+                      <option value={36500}>Indefinite / Permanent</option>
+                    </select>
+                    <span className="text-[10px] text-emerald-400 mt-0.5 block">Cryptographically immutable</span>
+                  </div>
+
+                  <div>
+                    <label className="text-zinc-400 block mb-1 text-[11px] uppercase">Telemetry Retention</label>
+                    <select
+                      disabled={!isOwnerOrAdmin}
+                      value={telemetryRetention}
+                      onChange={(e) => setTelemetryRetention(Number(e.target.value))}
+                      className="w-full px-3 py-1.5 bg-zinc-950 border border-zinc-800 rounded text-zinc-200 focus:outline-none focus:border-sky-500 disabled:opacity-60 text-xs"
+                    >
+                      <option value={14}>14 Days</option>
+                      <option value={30}>30 Days (Recommended)</option>
+                      <option value={60}>60 Days</option>
+                      <option value={90}>90 Days</option>
+                    </select>
+                    <span className="text-[10px] text-zinc-500 mt-0.5 block">High-resolution pod & node metrics</span>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      disabled={!isOwnerOrAdmin}
+                      checked={neverDeleteProd}
+                      onChange={(e) => setNeverDeleteProd(e.target.checked)}
+                      className="w-4 h-4 rounded border-zinc-700 bg-zinc-950 text-sky-500 focus:ring-0 cursor-pointer disabled:opacity-60"
+                    />
+                    <span className="text-zinc-300 font-semibold text-xs">
+                      Production Safety Guard: Never automatically delete production incident history without explicit confirmation
+                    </span>
+                  </label>
+                </div>
               </div>
 
               {isOwnerOrAdmin && (

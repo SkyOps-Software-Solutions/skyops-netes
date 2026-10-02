@@ -124,6 +124,11 @@ func (c *Collector) Start(ctx context.Context) {
 
 	slog.Info("Kubernetes resource collector started", "interval", c.cfg.TelemetryInterval.String())
 
+	// Drain any previously spooled batches immediately on startup upon reconnection/pod restart
+	if c.spool != nil {
+		c.drainSpool(ctx)
+	}
+
 	// Execute initial immediate scrape
 	c.collectFromKubernetes(ctx)
 	c.flushQueue(ctx)

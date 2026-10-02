@@ -13,6 +13,8 @@ import { OverviewView } from '../overview/OverviewView';
 import { InfrastructureView } from '../infrastructure/InfrastructureView';
 import { ServicesView } from '../services/ServicesView';
 import { LogNavigationIntent, ObservabilityHubView } from '../observability/ObservabilityHubView';
+import { CostIntelligenceView } from '../cost/CostIntelligenceView';
+import { SecurityPostureView } from '../security/SecurityPostureView';
 import { SettingsView } from '../settings/SettingsView';
 import { AuditView } from '../audit/AuditView';
 import { NavigationTab, Sidebar } from './Sidebar';
@@ -393,6 +395,14 @@ export const AppShell: React.FC<AppShellProps> = ({
               onClearLogIntent={() => setPendingLogIntent(null)}
               onRefresh={handleManualRefresh}
             />
+          )}
+
+          {activeTab === 'cost' && (
+            <CostIntelligenceView />
+          )}
+
+          {activeTab === 'security' && (
+            <SecurityPostureView />
           )}
 
           {activeTab === 'audit' && (

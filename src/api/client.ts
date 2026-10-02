@@ -17,6 +17,7 @@ import {
   Role,
   SkyOpsAIAnalysis,
   StructuredRemediation,
+  RemediationPolicy,
   SupportTicket,
   TicketCategory,
   TicketSeverity,
@@ -732,6 +733,26 @@ class ApiClient {
         body: JSON.stringify({ reason })
       }
     );
+  }
+
+  async getRemediationPolicy(clusterId?: string): Promise<{ policy: RemediationPolicy }> {
+    const query = clusterId ? `?clusterId=${encodeURIComponent(clusterId)}` : '';
+    return this.request<{ policy: RemediationPolicy }>(`/api/v1/remediation/policy${query}`);
+  }
+
+  async updateRemediationPolicy(
+    updates: Partial<RemediationPolicy>,
+    clusterId?: string
+  ): Promise<{ success: boolean; policy: RemediationPolicy }> {
+    const query = clusterId ? `?clusterId=${encodeURIComponent(clusterId)}` : '';
+    return this.request<{ success: boolean; policy: RemediationPolicy }>(`/api/v1/remediation/policy${query}`, {
+      method: 'PUT',
+      body: JSON.stringify({ ...updates, clusterId })
+    });
+  }
+
+  async getRemediationAuditTrail(incidentId: string): Promise<any> {
+    return this.request<any>(`/api/v1/incidents/${incidentId}/remediation/audit`);
   }
 
   async explainArchitecture(payload: any): Promise<{ explanation: any }> {

@@ -358,11 +358,13 @@ func (m *Manager) ProcessAction(ctx context.Context, action *transport.Remediati
 	// Update Prometheus metrics
 	m.metrics.Counter("skyops_agent_actions_total").Inc(map[string]string{"type": action.Type})
 
+	actionType := action.CanonicalType()
+
 	// Build immutable execution context for atomic server reporting
 	execContext := map[string]interface{}{
 		"clusterId":            m.cfg.ClusterID,
 		"agentId":              m.cfg.AgentID,
-		"actionType":           action.Type,
+		"actionType":           actionType,
 		"targetKind":           action.Target.Kind,
 		"targetNamespace":      action.Target.Namespace,
 		"targetName":           action.Target.Name,
@@ -387,7 +389,11 @@ func (m *Manager) ProcessAction(ctx context.Context, action *transport.Remediati
 	m.reportJobState(ctx, JobStateUpdate{
 		JobID:            action.ID,
 		ActionID:         action.ID,
+		IncidentID:       action.IncidentID,
+		ExecutionID:      action.ExecutionID,
+		ActionType:       actionType,
 		ClusterID:        m.cfg.ClusterID,
+		Target:           &action.Target,
 		State:            StatePending,
 		Success:          false,
 		Message:          "Action queued for execution",
@@ -595,8 +601,26 @@ func (m *Manager) ProcessAction(ctx context.Context, action *transport.Remediati
 	}
 
 	// 4. Executing Phase
-	_ = sm.Transition(StateExecuting, fmt.Sprintf("Executing mutation on %s/%s", action.Target.Namespace, action.Target.Name))
-	addTrace("EXECUTING", fmt.Sprintf("Executing mutation on %s/%s", action.Target.Namespace, action.Target.Name), "")
+	_ = sm.Transition(StateExecuting, fmt.Sprintf("Executing %s mutation on %s/%s", actionType, action.Target.Namespace, action.Target.Name))
+	addTrace("EXECUTING", fmt.Sprintf("Executing %s mutation on %s/%s", actionType, action.Target.Namespace, action.Target.Name), "")
+
+	m.reportJobState(ctx, JobStateUpdate{
+		JobID:            action.ID,
+		ActionID:         action.ID,
+		IncidentID:       action.IncidentID,
+		ExecutionID:      action.ExecutionID,
+		ActionType:       actionType,
+		Target:           &action.Target,
+		ClusterID:        m.cfg.ClusterID,
+		State:            StateExecuting,
+		Success:          false,
+		Message:          fmt.Sprintf("Executing %s mutation on %s/%s", actionType, action.Target.Namespace, action.Target.Name),
+		ExecutionContext: execContext,
+		RuntimeTraces:    traces,
+		DurationMs:       time.Since(startTime).Milliseconds(),
+		Timestamp:        time.Now().UnixMilli(),
+		AgentID:          m.cfg.AgentID,
+	})
 
 	execErr := m.executor.Execute(actionCtx, action)
 	if execErr != nil {
@@ -616,6 +640,10 @@ func (m *Manager) ProcessAction(ctx context.Context, action *transport.Remediati
 		m.reportJobState(ctx, JobStateUpdate{
 			JobID:            action.ID,
 			ActionID:         action.ID,
+			IncidentID:       action.IncidentID,
+			ExecutionID:      action.ExecutionID,
+			ActionType:       actionType,
+			Target:           &action.Target,
 			ClusterID:        m.cfg.ClusterID,
 			State:            StateFailed,
 			Success:          false,
@@ -627,13 +655,31 @@ func (m *Manager) ProcessAction(ctx context.Context, action *transport.Remediati
 			Timestamp:        time.Now().UnixMilli(),
 			AgentID:          m.cfg.AgentID,
 		})
-		m.metrics.Counter("skyops_agent_action_failures_total").Inc(map[string]string{"type": action.Type, "reason": "execution_failed"})
+		m.metrics.Counter("skyops_agent_action_failures_total").Inc(map[string]string{"type": actionType, "reason": "execution_failed"})
 		return
 	}
 
 	// 5. Verifying Phase
 	_ = sm.Transition(StateVerifying, "Verifying cluster reached desired state")
 	addTrace("VERIFYING", "Verifying cluster reached desired state", "")
+
+	m.reportJobState(ctx, JobStateUpdate{
+		JobID:            action.ID,
+		ActionID:         action.ID,
+		IncidentID:       action.IncidentID,
+		ExecutionID:      action.ExecutionID,
+		ActionType:       actionType,
+		Target:           &action.Target,
+		ClusterID:        m.cfg.ClusterID,
+		State:            StateVerifying,
+		Success:          false,
+		Message:          "Verifying cluster reached desired state",
+		ExecutionContext: execContext,
+		RuntimeTraces:    traces,
+		DurationMs:       time.Since(startTime).Milliseconds(),
+		Timestamp:        time.Now().UnixMilli(),
+		AgentID:          m.cfg.AgentID,
+	})
 
 	verifyTimeout := 30 * time.Second
 	if actionTimeout < 35*time.Second {
@@ -651,6 +697,25 @@ func (m *Manager) ProcessAction(ctx context.Context, action *transport.Remediati
 		_ = sm.Transition(StateRollingBack, fmt.Sprintf("Verification failed: %v; rolling back to %s", verifyErr, prevLiveState))
 		addTrace("ROLLING_BACK", fmt.Sprintf("Verification failed: %v; rolling back to %s", verifyErr, prevLiveState), verifyErr.Error())
 
+		m.reportJobState(ctx, JobStateUpdate{
+			JobID:            action.ID,
+			ActionID:         action.ID,
+			IncidentID:       action.IncidentID,
+			ExecutionID:      action.ExecutionID,
+			ActionType:       actionType,
+			Target:           &action.Target,
+			ClusterID:        m.cfg.ClusterID,
+			State:            StateRollingBack,
+			Success:          false,
+			Message:          fmt.Sprintf("Verification failed: %v; rolling back", verifyErr),
+			ExecutionContext: execContext,
+			RuntimeTraces:    traces,
+			StdErr:           verifyErr.Error(),
+			DurationMs:       time.Since(startTime).Milliseconds(),
+			Timestamp:        time.Now().UnixMilli(),
+			AgentID:          m.cfg.AgentID,
+		})
+
 		rbErr := m.executor.Rollback(context.Background(), action, prevLiveState)
 		if rbErr != nil {
 			_ = sm.Transition(StateFailed, fmt.Sprintf("Rollback failed: %v after verification error: %v", rbErr, verifyErr))
@@ -664,6 +729,10 @@ func (m *Manager) ProcessAction(ctx context.Context, action *transport.Remediati
 			m.reportJobState(ctx, JobStateUpdate{
 				JobID:            action.ID,
 				ActionID:         action.ID,
+				IncidentID:       action.IncidentID,
+				ExecutionID:      action.ExecutionID,
+				ActionType:       actionType,
+				Target:           &action.Target,
 				ClusterID:        m.cfg.ClusterID,
 				State:            StateFailed,
 				Success:          false,
@@ -688,16 +757,25 @@ func (m *Manager) ProcessAction(ctx context.Context, action *transport.Remediati
 		m.reportJobState(ctx, JobStateUpdate{
 			JobID:            action.ID,
 			ActionID:         action.ID,
+			IncidentID:       action.IncidentID,
+			ExecutionID:      action.ExecutionID,
+			ActionType:       actionType,
+			Target:           &action.Target,
 			ClusterID:        m.cfg.ClusterID,
-			State:            StateFailed,
+			State:            StateRolledBack,
 			Success:          false,
 			Message:          fmt.Sprintf("Verification failed: %v; successfully rolled back", verifyErr),
 			ExecutionContext: execContext,
 			RuntimeTraces:    traces,
-			StdErr:           verifyErr.Error(),
-			DurationMs:       time.Since(startTime).Milliseconds(),
-			Timestamp:        time.Now().UnixMilli(),
-			AgentID:          m.cfg.AgentID,
+			RollbackResult: map[string]interface{}{
+				"success":       true,
+				"restoredState": prevLiveState,
+				"rolledBackAt":  time.Now().UnixMilli(),
+			},
+			StdErr:     verifyErr.Error(),
+			DurationMs: time.Since(startTime).Milliseconds(),
+			Timestamp:  time.Now().UnixMilli(),
+			AgentID:    m.cfg.AgentID,
 		})
 		return
 	}
@@ -713,15 +791,24 @@ func (m *Manager) ProcessAction(ctx context.Context, action *transport.Remediati
 	m.reportJobState(ctx, JobStateUpdate{
 		JobID:            action.ID,
 		ActionID:         action.ID,
+		IncidentID:       action.IncidentID,
+		ExecutionID:      action.ExecutionID,
+		ActionType:       actionType,
+		Target:           &action.Target,
 		ClusterID:        m.cfg.ClusterID,
 		State:            StateSucceeded,
 		Success:          true,
 		Message:          "Remediation completed and verified successfully",
 		ExecutionContext: execContext,
 		RuntimeTraces:    traces,
-		DurationMs:       time.Since(startTime).Milliseconds(),
-		Timestamp:        time.Now().UnixMilli(),
-		AgentID:          m.cfg.AgentID,
+		VerificationResult: map[string]interface{}{
+			"success":       true,
+			"observedState": "Cluster target verified in healthy state",
+			"verifiedAt":    time.Now().UnixMilli(),
+		},
+		DurationMs: time.Since(startTime).Milliseconds(),
+		Timestamp:  time.Now().UnixMilli(),
+		AgentID:    m.cfg.AgentID,
 	})
 }
 

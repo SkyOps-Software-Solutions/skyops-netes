@@ -55,13 +55,14 @@ import {
   Invoice,
   InvoiceStatus,
   PlanId,
-  BillingInterval
+  BillingInterval,
+  CanonicalRemediationActionType
 } from '../src/types/index';
 import { TelemetryStore } from './telemetry_store';
 import { AGENT_VERSION } from '../src/config/version';
 import { IncidentDetector } from './engine/detector';
 import { generateIncidentFingerprint } from './engine/fingerprint';
-import { RemediationPolicyEngine } from './engine/policy';
+import { RemediationPolicyEngine, AUTONOMOUS_ACTION_ALLOWLIST } from './engine/policy';
 import {
   buildClusterObservabilityMetrics,
   buildNodeMetricsSummary,
@@ -2573,45 +2574,17 @@ export class DataStore {
           action.completedAt &&
           matchingResource.updatedAt > action.completedAt
         ) {
-          const containerStates =
-            (matchingResource.statusSummary?.containerStates as Array<{
-              name: string;
-              state: string;
-              ready: boolean;
-              image?: string;
-              waiting?: { reason: string; message?: string };
-            }>) ||
-            (matchingResource.containers as any) ||
-            [];
+          const vResult = RemediationPolicyEngine.verifyTelemetry(action, matchingResource, Date.now());
 
-          const targetContainer =
-            containerStates.find((c) => c.name === rem.parameters.containerName) ||
-            containerStates[0];
-
-          const hasPullError =
-            targetContainer?.waiting &&
-            (targetContainer.waiting.reason === 'ImagePullBackOff' ||
-              targetContainer.waiting.reason === 'ErrImagePull' ||
-              targetContainer.waiting.reason === 'InvalidImageName');
-
-          const isHealthy =
-            !hasPullError &&
-            (targetContainer?.ready === true ||
-              targetContainer?.state === 'running' ||
-              matchingResource.status === 'Running' ||
-              matchingResource.health === 'HEALTHY');
-
-          if (isHealthy) {
+          if (vResult.status === 'VERIFIED') {
             const isRollback = action.rollbackPlan?.supported === false;
             rem.status = isRollback ? 'ROLLED_BACK' : 'VERIFIED_RESOLVED';
             rem.updatedAt = Date.now();
             rem.verification = {
               verifiedAt: Date.now(),
               status: 'VERIFIED_RESOLVED',
-              observedState: isRollback
-                ? `Workload ${rem.targetResource.name} container ${rem.parameters.containerName} is healthy and running with restored image ${rem.parameters.proposedImage}.`
-                : `Workload ${rem.targetResource.name} container ${rem.parameters.containerName} is healthy and running with verified image ${rem.parameters.proposedImage}.`,
-              details: 'Authoritative telemetry verified zero ImagePull errors and normal ready state.',
+              observedState: vResult.observedState,
+              details: vResult.evidence.join('; '),
               checkCount: (rem.verification?.checkCount || 0) + 1
             };
 
@@ -2621,7 +2594,7 @@ export class DataStore {
               action.verificationResult = {
                 success: true,
                 observedState: rem.verification.observedState,
-                evidence: [rem.verification.details || 'Authoritative telemetry verified healthy state'],
+                evidence: vResult.evidence,
                 verifiedAt: Date.now()
               };
             }
@@ -2637,69 +2610,118 @@ export class DataStore {
               inc.resolution = {
                 source: 'AUTOMATIC_VERIFIED',
                 resolvedAt: inc.resolvedAt,
-                reason: isRollback
-                  ? `Safe rollback verified: ${rem.targetResource.kind} ${rem.targetResource.name} container image restored to ${rem.parameters.proposedImage}. Workload is Running & Ready.`
-                  : `Remediation verified: ${rem.targetResource.kind} ${rem.targetResource.name} container image patched to ${rem.parameters.proposedImage}. Workload is Running & Ready.`,
-                verificationDetails: 'Observed healthy Running/Ready state from live cluster telemetry after agent execution.'
+                reason: vResult.observedState,
+                verificationDetails: vResult.evidence.join('; ')
               };
               this.addTimelineEvent(inc.id, {
                 type: isRollback ? 'REMEDIATION_ROLLED_BACK' : 'RECOVERY',
                 actor: { type: 'AGENT', name: 'SkyOps Verification Engine' },
                 description: isRollback
-                  ? `Safe rollback verified: ${rem.targetResource.kind} ${rem.targetResource.name} container image restored to ${rem.parameters.proposedImage}. Workload is Running & Ready.`
-                  : `Remediation verified: ${rem.targetResource.kind} ${rem.targetResource.name} container image patched to ${rem.parameters.proposedImage}. Workload is Running & Ready.`,
+                  ? `Safe rollback verified: ${rem.targetResource.kind} ${rem.targetResource.name}. Workload is Running & Ready.`
+                  : `Remediation verified: ${rem.targetResource.kind} ${rem.targetResource.name}. Workload is Running & Ready.`,
                 metadata: { resolutionSource: 'AUTOMATIC_VERIFIED', actionId: action?.id, isRollback }
               });
+
+              auditService.record({
+                orgId: inc.orgId,
+                actorId: 'system:verification-engine',
+                actorName: 'SkyOps Verification Engine',
+                actorType: 'AGENT',
+                action: isRollback ? 'remediation.rollback' : 'remediation.executed',
+                resourceType: 'remediation',
+                resourceId: rem.id,
+                result: 'SUCCESS',
+                details: {
+                  incidentId: inc.id,
+                  actionId: action?.id,
+                  resolutionSource: 'AUTOMATIC_VERIFIED',
+                  verificationResult: vResult
+                }
+              });
+            }
+          } else if (vResult.status === 'VERIFICATION_FAILED') {
+            rem.status = 'VERIFICATION_FAILED';
+            rem.updatedAt = Date.now();
+            rem.verification = {
+              status: 'VERIFICATION_FAILED',
+              checkCount: (rem.verification?.checkCount || 0) + 1,
+              observedState: vResult.observedState
+            };
+
+            if (action) {
+              action.status = 'VERIFICATION_FAILED';
+              action.verificationResult = {
+                success: false,
+                observedState: rem.verification.observedState,
+                failureReason: vResult.failureReason || 'Telemetry verification failed',
+                evidence: vResult.evidence
+              };
+            }
+
+            this.addTimelineEvent(rem.incidentId, {
+              type: 'REMEDIATION_VERIFICATION_FAILED',
+              actor: { type: 'AGENT', name: 'SkyOps Verification Engine' },
+              description: `Remediation verification failed: ${vResult.observedState}. Pre-action configuration is preserved.`,
+              metadata: { actionId: action?.id, failureReason: vResult.failureReason || 'Verification failed' }
+            });
+
+            const failures = this.recordIncidentFailure(rem.incidentId);
+            const policy = this.getRemediationPolicy(action?.orgId || '', clusterId);
+            if (failures >= policy.maxAttemptsPerIncident) {
+              this.addTimelineEvent(rem.incidentId, {
+                type: 'CIRCUIT_BREAKER_TRIPPED',
+                actor: { type: 'SYSTEM', name: 'SkyOps Circuit Breaker' },
+                description: `Remediation verification failed ${failures} times. Tripping circuit breaker for incident ${rem.incidentId}.`,
+                metadata: { failures, maxAttempts: policy.maxAttemptsPerIncident }
+              });
+            }
+
+            // Closed-loop Automatic Rollback: revert to pre-remediation state on failure in autonomous mode
+            const isAutoRollback =
+              policy.remediationMode === 'CONTROLLED_AUTONOMOUS' ||
+              action?.requestedBy?.type === 'AUTONOMOUS_POLICY' ||
+              (policy as any).autoRollbackOnVerificationFailure === true;
+
+            if (
+              isAutoRollback &&
+              action &&
+              action.rollbackPlan?.supported &&
+              action.rollbackPlan.rollbackValue &&
+              (action.status as string) !== 'ROLLING_BACK' &&
+              (action.status as string) !== 'ROLLED_BACK'
+            ) {
+              try {
+                this.rollbackRemediation(
+                  rem.incidentId,
+                  action.orgId,
+                  { id: 'policy:autonomous-rollback', name: 'SkyOps Autonomous Rollback Engine' },
+                  `Automatic rollback triggered: remediation verification failed (${vResult.failureReason || 'health checks failed'})`
+                );
+
+                const inc = this.incidents.get(rem.incidentId);
+                if (inc) {
+                  inc.severity = 'CRITICAL';
+                  inc.status = 'IN_PROGRESS';
+                  this.addTimelineEvent(inc.id, {
+                    type: 'AUTOMATIC_ROLLBACK',
+                    actor: { type: 'SYSTEM', name: 'SkyOps Autonomous Rollback Engine' },
+                    description: `Automatic rollback initiated: remediation failed verification. Restoring pre-remediation configuration. Operator intervention requested.`,
+                    metadata: { actionId: action.id, failureReason: vResult.failureReason }
+                  });
+                }
+              } catch (rollbackErr: any) {
+                console.error('[SkyOps Store] Automatic rollback dispatch warning:', rollbackErr?.message || rollbackErr);
+              }
             }
           } else {
-            const timeoutSec = action?.verificationPlan?.timeoutSeconds || 300;
-            const isTimedOut = action?.completedAt && Date.now() - action.completedAt > timeoutSec * 1000;
-
-            if (hasPullError || isTimedOut) {
-              rem.status = 'VERIFICATION_FAILED';
-              rem.updatedAt = Date.now();
-              rem.verification = {
-                status: 'VERIFICATION_FAILED',
-                checkCount: (rem.verification?.checkCount || 0) + 1,
-                observedState: `Verification failed: container error detected (${targetContainer?.waiting?.reason || 'Timed out'})`
-              };
-
-              if (action) {
-                action.status = 'VERIFICATION_FAILED';
-                action.verificationResult = {
-                  success: false,
-                  observedState: rem.verification.observedState,
-                  failureReason: targetContainer?.waiting?.reason || 'Telemetry verification timed out',
-                  evidence: [targetContainer?.waiting?.message || 'Container failed to enter Ready/Running state']
-                };
-              }
-
-              this.addTimelineEvent(rem.incidentId, {
-                type: 'REMEDIATION_VERIFICATION_FAILED',
-                actor: { type: 'AGENT', name: 'SkyOps Verification Engine' },
-                description: `Remediation verification failed: target container entered error state (${targetContainer?.waiting?.reason || 'Timed out'}). Pre-action configuration is preserved. Safe rollback available.`,
-                metadata: { actionId: action?.id, failureReason: targetContainer?.waiting?.reason || 'Timed out' }
-              });
-
-              const failures = this.recordIncidentFailure(rem.incidentId);
-              const policy = this.getRemediationPolicy(action?.orgId || '', clusterId);
-              if (failures >= policy.maxAttemptsPerIncident) {
-                this.addTimelineEvent(rem.incidentId, {
-                  type: 'CIRCUIT_BREAKER_TRIPPED',
-                  actor: { type: 'SYSTEM', name: 'SkyOps Circuit Breaker' },
-                  description: `Remediation verification failed ${failures} times. Tripping circuit breaker for incident ${rem.incidentId}.`,
-                  metadata: { failures, maxAttempts: policy.maxAttemptsPerIncident }
-                });
-              }
-            } else {
-              rem.status = 'VERIFYING';
-              rem.updatedAt = Date.now();
-              rem.verification = {
-                status: 'PENDING',
-                checkCount: (rem.verification?.checkCount || 0) + 1,
-                observedState: `Workload observation pending: container state is currently ${targetContainer?.state || 'waiting'}`
-              };
-            }
+            // Still verifying (observation window in progress)
+            rem.status = 'VERIFYING';
+            rem.updatedAt = Date.now();
+            rem.verification = {
+              status: 'PENDING',
+              checkCount: (rem.verification?.checkCount || 0) + 1,
+              observedState: vResult.observedState
+            };
           }
         } else if (rem.status === 'EXECUTED' || (action && action.status === 'SUCCEEDED')) {
           rem.status = 'VERIFYING';
@@ -2884,29 +2906,218 @@ export class DataStore {
 
   private createCanonicalRemediationAction(params: {
     incident: Incident;
-    containerName: string;
-    expectedCurrentValue: string;
+    actionType?: CanonicalRemediationActionType;
+    targetKind?: string;
+    targetName?: string;
+    targetNamespace?: string;
+    targetContainer?: string;
+    targetUid?: string;
+    containerName?: string;
+    expectedCurrentValue?: string;
     proposedValue: string;
+    parameters?: Record<string, unknown>;
     requestedBy: { type: 'AI' | 'USER' | 'SYSTEM' | 'AUTONOMOUS_POLICY'; id?: string; name: string };
     approver?: { id: string; name: string; email?: string };
     status?: RemediationActionStatus;
     riskLevel?: AIRiskLevel;
     policy: RemediationPolicy;
+    verificationPlan?: {
+      expectedState: string;
+      conditions?: Array<{ type: string; status: string; description?: string }>;
+      observationWindowSeconds: number;
+      timeoutSeconds: number;
+    };
+    rollbackPlan?: {
+      supported: boolean;
+      strategy: string;
+      rollbackValue?: string;
+    };
+    groundingEvidence?: Array<{ source: string; reason: string; message: string; timestamp?: number }>;
   }): RemediationAction {
+    const actionType: CanonicalRemediationActionType = params.actionType || 'ReplacePodImage';
+    const allowedTypes: CanonicalRemediationActionType[] = [
+      'RestartPod',
+      'RolloutRestart',
+      'RollbackDeployment',
+      'ReplacePodImage',
+      'ScaleDeployment'
+    ];
+    if (!allowedTypes.includes(actionType)) {
+      throw new Error(`Unknown or disallowed remediation action type: ${actionType}`);
+    }
+
     const now = Date.now();
     const actionId = `act-${crypto.randomBytes(12).toString('hex')}`;
     const executionId = `exec-${crypto.randomBytes(8).toString('hex')}`;
+
+    const cluster = this.clusters.get(params.incident.clusterId);
+    const targetKind = params.targetKind || (
+      actionType === 'RestartPod'
+        ? (params.incident.resourceKind || 'Pod')
+        : (actionType === 'RolloutRestart' || actionType === 'RollbackDeployment' || actionType === 'ScaleDeployment'
+          ? (params.incident.resourceKind && ['Deployment', 'StatefulSet', 'DaemonSet'].includes(params.incident.resourceKind) ? params.incident.resourceKind : 'Deployment')
+          : (params.incident.resourceKind || 'Pod'))
+    );
+    const targetNamespace = params.targetNamespace || params.incident.namespace || 'default';
+    const targetName = params.targetName || params.incident.resourceName;
+    const targetContainer = params.targetContainer || params.containerName || '';
+    const clusterRes = this.resources.get(params.incident.clusterId) || [];
+    const targetRes = clusterRes.find(
+      (r) =>
+        r.kind.toLowerCase() === targetKind.toLowerCase() &&
+        (r.namespace || 'default').toLowerCase() === targetNamespace.toLowerCase() &&
+        r.name.toLowerCase() === targetName.toLowerCase()
+    );
+    const targetUid = String(params.targetUid || targetRes?.uid || (params.incident.technicalDetails as any)?.uid || '');
+
+    let fieldPath = `/spec/containers/${targetContainer}/image`;
+    if (actionType === 'RestartPod') {
+      fieldPath = targetKind.toLowerCase() === 'pod' ? '/metadata/uid' : '/spec/template/metadata/annotations/kubectl.kubernetes.io~1restartedAt';
+    } else if (actionType === 'RolloutRestart') {
+      fieldPath = '/spec/template/metadata/annotations/kubectl.kubernetes.io~1restartedAt';
+    } else if (actionType === 'RollbackDeployment') {
+      fieldPath = '/spec/template';
+    } else if (actionType === 'ScaleDeployment') {
+      fieldPath = '/spec/replicas';
+    }
+
+    const expectedCurrentValue: string = String(params.expectedCurrentValue ?? (
+      actionType === 'ReplacePodImage'
+        ? (params.parameters?.currentImage as string || (targetRes?.containers?.find(c => c.name === targetContainer)?.image) || '')
+        : (actionType === 'ScaleDeployment'
+          ? String(targetRes?.specReplicas || (targetRes?.statusSummary as any)?.replicas || '1')
+          : (actionType === 'RestartPod'
+            ? (targetUid || 'running')
+            : (actionType === 'RollbackDeployment'
+              ? (params.parameters?.currentRevision as string || 'current-revision')
+              : (targetRes?.annotations?.['kubectl.kubernetes.io/restartedAt'] || ''))))
+    ));
+
     const idempotencyKey = RemediationPolicyEngine.generateIdempotencyKey(
       params.incident.clusterId,
-      params.incident.namespace,
-      params.incident.resourceKind || 'Pod',
-      params.incident.resourceName,
-      params.containerName,
-      `/spec/containers/${params.containerName}/image`,
+      targetNamespace,
+      targetKind,
+      targetName,
+      targetContainer || 'workload',
+      fieldPath,
       params.proposedValue
     );
 
-    const cluster = this.clusters.get(params.incident.clusterId);
+    // Default verification plan per action type
+    let verificationPlan = params.verificationPlan;
+    if (!verificationPlan) {
+      if (actionType === 'RestartPod') {
+        verificationPlan = {
+          expectedState: `Workload ${targetName} recreated and healthy with zero CrashLoopBackOff`,
+          conditions: [
+            { type: 'Ready', status: 'True', description: 'Pod Ready probe passing' },
+            { type: 'ContainersReady', status: 'True', description: 'All containers ready' }
+          ],
+          observationWindowSeconds: 30,
+          timeoutSeconds: 300
+        };
+      } else if (actionType === 'RolloutRestart') {
+        verificationPlan = {
+          expectedState: `Rollout complete: all replicas available with 0 unavailable`,
+          conditions: [
+            { type: 'Progressing', status: 'True', description: 'Rollout progressed' },
+            { type: 'Available', status: 'True', description: 'Replicas available' }
+          ],
+          observationWindowSeconds: 45,
+          timeoutSeconds: 300
+        };
+      } else if (actionType === 'RollbackDeployment') {
+        verificationPlan = {
+          expectedState: `Previous healthy deployment revision restored with all replicas available and 0 CrashLoopBackOff`,
+          conditions: [
+            { type: 'Progressing', status: 'True', description: 'Rollback progressed' },
+            { type: 'Available', status: 'True', description: 'All replicas available' }
+          ],
+          observationWindowSeconds: 45,
+          timeoutSeconds: 300
+        };
+      } else if (actionType === 'ScaleDeployment') {
+        verificationPlan = {
+          expectedState: `Deployment scaled to ${params.proposedValue} available replicas`,
+          conditions: [
+            { type: 'Available', status: 'True', description: 'Available replicas match target' }
+          ],
+          observationWindowSeconds: 30,
+          timeoutSeconds: 300
+        };
+      } else {
+        verificationPlan = {
+          expectedState: `Pod is Running and container "${targetContainer}" is Ready with image "${params.proposedValue}"`,
+          conditions: [
+            { type: 'Ready', status: 'True', description: 'Container ready probe passes' },
+            { type: 'ContainersReady', status: 'True', description: 'All containers ready' }
+          ],
+          observationWindowSeconds: 30,
+          timeoutSeconds: 300
+        };
+      }
+    }
+
+    // Default rollback plan per action type
+    let rollbackPlan = params.rollbackPlan;
+    if (!rollbackPlan) {
+      if (actionType === 'ReplacePodImage') {
+        rollbackPlan = {
+          supported: true,
+          strategy: 'Revert container image specification to previous known value',
+          rollbackValue: expectedCurrentValue
+        };
+      } else if (actionType === 'RollbackDeployment') {
+        rollbackPlan = {
+          supported: true,
+          strategy: 'Revert deployment to captured pre-remediation revision/template',
+          rollbackValue: expectedCurrentValue
+        };
+      } else if (actionType === 'RolloutRestart') {
+        rollbackPlan = {
+          supported: true,
+          strategy: 'Restore previous restartedAt annotation',
+          rollbackValue: expectedCurrentValue
+        };
+      } else if (actionType === 'ScaleDeployment') {
+        rollbackPlan = {
+          supported: true,
+          strategy: 'Revert deployment replicas to previous count',
+          rollbackValue: expectedCurrentValue
+        };
+      } else {
+        rollbackPlan = {
+          supported: false,
+          strategy: 'Restart is an idempotent recreation operation',
+          rollbackValue: ''
+        };
+      }
+    }
+
+    const groundingEvidence = params.groundingEvidence || (
+      params.incident.technicalDetails?.containers
+        ? [
+            {
+              source: 'telemetry',
+              reason: 'observed',
+              message: `Live observed state for ${targetKind}/${targetName} is "${expectedCurrentValue}"`,
+              timestamp: now
+            }
+          ]
+        : []
+    );
+
+    const mergedParameters: Record<string, unknown> = {
+      containerName: targetContainer,
+      currentImage: expectedCurrentValue,
+      proposedImage: params.proposedValue,
+      targetReplicas: actionType === 'ScaleDeployment' ? parseInt(params.proposedValue || '1', 10) : undefined,
+      previousReplicas: actionType === 'ScaleDeployment' ? parseInt(expectedCurrentValue || '1', 10) : undefined,
+      restartedAt: actionType === 'RolloutRestart' || actionType === 'RestartPod' ? params.proposedValue : undefined,
+      previousRevision: actionType === 'RollbackDeployment' ? params.proposedValue : undefined,
+      currentRevision: actionType === 'RollbackDeployment' ? expectedCurrentValue : undefined,
+      ...(params.parameters || {})
+    };
 
     const action: RemediationAction = {
       id: actionId,
@@ -2914,22 +3125,19 @@ export class DataStore {
       orgId: params.incident.orgId,
       clusterId: params.incident.clusterId,
       clusterName: cluster?.name || params.incident.clusterName,
-      actionType: 'ReplacePodImage',
-      type: 'ReplacePodImage',
+      actionType,
+      type: (actionType === 'ReplacePodImage' ? 'ReplacePodImage' : actionType) as any,
       target: {
-        kind: 'Pod',
-        namespace: params.incident.namespace,
-        name: params.incident.resourceName,
-        container: params.containerName
+        kind: targetKind,
+        namespace: targetNamespace,
+        name: targetName,
+        container: targetContainer || undefined,
+        uid: targetUid
       },
-      fieldPath: `/spec/containers/${params.containerName}/image`,
-      expectedCurrentValue: params.expectedCurrentValue,
+      fieldPath,
+      expectedCurrentValue,
       proposedValue: params.proposedValue,
-      parameters: {
-        containerName: params.containerName,
-        currentImage: params.expectedCurrentValue,
-        proposedImage: params.proposedValue
-      },
+      parameters: mergedParameters as any,
       requestedBy: params.requestedBy,
       approvingUserId: params.approver?.id,
       approvingUserName: params.approver?.name,
@@ -2946,32 +3154,11 @@ export class DataStore {
       expiresAt: now + (params.policy.actionExpirationMs || 15 * 60 * 1000),
       executionId,
       idempotencyKey,
-      verificationPlan: {
-        expectedState: `Pod is Running and container "${params.containerName}" is Ready with image "${params.proposedValue}"`,
-        conditions: [
-          { type: 'Ready', status: 'True', description: 'Container ready probe passes' },
-          { type: 'ContainersReady', status: 'True', description: 'All containers ready' }
-        ],
-        observationWindowSeconds: 30,
-        timeoutSeconds: 300
-      },
-      rollbackPlan: {
-        supported: true,
-        strategy: 'Revert container image specification to previous known value',
-        rollbackValue: params.expectedCurrentValue
-      },
+      verificationPlan,
+      rollbackPlan,
       riskLevel: params.riskLevel || 'LOW',
       isExecutable: true,
-      groundingEvidence: params.incident.technicalDetails?.containers
-        ? [
-            {
-              source: 'telemetry',
-              reason: 'observed',
-              message: `Live observed container image is "${params.expectedCurrentValue}"`,
-              timestamp: now
-            }
-          ]
-        : []
+      groundingEvidence
     };
 
     return action;
@@ -2987,38 +3174,86 @@ export class DataStore {
       return null;
     }
 
-    if (rem.isExecutable === false || incident.resourceKind !== 'Pod') {
+    if (rem.isExecutable === false) {
       return null;
     }
 
-    const containerName = rem.parameters.containerName || incident.resourceName;
-    const proposedImage = (rem.parameters.proposedImage || '').trim();
-    const observedContainer = (incident.technicalDetails?.containers || []).find((c) => c.name === containerName);
-    const expectedCurrentValue = observedContainer?.image || rem.parameters.currentImage || '';
+    // Map AI or structured action type to CanonicalRemediationActionType
+    let canonicalType: CanonicalRemediationActionType = 'ReplacePodImage';
+    const rawActionType = (rem.actionType || '').trim();
+    if (rawActionType === 'RestartPod') {
+      canonicalType = 'RestartPod';
+    } else if (rawActionType === 'RolloutRestart' || rawActionType === 'ROLLOUT_RESTART') {
+      canonicalType = 'RolloutRestart';
+    } else if (rawActionType === 'RollbackDeployment') {
+      canonicalType = 'RollbackDeployment';
+    } else if (rawActionType === 'ScaleDeployment' || rawActionType === 'SCALE_REPLICAS') {
+      canonicalType = 'ScaleDeployment';
+    } else if (rawActionType === 'ReplacePodImage' || rawActionType === 'UPDATE_CONTAINER_IMAGE' || rawActionType === 'REVERT_TAG') {
+      canonicalType = 'ReplacePodImage';
+    }
 
-    if (!proposedImage || proposedImage === 'unknown' || !expectedCurrentValue || expectedCurrentValue === proposedImage) {
+    // ScaleDeployment is never executed autonomously
+    if (!AUTONOMOUS_ACTION_ALLOWLIST.includes(canonicalType)) {
       return null;
     }
 
     const clusterRes = this.resources.get(incident.clusterId) || [];
+    const targetKind = rem.targetResource?.kind || incident.resourceKind || 'Pod';
+    const targetNamespace = rem.targetResource?.namespace || incident.namespace || 'default';
+    const targetName = rem.targetResource?.name || incident.resourceName;
+    const containerName = rem.parameters?.containerName || incident.resourceName;
+
     const targetRes = clusterRes.find(
       (r) =>
-        r.kind.toLowerCase() === 'pod' &&
-        (r.namespace || 'default').toLowerCase() === incident.namespace.toLowerCase() &&
-        r.name.toLowerCase() === incident.resourceName.toLowerCase()
+        r.kind.toLowerCase() === targetKind.toLowerCase() &&
+        (r.namespace || 'default').toLowerCase() === targetNamespace.toLowerCase() &&
+        r.name.toLowerCase() === targetName.toLowerCase()
     );
 
-    const isStandalonePod = !(
+    // Live resource must exist in cluster telemetry
+    if (!targetRes) {
+      return null;
+    }
+
+    const isStandalonePod = targetKind.toLowerCase() === 'pod' && !(
       (targetRes?.ownerReferences && targetRes.ownerReferences.length > 0) ||
       (Array.isArray((incident.technicalDetails as any)?.ownerReferences) &&
         (incident.technicalDetails as any).ownerReferences.length > 0)
     );
 
+    // If ReplacePodImage on Pod, Pod must be standalone
+    if (canonicalType === 'ReplacePodImage' && targetKind.toLowerCase() === 'pod' && !isStandalonePod) {
+      return null;
+    }
+
+    // Determine proposed and expected values
+    let proposedValue = '';
+    let expectedCurrentValue = '';
+
+    if (canonicalType === 'ReplacePodImage') {
+      proposedValue = (rem.parameters?.proposedImage || '').trim();
+      const observedContainer = (incident.technicalDetails?.containers || []).find((c) => c.name === containerName) || (targetRes?.containers || []).find((c) => c.name === containerName);
+      expectedCurrentValue = observedContainer?.image || rem.parameters?.currentImage || '';
+      if (!proposedValue || proposedValue === 'unknown' || !expectedCurrentValue || expectedCurrentValue === proposedValue) {
+        return null;
+      }
+    } else if (canonicalType === 'RolloutRestart') {
+      proposedValue = new Date().toISOString();
+      expectedCurrentValue = targetRes.annotations?.['kubectl.kubernetes.io/restartedAt'] || '';
+    } else if (canonicalType === 'RestartPod') {
+      proposedValue = new Date().toISOString();
+      expectedCurrentValue = targetRes.uid || 'active';
+    } else if (canonicalType === 'RollbackDeployment') {
+      proposedValue = (rem.parameters?.proposedImage as string) || (rem.parameters?.targetRevision as string) || 'previous-revision';
+      expectedCurrentValue = (rem.parameters?.currentImage as string) || (rem.parameters?.currentRevision as string) || 'current-revision';
+    }
+
     const hasActiveLock = this.hasActiveTargetRemediation(
       incident.clusterId,
-      'Pod',
-      incident.namespace,
-      incident.resourceName,
+      targetKind,
+      targetNamespace,
+      targetName,
       containerName
     );
 
@@ -3028,9 +3263,14 @@ export class DataStore {
 
     const candidateAction = this.createCanonicalRemediationAction({
       incident,
-      containerName,
+      actionType: canonicalType,
+      targetKind,
+      targetName,
+      targetNamespace,
+      targetContainer: containerName,
+      targetUid: targetRes.uid,
       expectedCurrentValue,
-      proposedValue: proposedImage,
+      proposedValue,
       requestedBy: { type: 'AUTONOMOUS_POLICY', name: 'SkyOps Autonomous Policy Engine' },
       riskLevel: rem.reasoning?.risk || 'LOW',
       policy
@@ -3082,7 +3322,7 @@ export class DataStore {
     rem.execution = {
       dispatchedAt: now,
       status: 'PENDING',
-      message: `Autonomous ReplacePodImage action dispatched to SkyOps Agent on cluster "${incident.clusterName}".`
+      message: `Autonomous ${canonicalType} action dispatched to SkyOps Agent on cluster "${incident.clusterName}".`
     };
 
     incident.status = 'IN_PROGRESS';
@@ -3094,16 +3334,39 @@ export class DataStore {
       description: `Autonomous remediation authorized: ${evaluation.reason}`,
       metadata: {
         actionId: candidateAction.id,
+        actionType: canonicalType,
         policyMode: policy.remediationMode,
-        proposedImage
+        proposedValue
       }
     });
 
     this.addTimelineEvent(incident.id, {
       type: 'REMEDIATION_APPROVED',
       actor: { type: 'SYSTEM', name: 'SkyOps Autonomous Policy Engine' },
-      description: `Autonomous policy dispatched ReplacePodImage for ${incident.namespace}/${incident.resourceName}:${containerName}`,
-      metadata: { actionId: candidateAction.id, before: expectedCurrentValue, proposed: proposedImage }
+      description: `Autonomous policy dispatched ${canonicalType} for ${targetNamespace}/${targetName}`,
+      metadata: { actionId: candidateAction.id, actionType: canonicalType, before: expectedCurrentValue, proposed: proposedValue }
+    });
+
+    auditService.record({
+      orgId: incident.orgId,
+      actorId: 'policy:autonomous',
+      actorName: 'SkyOps Autonomous Policy Engine',
+      actorType: 'SYSTEM',
+      action: 'remediation.approved',
+      resourceType: 'remediation',
+      resourceId: candidateAction.id,
+      result: 'SUCCESS',
+      details: {
+        incidentId: incident.id,
+        actionId: candidateAction.id,
+        actionType: canonicalType,
+        executionMode: 'auto',
+        policyMode: policy.remediationMode,
+        target: candidateAction.target,
+        parameters: candidateAction.parameters,
+        preRemediationState: expectedCurrentValue,
+        proposedValue
+      }
     });
 
     this.saveSnapshot();
@@ -3202,7 +3465,7 @@ export class DataStore {
     incidentId: string,
     orgId: string,
     approver: { id: string; name: string; email?: string },
-    overrides?: { proposedImage?: string; comments?: string }
+    overrides?: { proposedImage?: string; targetReplicas?: number; comments?: string }
   ): StructuredRemediation {
     const incident = this.incidents.get(incidentId);
     if (!incident || incident.orgId !== orgId) {
@@ -3222,77 +3485,170 @@ export class DataStore {
       throw new Error(rem.unexecutableReason || 'Remediation proposal is marked as non-executable. Review recommended manual inspection steps.');
     }
 
-    // Automated execution is strictly constrained to supported Kubernetes mutation: ReplacePodImage
-    if (incident.resourceKind !== 'Pod') {
-      throw new Error(`Cannot execute automated remediation: Resource kind "${incident.resourceKind}" is not supported for automated mutation. Only Pods can be mutated safely.`);
+    // Determine canonical action type
+    let canonicalType: CanonicalRemediationActionType = 'ReplacePodImage';
+    const rawActionType = (rem.actionType || '').trim();
+    if (rawActionType === 'RestartPod') {
+      canonicalType = 'RestartPod';
+    } else if (rawActionType === 'RolloutRestart' || rawActionType === 'ROLLOUT_RESTART') {
+      canonicalType = 'RolloutRestart';
+    } else if (rawActionType === 'RollbackDeployment') {
+      canonicalType = 'RollbackDeployment';
+    } else if (rawActionType === 'ScaleDeployment' || rawActionType === 'SCALE_REPLICAS') {
+      canonicalType = 'ScaleDeployment';
+    } else if (rawActionType === 'ReplacePodImage' || rawActionType === 'UPDATE_CONTAINER_IMAGE' || rawActionType === 'REVERT_TAG') {
+      canonicalType = 'ReplacePodImage';
     }
 
-    // Strictly forbid automated mutations on controller-managed Pods
     const clusterRes = this.resources.get(incident.clusterId) || [];
+    const targetKind = rem.targetResource?.kind || incident.resourceKind || 'Pod';
+    const targetNamespace = rem.targetResource?.namespace || incident.namespace || 'default';
+    const targetName = rem.targetResource?.name || incident.resourceName;
+    const containerName = rem.parameters?.containerName || incident.resourceName;
+
     const targetRes = clusterRes.find(
       (r) =>
-        r.kind.toLowerCase() === 'pod' &&
-        (r.namespace || 'default').toLowerCase() === incident.namespace.toLowerCase() &&
-        r.name.toLowerCase() === incident.resourceName.toLowerCase()
+        r.kind.toLowerCase() === targetKind.toLowerCase() &&
+        (r.namespace || 'default').toLowerCase() === targetNamespace.toLowerCase() &&
+        r.name.toLowerCase() === targetName.toLowerCase()
     );
-    const ownerRefs =
-      (targetRes?.ownerReferences && targetRes.ownerReferences.length > 0)
-        ? targetRes.ownerReferences
-        : (Array.isArray((incident.technicalDetails as any)?.ownerReferences) && (incident.technicalDetails as any).ownerReferences.length > 0)
-        ? (incident.technicalDetails as any).ownerReferences
-        : [];
 
-    if (ownerRefs.length > 0) {
-      const ownerList = ownerRefs.map((o: any) => o.kind || 'Controller').join(', ');
-      throw new Error(`Cannot execute automated remediation: Pod "${incident.resourceName}" is managed by controller (${ownerList}). In-cluster agent strictly refuses to mutate controller-managed pods directly. Update the parent controller manifest instead.`);
+    if (!targetRes) {
+      throw new Error(`Target ${targetKind} "${targetNamespace}/${targetName}" not found in live cluster telemetry.`);
     }
 
-    if (rem.actionType !== 'UPDATE_CONTAINER_IMAGE' && rem.actionType !== 'REVERT_TAG') {
-      throw new Error(`Cannot execute automated remediation: Action type "${rem.actionType}" is not supported for automated agent execution.`);
-    }
-
-    const containerName = rem.parameters.containerName || incident.resourceName;
-    const effectiveImage = (overrides?.proposedImage !== undefined ? overrides.proposedImage : rem.parameters.proposedImage || '').trim();
-    if (!effectiveImage || effectiveImage === 'unknown' || effectiveImage === 'N/A') {
-      throw new Error('Cannot approve remediation: No valid target container image specified');
-    }
-
-    // Enforce grounding: generic tags are blocked unless explicitly grounded in telemetry context
-    const genericTags = [':latest', ':previous', ':stable', ':fixed', ':prod', ':v1', ':test', ':tag', ':some-tag'];
-    if (!overrides?.proposedImage && genericTags.some((gt) => effectiveImage.toLowerCase().endsWith(gt))) {
-      const contextText = JSON.stringify(incident.technicalDetails || {}).toLowerCase();
-      if (!contextText.includes(effectiveImage.toLowerCase())) {
-        throw new Error(`Cannot execute automated remediation: Proposed image tag "${effectiveImage}" is not grounded in cluster telemetry. Please specify an exact verified replacement image tag.`);
+    // Workload kind validation
+    if (canonicalType === 'RestartPod') {
+      if (targetKind.toLowerCase() !== 'pod' && targetKind.toLowerCase() !== 'deployment') {
+        throw new Error(`Cannot execute RestartPod on resource kind "${targetKind}". Only Pod or Deployment is supported.`);
+      }
+    } else if (canonicalType === 'RolloutRestart') {
+      if (!['deployment', 'statefulset', 'daemonset'].includes(targetKind.toLowerCase())) {
+        throw new Error(`Cannot execute RolloutRestart on resource kind "${targetKind}". Only Deployment, StatefulSet, or DaemonSet is supported.`);
+      }
+    } else if (canonicalType === 'RollbackDeployment') {
+      if (targetKind.toLowerCase() !== 'deployment') {
+        throw new Error(`Cannot execute RollbackDeployment on resource kind "${targetKind}". Only Deployment is supported.`);
+      }
+    } else if (canonicalType === 'ScaleDeployment') {
+      if (targetKind.toLowerCase() !== 'deployment') {
+        throw new Error(`Cannot execute ScaleDeployment on resource kind "${targetKind}". Only Deployment is supported.`);
+      }
+      const targetReplicas = overrides?.targetReplicas ?? rem.parameters?.targetReplicas;
+      if (typeof targetReplicas === 'number' && targetReplicas <= 0) {
+        throw new Error('Cannot execute ScaleDeployment: Scale-to-zero is prohibited by safety policy.');
+      }
+    } else if (canonicalType === 'ReplacePodImage') {
+      if (targetKind.toLowerCase() === 'pod') {
+        const ownerRefs = (targetRes.ownerReferences && targetRes.ownerReferences.length > 0)
+          ? targetRes.ownerReferences
+          : (Array.isArray((incident.technicalDetails as any)?.ownerReferences) && (incident.technicalDetails as any).ownerReferences.length > 0)
+          ? (incident.technicalDetails as any).ownerReferences
+          : [];
+        if (ownerRefs.length > 0) {
+          const ownerList = ownerRefs.map((o: any) => o.kind || 'Controller').join(', ');
+          throw new Error(`Cannot execute automated image patch: Pod "${incident.resourceName}" is managed by controller (${ownerList}). In-cluster agent strictly refuses to mutate controller-managed pods directly. Update the parent controller manifest instead.`);
+        }
       }
     }
 
-    const observedContainer = (incident.technicalDetails?.containers || []).find((c) => c.name === containerName);
-    const expectedCurrentValue = observedContainer?.image || rem.parameters.currentImage || '';
-    if (!expectedCurrentValue || expectedCurrentValue === effectiveImage) {
-      throw new Error('Cannot approve remediation: Expected current image is invalid or identical to proposed value');
+    // Determine proposed and expected values
+    let proposedValue = '';
+    let expectedCurrentValue = '';
+
+    if (canonicalType === 'ReplacePodImage') {
+      const effectiveImage = (overrides?.proposedImage !== undefined ? overrides.proposedImage : rem.parameters?.proposedImage || '').trim();
+      if (!effectiveImage || effectiveImage === 'unknown' || effectiveImage === 'N/A') {
+        throw new Error('Cannot approve remediation: No valid target container image specified');
+      }
+
+      // Enforce grounding: generic tags are blocked unless explicitly grounded in telemetry context
+      const genericTags = [':latest', ':previous', ':stable', ':fixed', ':prod', ':v1', ':test', ':tag', ':some-tag'];
+      if (!overrides?.proposedImage && genericTags.some((gt) => effectiveImage.toLowerCase().endsWith(gt))) {
+        const contextText = JSON.stringify(incident.technicalDetails || {}).toLowerCase();
+        if (!contextText.includes(effectiveImage.toLowerCase())) {
+          throw new Error(`Cannot execute automated remediation: Proposed image tag "${effectiveImage}" is not grounded in cluster telemetry. Please specify an exact verified replacement image tag.`);
+        }
+      }
+
+      const observedContainer = (incident.technicalDetails?.containers || []).find((c) => c.name === containerName) || (targetRes.containers || []).find((c) => c.name === containerName);
+      expectedCurrentValue = observedContainer?.image || rem.parameters?.currentImage || '';
+      if (!expectedCurrentValue || expectedCurrentValue === effectiveImage) {
+        throw new Error('Cannot approve remediation: Expected current image is invalid or identical to proposed value');
+      }
+      proposedValue = effectiveImage;
+
+      rem.parameters.proposedImage = effectiveImage;
+      rem.parameters.currentImage = expectedCurrentValue;
+      rem.parameters.containerName = containerName;
+      if (rem.changePreview) {
+        rem.changePreview.proposedValue = effectiveImage;
+        rem.changePreview.currentValue = expectedCurrentValue;
+        rem.changePreview.container = containerName;
+      }
+    } else if (canonicalType === 'RolloutRestart') {
+      proposedValue = new Date().toISOString();
+      expectedCurrentValue = targetRes.annotations?.['kubectl.kubernetes.io/restartedAt'] || '';
+    } else if (canonicalType === 'RestartPod') {
+      proposedValue = new Date().toISOString();
+      expectedCurrentValue = targetRes.uid || 'active';
+    } else if (canonicalType === 'RollbackDeployment') {
+      proposedValue = (rem.parameters?.proposedImage as string) || (rem.parameters?.targetRevision as string) || 'previous-revision';
+      expectedCurrentValue = (rem.parameters?.currentImage as string) || (rem.parameters?.currentRevision as string) || 'current-revision';
+    } else if (canonicalType === 'ScaleDeployment') {
+      const targetRep = overrides?.targetReplicas ?? (rem.parameters?.targetReplicas as number) ?? 2;
+      proposedValue = String(targetRep);
+      expectedCurrentValue = String(targetRes.specReplicas || (targetRes.statusSummary as any)?.replicas || '1');
     }
 
     const cluster = this.clusters.get(incident.clusterId);
     const now = Date.now();
-
-    // Apply any operator overrides (e.g. customized image tag)
-    rem.parameters.proposedImage = effectiveImage;
-    rem.parameters.currentImage = expectedCurrentValue;
-    rem.parameters.containerName = containerName;
-    if (rem.changePreview) {
-      rem.changePreview.proposedValue = effectiveImage;
-      rem.changePreview.currentValue = expectedCurrentValue;
-      rem.changePreview.container = containerName;
-    }
-
     const policy = this.getRemediationPolicy(orgId, incident.clusterId);
 
-    // Register canonical RemediationAction for the SkyOps Agent to poll and execute
+    // Precondition revalidation
+    const telemetryAgeMs = Date.now() - targetRes.updatedAt;
+    const reval = RemediationPolicyEngine.revalidateAction(
+      {
+        id: 'pre-check',
+        incidentId,
+        orgId,
+        clusterId: incident.clusterId,
+        actionType: canonicalType,
+        type: (canonicalType === 'ReplacePodImage' ? 'ReplacePodImage' : canonicalType) as any,
+        target: { kind: targetKind, namespace: targetNamespace, name: targetName, container: containerName, uid: targetRes.uid },
+        fieldPath: '',
+        expectedCurrentValue,
+        proposedValue,
+        status: 'PROPOSED',
+        createdAt: now,
+        expiresAt: now + 300000,
+        executionId: 'pre-exec',
+        idempotencyKey: 'pre-key',
+        verificationPlan: { expectedState: '', observationWindowSeconds: 30, timeoutSeconds: 300 },
+        rollbackPlan: { supported: true, strategy: '' },
+        riskLevel: rem.reasoning?.risk || 'LOW',
+        isExecutable: true
+      },
+      incident,
+      targetRes,
+      telemetryAgeMs,
+      policy
+    );
+
+    if (!reval.valid) {
+      throw new Error(reval.reason || 'Precondition check failed: live cluster state has shifted.');
+    }
+
     const action = this.createCanonicalRemediationAction({
       incident,
-      containerName,
+      actionType: canonicalType,
+      targetKind,
+      targetName,
+      targetNamespace,
+      targetContainer: containerName,
+      targetUid: targetRes.uid,
       expectedCurrentValue,
-      proposedValue: effectiveImage,
+      proposedValue,
       requestedBy: { type: 'USER', id: approver.id, name: approver.name },
       approver,
       riskLevel: rem.reasoning?.risk || 'LOW',
@@ -3321,7 +3677,7 @@ export class DataStore {
     rem.execution = {
       dispatchedAt: now,
       status: 'PENDING',
-      message: `Dispatched ReplacePodImage action to SkyOps Agent on cluster "${cluster?.name || incident.clusterName}"`
+      message: `Dispatched ${canonicalType} action to SkyOps Agent on cluster "${cluster?.name || incident.clusterName}"`
     };
 
     incident.status = 'IN_PROGRESS';
@@ -3330,12 +3686,34 @@ export class DataStore {
     this.addTimelineEvent(incidentId, {
       type: 'REMEDIATION_APPROVED',
       actor: { type: 'USER', id: approver.id, name: approver.name },
-      description: `AI Remediation Approved by ${approver.name}: Dispatched ReplacePodImage (target image: ${effectiveImage}) to SkyOps Agent on cluster "${cluster?.name || incident.clusterName}".`,
+      description: `Remediation (${canonicalType}) approved by ${approver.name}: Dispatched to SkyOps Agent on cluster "${cluster?.name || incident.clusterName}".`,
       metadata: {
         actionId: action.id,
+        actionType: canonicalType,
         fieldPath: action.fieldPath,
         before: action.expectedCurrentValue,
         proposed: action.proposedValue
+      }
+    });
+
+    auditService.record({
+      orgId,
+      actorId: approver.id,
+      actorName: approver.name,
+      actorType: 'USER',
+      action: 'remediation.approved',
+      resourceType: 'remediation',
+      resourceId: action.id,
+      result: 'SUCCESS',
+      details: {
+        incidentId,
+        actionId: action.id,
+        actionType: canonicalType,
+        executionMode: 'manual',
+        target: action.target,
+        parameters: action.parameters,
+        preRemediationState: expectedCurrentValue,
+        proposedValue
       }
     });
 
@@ -3401,49 +3779,28 @@ export class DataStore {
       throw new Error('Rollback unavailable: Pre-action configuration is unrecorded or this action does not support automated rollback.');
     }
 
-    const rollbackTargetImage = lastAction.rollbackPlan.rollbackValue;
-    const currentFailingImage = lastAction.proposedValue || rem.parameters.proposedImage;
-
-    // Automated execution is strictly constrained to supported Kubernetes mutation: ReplacePodImage
-    if (incident.resourceKind !== 'Pod') {
-      throw new Error(`Rollback unavailable: Resource kind "${incident.resourceKind}" is not supported for automated rollback. Only Pods can be mutated safely.`);
-    }
-
-    // Strictly forbid automated mutations on controller-managed Pods
-    const clusterRes = this.resources.get(incident.clusterId) || [];
-    const targetRes = clusterRes.find(
-      (r) =>
-        r.kind.toLowerCase() === 'pod' &&
-        (r.namespace || 'default').toLowerCase() === incident.namespace.toLowerCase() &&
-        r.name.toLowerCase() === incident.resourceName.toLowerCase()
-    );
-    const ownerRefs =
-      (targetRes?.ownerReferences && targetRes.ownerReferences.length > 0)
-        ? targetRes.ownerReferences
-        : (Array.isArray((incident.technicalDetails as any)?.ownerReferences) && (incident.technicalDetails as any).ownerReferences.length > 0)
-        ? (incident.technicalDetails as any).ownerReferences
-        : [];
-
-    if (ownerRefs.length > 0) {
-      const ownerList = ownerRefs.map((o: any) => o.kind || 'Controller').join(', ');
-      throw new Error(`Rollback unavailable: Pod "${incident.resourceName}" is managed by controller (${ownerList}). In-cluster agent strictly refuses to mutate controller-managed pods directly. Update the parent controller manifest instead.`);
-    }
+    const rollbackTargetValue = lastAction.rollbackPlan.rollbackValue;
+    const currentFailingValue = lastAction.proposedValue || rem.parameters?.proposedImage || '';
 
     const cluster = this.clusters.get(incident.clusterId);
     const now = Date.now();
     const policy = this.getRemediationPolicy(orgId, incident.clusterId);
 
-    // Register canonical RemediationAction for the rollback
     const rollbackAction = this.createCanonicalRemediationAction({
       incident,
-      containerName: lastAction.target.container || rem.parameters.containerName,
-      expectedCurrentValue: currentFailingImage,
-      proposedValue: rollbackTargetImage,
+      actionType: lastAction.actionType as CanonicalRemediationActionType,
+      targetKind: lastAction.target.kind,
+      targetName: lastAction.target.name,
+      targetNamespace: lastAction.target.namespace,
+      targetContainer: lastAction.target.container,
+      expectedCurrentValue: currentFailingValue,
+      proposedValue: rollbackTargetValue,
       requestedBy: { type: 'USER', id: operator.id, name: operator.name },
       approver: operator,
       riskLevel: 'LOW',
       policy
     });
+
     // Mark as terminal rollback action to avoid infinite rollback loops
     rollbackAction.rollbackPlan = {
       supported: false,
@@ -3464,21 +3821,23 @@ export class DataStore {
       strategy: 'Rollback in progress; terminal reversal action',
       rollbackValue: ''
     };
-    rem.parameters.currentImage = currentFailingImage;
-    rem.parameters.proposedImage = rollbackTargetImage;
+    if (rem.parameters) {
+      rem.parameters.currentImage = currentFailingValue;
+      rem.parameters.proposedImage = rollbackTargetValue;
+    }
     if (rem.changePreview) {
-      rem.changePreview.currentValue = currentFailingImage;
-      rem.changePreview.proposedValue = rollbackTargetImage;
+      rem.changePreview.currentValue = currentFailingValue;
+      rem.changePreview.proposedValue = rollbackTargetValue;
     }
     rem.execution = {
       dispatchedAt: now,
       status: 'PENDING',
-      message: `Dispatched safe rollback action: reverting container image back to previous known value (${rollbackTargetImage}) on cluster "${cluster?.name || incident.clusterName}"`
+      message: `Dispatched safe rollback action: reverting ${lastAction.target.kind} back to previous known value (${rollbackTargetValue}) on cluster "${cluster?.name || incident.clusterName}"`
     };
     rem.verification = {
       status: 'PENDING',
       checkCount: 0,
-      observedState: `Awaiting rollback execution and fresh telemetry confirmation of ${rollbackTargetImage}`
+      observedState: `Awaiting rollback execution and fresh telemetry confirmation of ${rollbackTargetValue}`
     };
 
     incident.status = 'IN_PROGRESS';
@@ -3487,14 +3846,37 @@ export class DataStore {
     this.addTimelineEvent(incidentId, {
       type: 'REMEDIATION_ROLLBACK_DISPATCHED',
       actor: { type: 'USER', id: operator.id, name: operator.name },
-      description: `Remediation Rollback Initiated by ${operator.name}: Dispatched ReplacePodImage to revert container image back to previous known state (${rollbackTargetImage}). Reason: ${reason || 'Operator requested safe rollback.'}`,
+      description: `Remediation Rollback Initiated by ${operator.name}: Dispatched ${lastAction.actionType} to revert state to ${rollbackTargetValue}. Reason: ${reason || 'Safe rollback initiated.'}`,
       metadata: {
         rollbackActionId: rollbackAction.id,
         previousActionId: lastAction.id,
+        actionType: lastAction.actionType,
         fieldPath: rollbackAction.fieldPath,
-        before: currentFailingImage,
-        revertedTo: rollbackTargetImage,
+        before: currentFailingValue,
+        revertedTo: rollbackTargetValue,
         reason: reason || 'Rollback triggered'
+      }
+    });
+
+    auditService.record({
+      orgId,
+      actorId: operator.id,
+      actorName: operator.name,
+      actorType: 'USER',
+      action: 'remediation.rollback',
+      resourceType: 'remediation',
+      resourceId: rollbackAction.id,
+      result: 'SUCCESS',
+      details: {
+        incidentId,
+        actionId: rollbackAction.id,
+        previousActionId: lastAction.id,
+        actionType: lastAction.actionType,
+        executionMode: operator.id.includes('auto') ? 'auto' : 'manual',
+        target: rollbackAction.target,
+        parameters: rollbackAction.parameters,
+        revertedTo: rollbackTargetValue,
+        reason
       }
     });
 

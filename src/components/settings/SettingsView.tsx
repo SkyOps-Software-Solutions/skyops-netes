@@ -38,6 +38,7 @@ import { WebhooksManager } from './WebhooksManager';
 import { ContactManager } from './ContactManager';
 import { InvoicesManager } from './InvoicesManager';
 import { IntegrationsHubManager } from './IntegrationsHubManager';
+import { AutoHealingManager } from './AutoHealingManager';
 
 interface SettingsViewProps {
   clusters: Cluster[];
@@ -48,6 +49,7 @@ interface SettingsViewProps {
 export type SettingsTab =
   | 'org'
   | 'team'
+  | 'autohealing'
   | 'notifications'
   | 'subscription'
   | 'usage'
@@ -214,6 +216,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
       items: [
         { id: 'org', label: 'Organization', icon: <Building2 className="w-3.5 h-3.5" /> },
         { id: 'team', label: 'Team & Access', icon: <Users className="w-3.5 h-3.5" /> },
+        { id: 'autohealing', label: 'Auto-Healing', icon: <Zap className="w-3.5 h-3.5 text-sky-400" /> },
         { id: 'notifications', label: 'Notifications', icon: <Bell className="w-3.5 h-3.5" /> }
       ]
     },
@@ -435,6 +438,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
 
       {/* Tab: Team Members & RBAC */}
       {activeTab === 'team' && <TeamManager />}
+
+      {/* Tab: Auto-Healing & Safety Governance */}
+      {activeTab === 'autohealing' && (
+        <AutoHealingManager clusters={safeClusters} onRefresh={onRefresh} />
+      )}
 
       {/* Tab: Incident Email Notifications */}
       {activeTab === 'notifications' && <NotificationsManager />}

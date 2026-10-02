@@ -21,9 +21,11 @@ var (
 
 // AllowedActionTypes define strictly typed, safe remediation primitives
 var AllowedActionTypes = map[string]bool{
-	"ReplacePodImage": true,
-	"RestartPod":      true,
-	"ScaleDeployment": true,
+	"RestartPod":         true,
+	"RolloutRestart":     true,
+	"RollbackDeployment": true,
+	"ReplacePodImage":    true,
+	"ScaleDeployment":    true,
 }
 
 // PolicyEngine enforces zero-trust security guardrails before any cluster mutation
@@ -63,14 +65,16 @@ func (pe *PolicyEngine) Validate(action *transport.RemediationAction) error {
 		return errors.New("nil remediation action")
 	}
 
+	actionType := action.CanonicalType()
+
 	// 1. Cluster ID match (if specified)
 	if action.ClusterID != "" && action.ClusterID != pe.clusterID {
 		return fmt.Errorf("%w: action cluster=%q agent cluster=%q", ErrClusterMismatch, action.ClusterID, pe.clusterID)
 	}
 
 	// 2. Action type allowlist check
-	if !AllowedActionTypes[action.Type] {
-		return fmt.Errorf("%w: %q (allowed: ReplacePodImage, RestartPod, ScaleDeployment)", ErrActionNotPermitted, action.Type)
+	if !AllowedActionTypes[actionType] {
+		return fmt.Errorf("%w: %q (allowed: RestartPod, RolloutRestart, RollbackDeployment, ReplacePodImage, ScaleDeployment)", ErrActionNotPermitted, actionType)
 	}
 
 	// 3. Expiration check
@@ -92,7 +96,7 @@ func (pe *PolicyEngine) Validate(action *transport.RemediationAction) error {
 		return fmt.Errorf("%w: target namespace and name must be specified", ErrMissingParameters)
 	}
 
-	switch action.Type {
+	switch actionType {
 	case "ReplacePodImage":
 		if action.Target.Container == "" {
 			return fmt.Errorf("%w: container name required for ReplacePodImage", ErrMissingParameters)
@@ -107,8 +111,17 @@ func (pe *PolicyEngine) Validate(action *transport.RemediationAction) error {
 		if action.Target.Kind != "Pod" && action.Target.Kind != "Deployment" {
 			return fmt.Errorf("%w: RestartPod target kind must be Pod or Deployment", ErrMissingParameters)
 		}
+	case "RolloutRestart":
+		kind := strings.ToLower(action.Target.Kind)
+		if kind != "deployment" && kind != "statefulset" && kind != "daemonset" {
+			return fmt.Errorf("%w: RolloutRestart target kind must be Deployment, StatefulSet, or DaemonSet", ErrMissingParameters)
+		}
+	case "RollbackDeployment":
+		if strings.ToLower(action.Target.Kind) != "deployment" {
+			return fmt.Errorf("%w: RollbackDeployment target kind must be Deployment", ErrMissingParameters)
+		}
 	case "ScaleDeployment":
-		if action.Target.Kind != "Deployment" {
+		if strings.ToLower(action.Target.Kind) != "deployment" {
 			return fmt.Errorf("%w: ScaleDeployment target kind must be Deployment", ErrMissingParameters)
 		}
 		if action.ProposedValue == "" {

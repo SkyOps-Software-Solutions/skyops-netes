@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/skyops-io/skyops/agent/internal/transport"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -23,9 +25,20 @@ func NewExecutor(client kubernetes.Interface) *Executor {
 	return &Executor{client: client}
 }
 
+func isProtectedNamespace(ns string) bool {
+	lower := strings.ToLower(strings.TrimSpace(ns))
+	return lower == "kube-system" || lower == "kube-public" || lower == "kube-node-lease" || lower == "skyops" || lower == "skyops-system"
+}
+
 // PreconditionCheck checks live state before execution and returns the previous state for rollback
 func (e *Executor) PreconditionCheck(ctx context.Context, action *transport.RemediationAction) (previousState string, err error) {
-	switch action.Type {
+	if isProtectedNamespace(action.Target.Namespace) {
+		return "", fmt.Errorf("precondition failed: namespace %q is protected against remediation actions", action.Target.Namespace)
+	}
+
+	actionType := action.CanonicalType()
+
+	switch actionType {
 	case "ReplacePodImage":
 		if action.Target.Kind == "Pod" {
 			pod, err := e.client.CoreV1().Pods(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
@@ -33,7 +46,7 @@ func (e *Executor) PreconditionCheck(ctx context.Context, action *transport.Reme
 				return "", fmt.Errorf("precondition failed: target pod not found: %w", err)
 			}
 			if action.Target.UID != "" && string(pod.UID) != action.Target.UID {
-				return "", fmt.Errorf("precondition failed: target pod UID changed (stale action)")
+				return "", fmt.Errorf("precondition failed: target pod UID changed (stale action: expected %s, got %s)", action.Target.UID, string(pod.UID))
 			}
 
 			// Find container
@@ -53,7 +66,7 @@ func (e *Executor) PreconditionCheck(ctx context.Context, action *transport.Reme
 				return action.ProposedValue, nil
 			}
 
-			if foundContainer.Image != action.ExpectedCurrentValue {
+			if action.ExpectedCurrentValue != "" && foundContainer.Image != action.ExpectedCurrentValue {
 				return "", fmt.Errorf("precondition failed: expected live image %q does not match actual %q", action.ExpectedCurrentValue, foundContainer.Image)
 			}
 			return foundContainer.Image, nil
@@ -76,7 +89,7 @@ func (e *Executor) PreconditionCheck(ctx context.Context, action *transport.Reme
 			if foundContainer.Image == action.ProposedValue {
 				return action.ProposedValue, nil
 			}
-			if foundContainer.Image != action.ExpectedCurrentValue {
+			if action.ExpectedCurrentValue != "" && foundContainer.Image != action.ExpectedCurrentValue {
 				return "", fmt.Errorf("precondition failed: expected deployment image %q does not match actual %q", action.ExpectedCurrentValue, foundContainer.Image)
 			}
 			return foundContainer.Image, nil
@@ -88,34 +101,138 @@ func (e *Executor) PreconditionCheck(ctx context.Context, action *transport.Reme
 			if err != nil {
 				return "", fmt.Errorf("precondition failed: target pod not found: %w", err)
 			}
+			if action.Target.UID != "" && string(pod.UID) != action.Target.UID {
+				return "", fmt.Errorf("precondition failed: target pod UID changed (stale action: expected %s, got %s)", action.Target.UID, string(pod.UID))
+			}
 			return string(pod.UID), nil
 		} else if action.Target.Kind == "Deployment" {
 			dep, err := e.client.AppsV1().Deployments(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
 			if err != nil {
 				return "", fmt.Errorf("precondition failed: deployment not found: %w", err)
 			}
-			restartedAt := dep.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"]
-			return restartedAt, nil
+			if dep.Spec.Template.Annotations == nil {
+				return "", nil
+			}
+			return dep.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"], nil
 		}
+
+	case "RolloutRestart":
+		kind := strings.ToLower(action.Target.Kind)
+		switch kind {
+		case "deployment":
+			dep, err := e.client.AppsV1().Deployments(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+			if err != nil {
+				return "", fmt.Errorf("precondition failed: deployment not found: %w", err)
+			}
+			if dep.Spec.Template.Annotations == nil {
+				return "", nil
+			}
+			return dep.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"], nil
+		case "statefulset":
+			sts, err := e.client.AppsV1().StatefulSets(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+			if err != nil {
+				return "", fmt.Errorf("precondition failed: statefulset not found: %w", err)
+			}
+			if sts.Spec.Template.Annotations == nil {
+				return "", nil
+			}
+			return sts.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"], nil
+		case "daemonset":
+			ds, err := e.client.AppsV1().DaemonSets(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+			if err != nil {
+				return "", fmt.Errorf("precondition failed: daemonset not found: %w", err)
+			}
+			if ds.Spec.Template.Annotations == nil {
+				return "", nil
+			}
+			return ds.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"], nil
+		default:
+			return "", fmt.Errorf("precondition failed: unsupported workload kind for RolloutRestart: %s", action.Target.Kind)
+		}
+
+	case "RollbackDeployment":
+		dep, err := e.client.AppsV1().Deployments(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+		if err != nil {
+			return "", fmt.Errorf("precondition failed: deployment not found: %w", err)
+		}
+
+		currentRevStr := dep.Annotations["deployment.kubernetes.io/revision"]
+		currentRev, _ := strconv.ParseInt(currentRevStr, 10, 64)
+
+		rsList, err := e.client.AppsV1().ReplicaSets(action.Target.Namespace).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return "", fmt.Errorf("precondition failed: unable to list replicasets: %w", err)
+		}
+
+		var targetRS *appsv1.ReplicaSet
+		var highestPrevRev int64 = -1
+
+		for i := range rsList.Items {
+			rs := &rsList.Items[i]
+			isOwner := false
+			for _, owner := range rs.OwnerReferences {
+				if owner.Kind == "Deployment" && owner.Name == dep.Name {
+					isOwner = true
+					break
+				}
+			}
+			if !isOwner {
+				continue
+			}
+
+			revStr := rs.Annotations["deployment.kubernetes.io/revision"]
+			rev, err := strconv.ParseInt(revStr, 10, 64)
+			if err != nil {
+				continue
+			}
+
+			if currentRev > 0 && rev < currentRev && rev > highestPrevRev {
+				highestPrevRev = rev
+				targetRS = rs
+			} else if currentRev <= 0 && rev > highestPrevRev {
+				highestPrevRev = rev
+				targetRS = rs
+			}
+		}
+
+		if targetRS == nil {
+			return "", fmt.Errorf("precondition failed: no previous healthy ReplicaSet revision found for deployment %q", dep.Name)
+		}
+
+		// Save current template JSON for rollback
+		currTemplateBytes, _ := json.Marshal(dep.Spec.Template)
+		return string(currTemplateBytes), nil
 
 	case "ScaleDeployment":
 		dep, err := e.client.AppsV1().Deployments(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
 		if err != nil {
 			return "", fmt.Errorf("precondition failed: deployment not found: %w", err)
 		}
+		targetReplicas, err := strconv.Atoi(action.ProposedValue)
+		if err != nil {
+			return "", fmt.Errorf("precondition failed: invalid replica count %q: %w", action.ProposedValue, err)
+		}
+		if targetReplicas <= 0 {
+			return "", fmt.Errorf("precondition failed: scale-to-zero is prohibited by safety policy")
+		}
 		currReplicas := int32(1)
 		if dep.Spec.Replicas != nil {
 			currReplicas = *dep.Spec.Replicas
 		}
+		if int(currReplicas) == targetReplicas {
+			return action.ProposedValue, nil
+		}
 		return strconv.Itoa(int(currReplicas)), nil
 	}
 
-	return "", fmt.Errorf("unsupported action type: %s", action.Type)
+	return "", fmt.Errorf("unsupported action type: %s", actionType)
 }
 
 // Execute performs the requested mutation
 func (e *Executor) Execute(ctx context.Context, action *transport.RemediationAction) error {
-	switch action.Type {
+	actionType := action.CanonicalType()
+
+	switch actionType {
 	case "ReplacePodImage":
 		if action.Target.Kind == "Deployment" {
 			patch := fmt.Sprintf(`{"spec":{"template":{"spec":{"containers":[{"name":%q,"image":%q}]}}}}`, action.Target.Container, action.ProposedValue)
@@ -189,21 +306,114 @@ func (e *Executor) Execute(ctx context.Context, action *transport.RemediationAct
 			return err
 		}
 
+	case "RolloutRestart":
+		restartedAt := time.Now().Format(time.RFC3339)
+		patchMap := map[string]interface{}{
+			"spec": map[string]interface{}{
+				"template": map[string]interface{}{
+					"metadata": map[string]interface{}{
+						"annotations": map[string]string{
+							"kubectl.kubernetes.io/restartedAt": restartedAt,
+						},
+					},
+				},
+			},
+		}
+		patchBytes, _ := json.Marshal(patchMap)
+
+		kind := strings.ToLower(action.Target.Kind)
+		switch kind {
+		case "deployment":
+			_, err := e.client.AppsV1().Deployments(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+			return err
+		case "statefulset":
+			_, err := e.client.AppsV1().StatefulSets(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+			return err
+		case "daemonset":
+			_, err := e.client.AppsV1().DaemonSets(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+			return err
+		default:
+			return fmt.Errorf("unsupported workload kind for RolloutRestart: %s", action.Target.Kind)
+		}
+
+	case "RollbackDeployment":
+		dep, err := e.client.AppsV1().Deployments(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("get deployment: %w", err)
+		}
+
+		currentRevStr := dep.Annotations["deployment.kubernetes.io/revision"]
+		currentRev, _ := strconv.ParseInt(currentRevStr, 10, 64)
+
+		rsList, err := e.client.AppsV1().ReplicaSets(action.Target.Namespace).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return fmt.Errorf("list replicasets: %w", err)
+		}
+
+		var targetRS *appsv1.ReplicaSet
+		var highestPrevRev int64 = -1
+
+		for i := range rsList.Items {
+			rs := &rsList.Items[i]
+			isOwner := false
+			for _, owner := range rs.OwnerReferences {
+				if owner.Kind == "Deployment" && owner.Name == dep.Name {
+					isOwner = true
+					break
+				}
+			}
+			if !isOwner {
+				continue
+			}
+
+			revStr := rs.Annotations["deployment.kubernetes.io/revision"]
+			rev, err := strconv.ParseInt(revStr, 10, 64)
+			if err != nil {
+				continue
+			}
+
+			if currentRev > 0 && rev < currentRev && rev > highestPrevRev {
+				highestPrevRev = rev
+				targetRS = rs
+			} else if currentRev <= 0 && rev > highestPrevRev {
+				highestPrevRev = rev
+				targetRS = rs
+			}
+		}
+
+		if targetRS == nil {
+			return fmt.Errorf("no previous healthy ReplicaSet found for rollback")
+		}
+
+		// Restore previous pod template
+		patchMap := map[string]interface{}{
+			"spec": map[string]interface{}{
+				"template": targetRS.Spec.Template,
+			},
+		}
+		patchBytes, _ := json.Marshal(patchMap)
+		_, err = e.client.AppsV1().Deployments(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+		return err
+
 	case "ScaleDeployment":
 		targetReplicas, err := strconv.Atoi(action.ProposedValue)
 		if err != nil {
 			return fmt.Errorf("invalid replica count %q: %w", action.ProposedValue, err)
+		}
+		if targetReplicas <= 0 {
+			return fmt.Errorf("refusing to scale deployment to zero")
 		}
 		patch := fmt.Sprintf(`{"spec":{"replicas":%d}}`, targetReplicas)
 		_, err = e.client.AppsV1().Deployments(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, []byte(patch), metav1.PatchOptions{})
 		return err
 	}
 
-	return fmt.Errorf("unsupported execution action: %s", action.Type)
+	return fmt.Errorf("unsupported execution action: %s", actionType)
 }
 
 // Verify ensures target reached the intended state
 func (e *Executor) Verify(ctx context.Context, action *transport.RemediationAction, timeout time.Duration) error {
+	actionType := action.CanonicalType()
 	deadline := time.Now().Add(timeout)
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -217,37 +427,109 @@ func (e *Executor) Verify(ctx context.Context, action *transport.RemediationActi
 				return fmt.Errorf("verification timeout reached (%s)", timeout)
 			}
 
-			switch action.Type {
+			switch actionType {
 			case "ReplacePodImage":
 				if action.Target.Kind == "Deployment" {
 					dep, err := e.client.AppsV1().Deployments(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
 					if err == nil {
 						for _, c := range dep.Spec.Template.Spec.Containers {
 							if c.Name == action.Target.Container && c.Image == action.ProposedValue {
-								return nil // Verified
+								// Check rollout progress
+								if dep.Status.UpdatedReplicas == *dep.Spec.Replicas &&
+									dep.Status.AvailableReplicas == *dep.Spec.Replicas &&
+									dep.Status.UnavailableReplicas == 0 {
+									return nil // Verified
+								}
 							}
 						}
 					}
 				} else if action.Target.Kind == "Pod" {
 					pod, err := e.client.CoreV1().Pods(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
-					if err == nil {
+					if err == nil && pod.Status.Phase == corev1.PodRunning {
 						for _, c := range pod.Spec.Containers {
 							if c.Name == action.Target.Container && c.Image == action.ProposedValue {
-								return nil // Verified
+								// Check ready status
+								for _, cs := range pod.Status.ContainerStatuses {
+									if cs.Name == action.Target.Container && cs.Ready {
+										return nil // Verified
+									}
+								}
 							}
 						}
 					}
 				}
 
 			case "RestartPod":
-				// Pod deletion or rollout progress check
-				return nil
+				if action.Target.Kind == "Pod" {
+					pod, err := e.client.CoreV1().Pods(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+					if err == nil {
+						// Verify new pod is Running and Ready
+						if pod.Status.Phase == corev1.PodRunning {
+							readyCount := 0
+							for _, cs := range pod.Status.ContainerStatuses {
+								if cs.Ready {
+									readyCount++
+								}
+							}
+							if readyCount == len(pod.Spec.Containers) && len(pod.Spec.Containers) > 0 {
+								return nil // Verified
+							}
+						}
+					}
+				} else if action.Target.Kind == "Deployment" {
+					dep, err := e.client.AppsV1().Deployments(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+					if err == nil && dep.Spec.Replicas != nil {
+						if dep.Status.UpdatedReplicas == *dep.Spec.Replicas &&
+							dep.Status.AvailableReplicas == *dep.Spec.Replicas &&
+							dep.Status.UnavailableReplicas == 0 {
+							return nil
+						}
+					}
+				}
+
+			case "RolloutRestart":
+				kind := strings.ToLower(action.Target.Kind)
+				if kind == "deployment" {
+					dep, err := e.client.AppsV1().Deployments(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+					if err == nil && dep.Spec.Replicas != nil {
+						if dep.Status.UpdatedReplicas == *dep.Spec.Replicas &&
+							dep.Status.AvailableReplicas == *dep.Spec.Replicas &&
+							dep.Status.UnavailableReplicas == 0 {
+							return nil // Verified
+						}
+					}
+				} else if kind == "statefulset" {
+					sts, err := e.client.AppsV1().StatefulSets(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+					if err == nil && sts.Spec.Replicas != nil {
+						if sts.Status.UpdatedReplicas == *sts.Spec.Replicas && sts.Status.ReadyReplicas == *sts.Spec.Replicas {
+							return nil
+						}
+					}
+				} else if kind == "daemonset" {
+					ds, err := e.client.AppsV1().DaemonSets(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+					if err == nil {
+						if ds.Status.UpdatedNumberScheduled == ds.Status.DesiredNumberScheduled &&
+							ds.Status.NumberReady == ds.Status.DesiredNumberScheduled {
+							return nil
+						}
+					}
+				}
+
+			case "RollbackDeployment":
+				dep, err := e.client.AppsV1().Deployments(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+				if err == nil && dep.Spec.Replicas != nil {
+					if dep.Status.UpdatedReplicas == *dep.Spec.Replicas &&
+						dep.Status.AvailableReplicas == *dep.Spec.Replicas &&
+						dep.Status.UnavailableReplicas == 0 {
+						return nil // Verified
+					}
+				}
 
 			case "ScaleDeployment":
 				dep, err := e.client.AppsV1().Deployments(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
 				if err == nil && dep.Spec.Replicas != nil {
 					target, _ := strconv.Atoi(action.ProposedValue)
-					if int(*dep.Spec.Replicas) == target {
+					if int(*dep.Spec.Replicas) == target && int(dep.Status.AvailableReplicas) == target {
 						return nil // Verified
 					}
 				}
@@ -262,11 +544,42 @@ func (e *Executor) Rollback(ctx context.Context, action *transport.RemediationAc
 		return fmt.Errorf("cannot rollback without known previous state")
 	}
 
-	switch action.Type {
+	actionType := action.CanonicalType()
+
+	switch actionType {
 	case "ReplacePodImage":
 		if action.Target.Kind == "Deployment" {
 			patch := fmt.Sprintf(`{"spec":{"template":{"spec":{"containers":[{"name":%q,"image":%q}]}}}}`, action.Target.Container, previousState)
 			_, err := e.client.AppsV1().Deployments(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, []byte(patch), metav1.PatchOptions{})
+			return err
+		}
+	case "RolloutRestart":
+		// Restore previous restartedAt annotation or empty
+		patchMap := map[string]interface{}{
+			"spec": map[string]interface{}{
+				"template": map[string]interface{}{
+					"metadata": map[string]interface{}{
+						"annotations": map[string]string{
+							"kubectl.kubernetes.io/restartedAt": previousState,
+						},
+					},
+				},
+			},
+		}
+		patchBytes, _ := json.Marshal(patchMap)
+		_, err := e.client.AppsV1().Deployments(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+		return err
+	case "RollbackDeployment":
+		// Restore previous pod template
+		var prevTemplate corev1.PodTemplateSpec
+		if err := json.Unmarshal([]byte(previousState), &prevTemplate); err == nil {
+			patchMap := map[string]interface{}{
+				"spec": map[string]interface{}{
+					"template": prevTemplate,
+				},
+			}
+			patchBytes, _ := json.Marshal(patchMap)
+			_, err := e.client.AppsV1().Deployments(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 			return err
 		}
 	case "ScaleDeployment":

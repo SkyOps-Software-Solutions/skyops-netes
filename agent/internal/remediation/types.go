@@ -42,18 +42,24 @@ type TraceEntry struct {
 
 // JobStateUpdate represents an atomic state update dispatched to the central server job queue
 type JobStateUpdate struct {
-	JobID            string                 `json:"jobId"`
-	ActionID         string                 `json:"actionId"`
-	ClusterID        string                 `json:"clusterId"`
-	State            ActionState            `json:"state"` // PENDING, RUNNING, SUCCEEDED, FAILED, CANCELLED
-	Success          bool                   `json:"success"`
-	Message          string                 `json:"message"`
-	ExecutionContext map[string]interface{} `json:"executionContext,omitempty"`
-	RuntimeTraces    []TraceEntry           `json:"runtimeTraces,omitempty"`
-	StdErr           string                 `json:"stdErr,omitempty"`
-	DurationMs       int64                  `json:"durationMs,omitempty"`
-	Timestamp        int64                  `json:"timestamp"`
-	AgentID          string                 `json:"agentId,omitempty"`
+	JobID              string                  `json:"jobId"`
+	ActionID           string                  `json:"actionId"`
+	IncidentID         string                  `json:"incidentId,omitempty"`
+	ExecutionID        string                  `json:"executionId,omitempty"`
+	ActionType         string                  `json:"actionType,omitempty"`
+	ClusterID          string                  `json:"clusterId"`
+	Target             *transport.ActionTarget `json:"target,omitempty"`
+	State              ActionState             `json:"state"` // PENDING, RUNNING, EXECUTING, VERIFYING, SUCCEEDED, FAILED, ROLLING_BACK, ROLLED_BACK
+	Success            bool                    `json:"success"`
+	Message            string                  `json:"message"`
+	ExecutionContext   map[string]interface{}  `json:"executionContext,omitempty"`
+	RuntimeTraces      []TraceEntry            `json:"runtimeTraces,omitempty"`
+	VerificationResult map[string]interface{}  `json:"verificationResult,omitempty"`
+	RollbackResult     map[string]interface{}  `json:"rollbackResult,omitempty"`
+	StdErr             string                  `json:"stdErr,omitempty"`
+	DurationMs         int64                   `json:"durationMs,omitempty"`
+	Timestamp          int64                   `json:"timestamp"`
+	AgentID            string                  `json:"agentId,omitempty"`
 }
 
 // ExecutionRecord stores complete lifecycle details of a remediation action

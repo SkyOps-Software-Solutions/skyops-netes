@@ -4,6 +4,7 @@ import {
   RemediationActionStatus,
   RemediationPolicy,
   RemediationMode,
+  CanonicalRemediationActionType,
   AIRiskLevel,
   Incident,
   KubernetesResource
@@ -16,7 +17,7 @@ export const ALLOWED_TRANSITIONS: Record<RemediationActionStatus, RemediationAct
   PROPOSED: ['AWAITING_APPROVAL', 'APPROVED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'STALE'],
   AWAITING_APPROVAL: ['APPROVED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'STALE'],
   APPROVED: ['QUEUED', 'DELIVERED', 'DISPATCHED', 'CANCELLED', 'EXPIRED', 'STALE'],
-  DISPATCHED: ['QUEUED', 'DELIVERED', 'EXECUTED', 'SUCCEEDED', 'FAILED', 'EXECUTION_FAILED', 'CANCELLED', 'EXPIRED'],
+  DISPATCHED: ['QUEUED', 'DELIVERED', 'EXECUTING', 'EXECUTED', 'SUCCEEDED', 'FAILED', 'EXECUTION_FAILED', 'CANCELLED', 'EXPIRED'],
   QUEUED: ['DELIVERED', 'CANCELLED', 'EXPIRED', 'DELIVERY_FAILED'],
   DELIVERED: [
     'ACKNOWLEDGED',
@@ -30,23 +31,98 @@ export const ALLOWED_TRANSITIONS: Record<RemediationActionStatus, RemediationAct
     'QUEUED' // lease timeout re-queue
   ],
   ACKNOWLEDGED: ['EXECUTING', 'EXECUTED', 'SUCCEEDED', 'FAILED', 'EXECUTION_FAILED', 'EXPIRED'],
-  EXECUTING: ['EXECUTED', 'SUCCEEDED', 'FAILED', 'EXECUTION_FAILED', 'EXPIRED'],
-  EXECUTED: ['VERIFYING', 'VERIFIED', 'VERIFIED_RESOLVED', 'VERIFICATION_FAILED'],
-  VERIFYING: ['VERIFIED', 'VERIFIED_RESOLVED', 'VERIFICATION_FAILED', 'EXPIRED'],
+  EXECUTING: ['EXECUTED', 'SUCCEEDED', 'FAILED', 'EXECUTION_FAILED', 'VERIFYING', 'EXPIRED'],
+  EXECUTED: ['VERIFYING', 'VERIFIED', 'VERIFIED_RESOLVED', 'VERIFICATION_FAILED', 'ROLLING_BACK', 'ROLLED_BACK'],
+  VERIFYING: ['VERIFIED', 'VERIFIED_RESOLVED', 'VERIFICATION_FAILED', 'ROLLING_BACK', 'ROLLED_BACK', 'FAILED', 'EXPIRED'],
   VERIFIED: [],
   VERIFIED_RESOLVED: [],
   REJECTED: [],
   EXPIRED: [],
   DELIVERY_FAILED: [],
   EXECUTION_FAILED: [],
-  VERIFICATION_FAILED: [],
+  VERIFICATION_FAILED: ['ROLLING_BACK', 'ROLLED_BACK', 'FAILED'],
+  ROLLING_BACK: ['ROLLED_BACK', 'FAILED'],
+  ROLLED_BACK: [],
   CANCELLED: [],
   STALE: [],
   PENDING: ['DELIVERED', 'QUEUED', 'DISPATCHED', 'CANCELLED', 'EXPIRED'],
-  SUCCEEDED: ['VERIFYING', 'VERIFIED', 'VERIFIED_RESOLVED', 'VERIFICATION_FAILED'],
-  FAILED: [],
-  ROLLED_BACK: []
+  SUCCEEDED: ['VERIFYING', 'VERIFIED', 'VERIFIED_RESOLVED', 'VERIFICATION_FAILED', 'ROLLING_BACK', 'ROLLED_BACK'],
+  FAILED: []
 };
+
+// Actions that can be executed autonomously under CONTROLLED_AUTONOMOUS mode
+export const AUTONOMOUS_ACTION_ALLOWLIST: CanonicalRemediationActionType[] = [
+  'RestartPod',
+  'RolloutRestart',
+  'ReplacePodImage',
+  'RollbackDeployment'
+];
+
+export function extractResourceContainers(liveResource: KubernetesResource): Array<{
+  name: string;
+  image?: string;
+  state?: string;
+  ready?: boolean;
+  waitingReason?: string;
+  waitingMessage?: string;
+  terminationReason?: string;
+  terminationMessage?: string;
+  exitCode?: number;
+  restartCount?: number;
+}> {
+  const map = new Map<string, any>();
+
+  // 1. Base from containers array if present
+  if (Array.isArray(liveResource.containers)) {
+    for (const c of liveResource.containers) {
+      if (c && c.name) {
+        map.set(c.name, { ...c });
+      }
+    }
+  }
+
+  // 2. Overlay / populate from specSummary.containers
+  const specContainers = Array.isArray((liveResource.specSummary as any)?.containers)
+    ? (liveResource.specSummary as any).containers
+    : [];
+  for (const c of specContainers) {
+    if (c && c.name) {
+      const existing = map.get(c.name) || { name: c.name };
+      map.set(c.name, {
+        ...existing,
+        image: c.image || existing.image
+      });
+    }
+  }
+
+  // 3. Overlay / populate from statusSummary.containerStates
+  const statusStates = Array.isArray((liveResource.statusSummary as any)?.containerStates)
+    ? (liveResource.statusSummary as any).containerStates
+    : [];
+  for (const s of statusStates) {
+    if (s && s.name) {
+      const existing = map.get(s.name) || { name: s.name };
+      const isRunning = s.state === 'running' || s.ready === true;
+      const waitingReason = s.waiting?.reason || s.waitingReason || (isRunning ? undefined : existing.waitingReason);
+      const waitingMessage = s.waiting?.message || s.waitingMessage || (isRunning ? undefined : existing.waitingMessage);
+      const exitCode = s.exitCode !== undefined ? s.exitCode : (isRunning ? 0 : existing.exitCode);
+      const terminationReason = s.terminationReason || (isRunning ? undefined : existing.terminationReason);
+
+      map.set(s.name, {
+        ...existing,
+        image: s.image || existing.image,
+        state: s.state || existing.state,
+        ready: s.ready ?? existing.ready,
+        waitingReason,
+        waitingMessage,
+        exitCode,
+        terminationReason
+      });
+    }
+  }
+
+  return Array.from(map.values());
+}
 
 export class RemediationPolicyEngine {
   /**
@@ -77,7 +153,7 @@ export class RemediationPolicyEngine {
       orgId,
       clusterId,
       remediationMode: 'MANUAL_ONLY', // Default is safe manual approval boundary
-      allowedActionTypes: ['ReplacePodImage'],
+      allowedActionTypes: ['RestartPod', 'RolloutRestart', 'RollbackDeployment', 'ReplacePodImage', 'ScaleDeployment'],
       maxRiskLevel: 'LOW',
       requireHighConfidence: true,
       minConfidenceThreshold: 0.85,
@@ -130,8 +206,21 @@ export class RemediationPolicyEngine {
     const recentActions = context.recentClusterActionsCount ?? 0;
     const isStandalone = context.isStandalonePod ?? true;
     const telemetryAge = context.telemetryAgeMs ?? 0;
+    const actionType = (action.actionType || action.type) as CanonicalRemediationActionType;
 
-    // 1. Circuit breaker: max failed attempts on this incident
+    // 1. Permanent Safety Invariant: Scale-to-zero is forbidden autonomously
+    if (actionType === 'ScaleDeployment') {
+      const val = parseInt(action.proposedValue || '0', 10);
+      if (val <= 0) {
+        return {
+          allowed: false,
+          decision: 'DENY',
+          reason: 'Scale-to-zero is permanently prohibited by SkyOps safety policy.'
+        };
+      }
+    }
+
+    // 2. Circuit breaker: max failed attempts on this incident
     if (failureCount >= policy.maxAttemptsPerIncident) {
       return {
         allowed: false,
@@ -140,16 +229,16 @@ export class RemediationPolicyEngine {
       };
     }
 
-    // 2. Concurrency lock on the same target
+    // 3. Concurrency lock on the same target
     if (hasLock) {
       return {
         allowed: false,
         decision: 'TARGET_BUSY',
-        reason: `Target ${action.target.kind} ${action.target.namespace}/${action.target.name}:${action.target.container} already has an active remediation in progress.`
+        reason: `Target ${action.target.kind} ${action.target.namespace}/${action.target.name}:${action.target.container || 'main'} already has an active remediation in progress.`
       };
     }
 
-    // 3. Cluster rate limiting
+    // 4. Cluster rate limiting
     if (recentActions >= policy.maxActionsPerHourPerCluster) {
       return {
         allowed: false,
@@ -158,25 +247,26 @@ export class RemediationPolicyEngine {
       };
     }
 
-    // 4. Controller-managed resource check
-    if (!isStandalone) {
+    // 5. Ephemeral Pod direct mutation restriction
+    // Only ReplacePodImage targeting an ephemeral Pod directly without owner Deployment is blocked if controller-owned
+    if (actionType === 'ReplacePodImage' && action.target.kind.toLowerCase() === 'pod' && !isStandalone) {
       return {
         allowed: false,
         decision: 'CONTROLLER_OWNED',
-        reason: `Target ${action.target.kind} is managed by a Kubernetes controller (Deployment/StatefulSet/DaemonSet/ReplicaSet). Ephemeral pods must not be directly mutated; update the owning workload specification instead.`
+        reason: `Target ${action.target.kind} is managed by a Kubernetes controller. Direct mutation of ephemeral pods is forbidden; target the parent Deployment workload instead.`
       };
     }
 
-    // 5. Action type allowlist
-    if (!policy.allowedActionTypes.includes(action.type) && !policy.allowedActionTypes.includes(action.actionType)) {
+    // 6. Action type allowlist check in policy
+    if (!policy.allowedActionTypes.includes(actionType) && !policy.allowedActionTypes.includes(action.type)) {
       return {
         allowed: false,
         decision: 'DENY',
-        reason: `Action type "${action.actionType || action.type}" is not allowed by organization remediation policy.`
+        reason: `Action type "${actionType}" is not allowed by organization remediation policy.`
       };
     }
 
-    // 6. Allowed namespaces
+    // 7. Allowed namespaces
     if (policy.allowedNamespaces && policy.allowedNamespaces.length > 0) {
       if (!policy.allowedNamespaces.includes(action.target.namespace)) {
         return {
@@ -187,7 +277,7 @@ export class RemediationPolicyEngine {
       }
     }
 
-    // 7. Telemetry Freshness check
+    // 8. Telemetry Freshness check
     if (telemetryAge > policy.telemetryFreshnessThresholdMs) {
       return {
         allowed: false,
@@ -196,16 +286,18 @@ export class RemediationPolicyEngine {
       };
     }
 
-    // 8. Grounding check: Proposed image must be grounded
-    if (!action.proposedValue || action.proposedValue.trim() === '' || action.proposedValue === 'unknown') {
-      return {
-        allowed: false,
-        decision: 'DENY',
-        reason: 'Proposed image is empty or ungrounded. SkyOps refuses to execute ungrounded image tags.'
-      };
+    // 9. Proposed value grounding check
+    if (actionType === 'ReplacePodImage') {
+      if (!action.proposedValue || action.proposedValue.trim() === '' || action.proposedValue === 'unknown') {
+        return {
+          allowed: false,
+          decision: 'DENY',
+          reason: 'Proposed image is empty or ungrounded. SkyOps refuses to execute ungrounded image tags.'
+        };
+      }
     }
 
-    // 9. Remediation mode check
+    // 10. Remediation mode check
     if (policy.remediationMode === 'MANUAL_ONLY') {
       return {
         allowed: false,
@@ -222,7 +314,16 @@ export class RemediationPolicyEngine {
       };
     }
 
-    // CONTROLLED_AUTONOMOUS mode
+    // 11. CONTROLLED_AUTONOMOUS mode checks
+    // ScaleDeployment is never executed autonomously without approval
+    if (!AUTONOMOUS_ACTION_ALLOWLIST.includes(actionType)) {
+      return {
+        allowed: false,
+        decision: 'REQUIRES_APPROVAL',
+        reason: `Action type "${actionType}" is not permitted for autonomous auto-healing; operator review required.`
+      };
+    }
+
     // Enforce risk ceiling
     const riskRanks: Record<AIRiskLevel, number> = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
     if (riskRanks[action.riskLevel] > riskRanks[policy.maxRiskLevel]) {
@@ -263,6 +364,7 @@ export class RemediationPolicyEngine {
     policy: RemediationPolicy
   ): { valid: boolean; reason?: string; errorCategory?: 'TARGET_NOT_FOUND' | 'PRECONDITION_FAILED' | 'CONTROLLER_OWNED' | 'STALE' | 'EXPIRED' } {
     const now = Date.now();
+    const actionType = (action.actionType || action.type) as CanonicalRemediationActionType;
 
     // Check expiration
     if (action.expiresAt && now > action.expiresAt) {
@@ -274,6 +376,25 @@ export class RemediationPolicyEngine {
       return { valid: false, reason: 'Incident is already resolved or closed', errorCategory: 'STALE' };
     }
 
+    // Check cluster identity
+    if (action.clusterId && incident.clusterId && action.clusterId !== incident.clusterId) {
+      return {
+        valid: false,
+        reason: `Cluster identity mismatch: action cluster "${action.clusterId}" does not match incident cluster "${incident.clusterId}"`,
+        errorCategory: 'PRECONDITION_FAILED'
+      };
+    }
+
+    // Check protected namespace
+    const protectedNamespaces = ['kube-system', 'kube-public', 'kube-node-lease', 'skyops'];
+    if (protectedNamespaces.includes((action.target.namespace || '').toLowerCase())) {
+      return {
+        valid: false,
+        reason: `Namespace "${action.target.namespace}" is protected against automated remediation`,
+        errorCategory: 'PRECONDITION_FAILED'
+      };
+    }
+
     // Check target exists
     if (!liveResource) {
       return {
@@ -283,29 +404,85 @@ export class RemediationPolicyEngine {
       };
     }
 
-    // Check controller ownership
-    if (liveResource.ownerReferences && liveResource.ownerReferences.length > 0) {
+    // Check target UID where available
+    if (action.target.uid && liveResource.uid && action.target.uid !== liveResource.uid) {
       return {
         valid: false,
-        reason: `Target ${action.target.kind} is controller-managed by ${liveResource.ownerReferences.map((o) => `${o.kind}/${o.name}`).join(', ')}. Ephemeral pod cannot be directly mutated.`,
-        errorCategory: 'CONTROLLER_OWNED'
+        reason: `Target UID changed (expected ${action.target.uid}, got ${liveResource.uid}). Stale action rejected.`,
+        errorCategory: 'PRECONDITION_FAILED'
       };
     }
 
+    // Check controller ownership and target kind for Pod image mutations
+    if (actionType === 'ReplacePodImage') {
+      if (action.target.kind.toLowerCase() !== 'pod') {
+        return {
+          valid: false,
+          reason: `Only Pods can be mutated safely by direct container image replacement (got ${action.target.kind})`,
+          errorCategory: 'PRECONDITION_FAILED'
+        };
+      }
+      if (liveResource.ownerReferences && liveResource.ownerReferences.length > 0) {
+        return {
+          valid: false,
+          reason: `Target ${action.target.kind} is controller-managed by ${liveResource.ownerReferences.map((o) => `${o.kind}/${o.name}`).join(', ')}. Direct pod mutation is prohibited; target the parent workload instead.`,
+          errorCategory: 'CONTROLLER_OWNED'
+        };
+      }
+    }
+
+    // Workload kind validations
+    if (actionType === 'RestartPod') {
+      if (action.target.kind.toLowerCase() !== 'pod' && action.target.kind.toLowerCase() !== 'deployment') {
+        return {
+          valid: false,
+          reason: `RestartPod target kind must be Pod or Deployment (got ${action.target.kind})`,
+          errorCategory: 'PRECONDITION_FAILED'
+        };
+      }
+    } else if (actionType === 'RolloutRestart') {
+      const allowedKinds = ['deployment', 'statefulset', 'daemonset'];
+      if (!allowedKinds.includes(action.target.kind.toLowerCase())) {
+        return {
+          valid: false,
+          reason: `RolloutRestart target kind must be Deployment, StatefulSet, or DaemonSet (got ${action.target.kind})`,
+          errorCategory: 'PRECONDITION_FAILED'
+        };
+      }
+    } else if (actionType === 'RollbackDeployment') {
+      if (action.target.kind.toLowerCase() !== 'deployment') {
+        return {
+          valid: false,
+          reason: `RollbackDeployment target kind must be Deployment (got ${action.target.kind})`,
+          errorCategory: 'PRECONDITION_FAILED'
+        };
+      }
+    }
+
     // Check expected state precondition
-    if (action.type === 'ReplacePodImage') {
-      const container = (liveResource.containers || []).find((c) => c.name === action.target.container);
+    if (actionType === 'ReplacePodImage') {
+      const containers = extractResourceContainers(liveResource);
+      const container = containers.find((c) => c.name === action.target.container);
       if (!container) {
         return {
           valid: false,
-          reason: `Target container "${action.target.container}" not found in live pod spec`,
+          reason: `Target container "${action.target.container}" not found in live workload spec`,
           errorCategory: 'TARGET_NOT_FOUND'
         };
       }
-      if (container.image !== action.expectedCurrentValue) {
+      if (action.expectedCurrentValue && container.image !== action.expectedCurrentValue) {
         return {
           valid: false,
           reason: `Live container image ("${container.image}") does not match expected current value ("${action.expectedCurrentValue}"). State has changed since proposal.`,
+          errorCategory: 'PRECONDITION_FAILED'
+        };
+      }
+    } else if (actionType === 'ScaleDeployment') {
+      const liveReplicas = liveResource.statusSummary?.replicas ?? (liveResource as any).spec?.replicas;
+      if (action.expectedCurrentValue && liveReplicas !== undefined && String(liveReplicas) !== action.expectedCurrentValue) {
+        return {
+          valid: false,
+          reason: `Live deployment replicas ("${liveReplicas}") do not match expected current value ("${action.expectedCurrentValue}").`,
           errorCategory: 'PRECONDITION_FAILED'
         };
       }
@@ -345,8 +522,10 @@ export class RemediationPolicyEngine {
       };
     }
 
+    const actionType = (action.actionType || action.type) as CanonicalRemediationActionType;
+
     // Authoritative verification MUST be grounded in telemetry observed AFTER action completion
-    const completedAt = action.completedAt || action.approvedAt;
+    const completedAt = action.completedAt || action.approvedAt || 0;
     if (liveResource.updatedAt <= completedAt) {
       return {
         status: 'VERIFYING',
@@ -357,17 +536,139 @@ export class RemediationPolicyEngine {
       };
     }
 
-    const container = (liveResource.containers || []).find((c) => c.name === action.target.container);
+    // --- Action-specific Verification Logic ---
+
+    // 1. RestartPod
+    if (actionType === 'RestartPod') {
+      const isPod = liveResource.kind.toLowerCase() === 'pod';
+      const isRunning = liveResource.status === 'Running';
+      const isHealthy = liveResource.health === 'HEALTHY' || (liveResource.readyReplicas !== undefined && liveResource.readyReplicas > 0);
+
+      // Check container ready states
+      const containers = extractResourceContainers(liveResource);
+      const hasErrors = containers.some((c) =>
+        c.waitingReason === 'CrashLoopBackOff' ||
+        c.waitingReason === 'ImagePullBackOff' ||
+        c.waitingReason === 'ErrImagePull' ||
+        (c.state === 'waiting' && (c.restartCount || 0) > 10)
+      );
+
+      if (hasErrors) {
+        const elapsedMs = now - completedAt;
+        const timeoutMs = (action.verificationPlan?.timeoutSeconds || 300) * 1000;
+        if (elapsedMs > timeoutMs) {
+          return {
+            status: 'VERIFICATION_FAILED',
+            observedState: 'Pod restarted but persistent error state detected',
+            evidence: ['Containers entered CrashLoopBackOff or waiting state after restart'],
+            failureReason: 'Restart failed to clear persistent error condition'
+          };
+        }
+        return {
+          status: 'VERIFYING',
+          observedState: 'Pod restarted; observing container readiness...',
+          evidence: ['Containers restarting']
+        };
+      }
+
+      if ((isPod && isRunning && containers.every((c) => c.ready)) || (!isPod && isHealthy)) {
+        return {
+          status: 'VERIFIED',
+          observedState: `Workload ${liveResource.name} is Running & Ready after pod recreation`,
+          evidence: [
+            'All containers passed readiness probes',
+            'Zero active restart loops detected',
+            'Target phase is Running'
+          ]
+        };
+      }
+
+      return {
+        status: 'VERIFYING',
+        observedState: 'Waiting for pod containers to pass readiness probes',
+        evidence: [`Current status: ${liveResource.status}`]
+      };
+    }
+
+    // 2. RolloutRestart and RollbackDeployment
+    if (actionType === 'RolloutRestart' || actionType === 'RollbackDeployment') {
+      const specReplicas = liveResource.specReplicas ?? (liveResource as any).spec?.replicas ?? 1;
+      const readyReplicas = liveResource.readyReplicas ?? (liveResource as any).status?.readyReplicas ?? 0;
+      const availableReplicas = liveResource.availableReplicas ?? (liveResource as any).status?.availableReplicas ?? readyReplicas;
+      const unavailableReplicas = (liveResource as any).status?.unavailableReplicas ?? 0;
+
+      // Check for roll-out failure conditions in containers
+      const containers = liveResource.containers || [];
+      const hasCrash = containers.some((c) => c.waitingReason === 'CrashLoopBackOff' || c.waitingReason === 'ImagePullBackOff');
+
+      if (hasCrash) {
+        const elapsedMs = now - completedAt;
+        const timeoutMs = (action.verificationPlan?.timeoutSeconds || 300) * 1000;
+        if (elapsedMs > timeoutMs) {
+          return {
+            status: 'VERIFICATION_FAILED',
+            observedState: `Rollout verification failed: container error detected during rollout`,
+            evidence: ['Container in new rollout entered error state'],
+            failureReason: 'Rollout failed: containers entered crash loop or pull error'
+          };
+        }
+        return {
+          status: 'VERIFYING',
+          observedState: 'Observing rollout progress across pods...',
+          evidence: ['Waiting on container readiness']
+        };
+      }
+
+      if (readyReplicas >= specReplicas && availableReplicas >= specReplicas && unavailableReplicas === 0) {
+        return {
+          status: 'VERIFIED',
+          observedState: `Rollout complete: ${readyReplicas}/${specReplicas} replicas available with 0 unavailable`,
+          evidence: [
+            `Updated replicas reached desired count (${readyReplicas}/${specReplicas})`,
+            'Zero unavailable replicas reported in fresh telemetry',
+            'All pods Ready=True'
+          ]
+        };
+      }
+
+      return {
+        status: 'VERIFYING',
+        observedState: `Rollout in progress: ${readyReplicas}/${specReplicas} replicas ready`,
+        evidence: [`Available: ${availableReplicas}, Desired: ${specReplicas}`]
+      };
+    }
+
+    // 3. ScaleDeployment
+    if (actionType === 'ScaleDeployment') {
+      const targetReplicas = parseInt(action.proposedValue || '1', 10);
+      const availableReplicas = liveResource.availableReplicas ?? liveResource.readyReplicas ?? (liveResource as any).status?.availableReplicas ?? 0;
+      if (availableReplicas === targetReplicas) {
+        return {
+          status: 'VERIFIED',
+          observedState: `Deployment scaled successfully to ${availableReplicas} available replicas`,
+          evidence: [`Available replicas matches target (${availableReplicas})`]
+        };
+      }
+      return {
+        status: 'VERIFYING',
+        observedState: `Scaling deployment: ${availableReplicas}/${targetReplicas} replicas available`,
+        evidence: [`Current available: ${availableReplicas}, Target: ${targetReplicas}`]
+      };
+    }
+
+    // 4. ReplacePodImage
+    const containers = extractResourceContainers(liveResource);
+    const container = containers.find((c) => c.name === action.target.container);
     if (!container) {
       return {
         status: 'VERIFICATION_FAILED',
-        observedState: `Target container "${action.target.container}" missing from updated Pod`,
-        evidence: ['Container not found in fresh live pod spec'],
+        observedState: `Target container "${action.target.container}" missing from updated workload`,
+        evidence: ['Container not found in fresh live workload spec'],
         failureReason: 'Target container not found'
       };
     }
 
-    // 1. Did the image actually update to proposedValue?
+    // Did the image actually update to proposedValue?
     if (container.image !== action.proposedValue) {
       return {
         status: 'VERIFYING',
@@ -376,7 +677,7 @@ export class RemediationPolicyEngine {
       };
     }
 
-    // 2. Negative Verification: Check for image pull errors or crash loops
+    // Negative Verification: Check for image pull errors or crash loops
     const waitingReason = container.waitingReason || '';
     const termReason = container.terminationReason || '';
     const hasImagePullError =
@@ -391,37 +692,25 @@ export class RemediationPolicyEngine {
       (container.exitCode !== undefined && container.exitCode !== 0);
 
     if (hasImagePullError || hasCrashLoop) {
-      const elapsedMs = now - completedAt;
-      const timeoutMs = (action.verificationPlan?.timeoutSeconds || 300) * 1000;
-
-      if (elapsedMs > timeoutMs) {
-        return {
-          status: 'VERIFICATION_FAILED',
-          observedState: `Negative verification triggered: container entered failure condition ${waitingReason || termReason || 'Error'}`,
-          evidence: [
-            `Container state is waiting with reason "${waitingReason || termReason}"`,
-            `Message: "${container.waitingMessage || container.terminationMessage || 'Exit code ' + container.exitCode}"`,
-            `Verification timed out after ${Math.round(elapsedMs / 1000)}s`
-          ],
-          failureReason: `Negative verification: Container entered failure condition "${waitingReason || termReason}"`
-        };
-      }
-
       return {
-        status: 'VERIFYING',
-        observedState: `Observing failure condition (${waitingReason || termReason}); checking for transient resolution...`,
-        evidence: [`Waiting reason: ${waitingReason}`, `Waiting message: ${container.waitingMessage}`]
+        status: 'VERIFICATION_FAILED',
+        observedState: `Negative verification triggered: container entered failure condition ${waitingReason || termReason || 'Error'}`,
+        evidence: [
+          `Container state is waiting with reason "${waitingReason || termReason}"`,
+          `Message: "${container.waitingMessage || container.terminationMessage || 'Exit code ' + container.exitCode}"`
+        ],
+        failureReason: `Negative verification: Container entered failure condition "${waitingReason || termReason}"`
       };
     }
 
-    // 3. Positive Verification: Container is running and ready, Pod is healthy
+    // Positive Verification: Container is running and ready, Pod is healthy
     const isRunning = container.state === 'running' || liveResource.status === 'Running';
     const isReady = container.ready === true;
 
     if (isRunning && isReady) {
       return {
         status: 'VERIFIED',
-        observedState: `Pod is Running and container "${container.name}" is Ready with verified image "${container.image}"`,
+        observedState: `Workload is Running and container "${container.name}" is Ready with verified image "${container.image}"`,
         evidence: [
           `Authoritative telemetry confirms container image matches proposed "${action.proposedValue}"`,
           `Container status is running and ready probe passing`,

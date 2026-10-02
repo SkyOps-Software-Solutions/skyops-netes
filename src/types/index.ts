@@ -530,6 +530,7 @@ export type RemediationActionStatus =
   | 'DELIVERY_FAILED'
   | 'EXECUTION_FAILED'
   | 'VERIFICATION_FAILED'
+  | 'ROLLING_BACK'
   | 'CANCELLED'
   | 'STALE'
   | 'PENDING'
@@ -551,12 +552,22 @@ export interface RemediationPolicy {
   minConfidenceThreshold: number;
   maxAttemptsPerIncident: number;
   maxActionsPerHourPerCluster: number;
+  circuitBreakerThreshold?: number;
+  rateLimitPerHour?: number;
+  autoRollbackEnabled?: boolean;
   telemetryFreshnessThresholdMs: number;
   actionExpirationMs: number;
   leaseTimeoutMs: number;
   updatedAt: number;
   updatedBy?: { id: string; name: string };
 }
+
+export type CanonicalRemediationActionType =
+  | 'RestartPod'
+  | 'RolloutRestart'
+  | 'RollbackDeployment'
+  | 'ReplacePodImage'
+  | 'ScaleDeployment';
 
 /** Canonical Remediation Action Model */
 export interface RemediationAction {
@@ -565,16 +576,27 @@ export interface RemediationAction {
   orgId: string;
   clusterId: string;
   clusterName?: string;
-  actionType: 'ReplacePodImage' | AIRemediationActionType;
-  type: 'ReplacePodImage';
-  target: { kind: 'Pod' | string; namespace: string; name: string; container: string };
+  actionType: CanonicalRemediationActionType | 'ReplacePodImage' | AIRemediationActionType;
+  type: CanonicalRemediationActionType | 'ReplacePodImage';
+  target: {
+    kind: string;
+    namespace: string;
+    name: string;
+    container?: string;
+    uid?: string;
+  };
   fieldPath: string;
   expectedCurrentValue: string;
   proposedValue: string;
   parameters?: {
-    containerName: string;
-    currentImage: string;
-    proposedImage: string;
+    containerName?: string;
+    currentImage?: string;
+    proposedImage?: string;
+    targetReplicas?: number;
+    previousReplicas?: number;
+    restartedAt?: string;
+    previousRevision?: string;
+    currentRevision?: string;
     [key: string]: unknown;
   };
   groundingEvidence?: Array<{
@@ -624,9 +646,10 @@ export interface RemediationAction {
   executionResult?: {
     success: boolean;
     message: string;
-    errorCategory?: 'TARGET_NOT_FOUND' | 'PRECONDITION_FAILED' | 'CONTROLLER_OWNED' | 'INVALID_FIELD' | 'K8S_API_ERROR' | 'UNKNOWN';
+    errorCategory?: 'TARGET_NOT_FOUND' | 'PRECONDITION_FAILED' | 'CONTROLLER_OWNED' | 'INVALID_FIELD' | 'K8S_API_ERROR' | 'UNKNOWN' | string;
     details?: string;
     executionId?: string;
+    runtimeTraces?: Array<{ timestamp: number; phase: string; message: string; error?: string }>;
   };
   verificationResult?: {
     success: boolean;
@@ -634,6 +657,13 @@ export interface RemediationAction {
     evidence?: string[];
     verifiedAt?: number;
     failureReason?: string;
+  };
+  rollbackResult?: {
+    success: boolean;
+    restoredState?: string;
+    message?: string;
+    error?: string;
+    rolledBackAt?: number;
   };
 }
 
@@ -662,7 +692,12 @@ export type TimelineEventType =
   | 'REMEDIATION_ROLLED_BACK'
   | 'REMEDIATION_ROLLBACK_FAILED'
   | 'CIRCUIT_BREAKER_TRIPPED'
-  | 'AUTOMATIC_ACTION';
+  | 'AUTOMATIC_ACTION'
+  | 'AUTOMATIC_ACTION_EXECUTING'
+  | 'AUTOMATIC_ACTION_VERIFIED'
+  | 'AUTOMATIC_ACTION_FAILED'
+  | 'AUTOMATIC_ROLLBACK'
+  | 'AUTOMATIC_ROLLBACK_VERIFIED';
 
 export interface TimelineEvent {
   id: string;
@@ -776,6 +811,10 @@ export interface KubernetesResource {
   cpuUsage?: number;
   memoryUsage?: number;
   restartCount?: number;
+  specReplicas?: number;
+  readyReplicas?: number;
+  availableReplicas?: number;
+  unavailableReplicas?: number;
   observedAt?: number;
   ingestedAt?: number;
 }
@@ -1343,6 +1382,12 @@ export interface StructuredRemediation {
     strategy?: string;
     rollbackValue?: string;
   };
+  groundingEvidence?: Array<{
+    source: string;
+    reason: string;
+    message: string;
+    timestamp?: number;
+  }>;
   createdAt: number;
   updatedAt: number;
 }

@@ -142,6 +142,7 @@ type RemediationAction struct {
 	ID                   string                 `json:"id"`
 	IncidentID           string                 `json:"incidentId"`
 	Type                 string                 `json:"type"`
+	ActionType           string                 `json:"actionType,omitempty"`
 	Target               ActionTarget           `json:"target"`
 	FieldPath            string                 `json:"fieldPath"`
 	ExpectedCurrentValue string                 `json:"expectedCurrentValue"`
@@ -152,6 +153,19 @@ type RemediationAction struct {
 	ExpiresAt            int64                  `json:"expiresAt,omitempty"`
 	ClusterID            string                 `json:"clusterId,omitempty"`
 	RequestedBy          string                 `json:"requestedBy,omitempty"`
+	RiskLevel            string                 `json:"riskLevel,omitempty"`
+	Status               string                 `json:"status,omitempty"`
+	VerificationPlan     map[string]interface{} `json:"verificationPlan,omitempty"`
+	RollbackPlan         map[string]interface{} `json:"rollbackPlan,omitempty"`
+	GroundingEvidence    []interface{}          `json:"groundingEvidence,omitempty"`
+}
+
+// CanonicalType returns the resolved action type (supporting both Type and ActionType fields)
+func (a *RemediationAction) CanonicalType() string {
+	if a.ActionType != "" {
+		return a.ActionType
+	}
+	return a.Type
 }
 
 // SendHeartbeat sends a periodic heartbeat with exponential retry backoff

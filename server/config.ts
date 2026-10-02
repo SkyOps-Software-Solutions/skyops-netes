@@ -46,9 +46,24 @@ const ConfigSchema = z.object({
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
   SKYOPS_STORAGE_BUCKET: z.string().optional(),
-  FIREBASE_STORAGE_BUCKET: z.string().optional()
+  FIREBASE_STORAGE_BUCKET: z.string().optional(),
+  DEV_TESTING_EMAIL: z.string().optional()
 }).superRefine((values, ctx) => {
   if (values.NODE_ENV === 'production') {
+    if (values.SKYOPS_NOTIFICATION_SENDER_EMAIL && (values.SKYOPS_NOTIFICATION_SENDER_EMAIL.endsWith('@skyops.internal') || values.SKYOPS_NOTIFICATION_SENDER_EMAIL.includes('dev-test'))) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['SKYOPS_NOTIFICATION_SENDER_EMAIL'],
+        message: 'Development testing email cannot be used as production notification sender email'
+      });
+    }
+    if (values.DEV_TESTING_EMAIL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['DEV_TESTING_EMAIL'],
+        message: 'DEV_TESTING_EMAIL is strictly prohibited in production'
+      });
+    }
     if (!values.FIREBASE_PROJECT_ID && !values.FIREBASE_TRUSTED_PROJECT_IDS) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['FIREBASE_PROJECT_ID'], message: 'FIREBASE_PROJECT_ID or FIREBASE_TRUSTED_PROJECT_IDS is required in production' });
     }
@@ -122,7 +137,10 @@ try {
       process.env.SKYOPS_STORAGE_BUCKET ||
       (!productionEnvironment
         ? process.env.VITE_FIREBASE_STORAGE_BUCKET || fallbackConfig.storageBucket || 'skyops-a1143.firebasestorage.app'
-        : undefined)
+        : undefined),
+    DEV_TESTING_EMAIL: !productionEnvironment
+      ? process.env.SKYOPS_DEV_TESTING_EMAIL || 'dev-testing@skyops.internal'
+      : undefined
   });
 } catch (err) {
   console.error('[SkyOps Configuration] Fatal Configuration Validation Error:', err);
@@ -142,6 +160,7 @@ try {
     LOG_LEVEL: 'info',
     SKYOPS_NOTIFICATION_SENDER_EMAIL: 'skyopsnetes2000@gmail.com',
     SKYOPS_NOTIFICATION_SENDER_NAME: 'SkyOps',
+    DEV_TESTING_EMAIL: 'dev-testing@skyops.internal',
     CORS_ORIGINS: undefined
   };
 }

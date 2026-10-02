@@ -155,4 +155,33 @@ export class MockBillingProvider implements BillingProvider {
   }
 }
 
-export const billingProvider = new MockBillingProvider();
+export const billingProvider: BillingProvider = {
+  get name() {
+    const { getBillingProvider } = require('./provider');
+    return getBillingProvider().name;
+  },
+  createCustomer(orgId: string, orgName: string, email: string) {
+    const { getBillingProvider } = require('./provider');
+    return getBillingProvider().createCustomer(orgId, orgName, email);
+  },
+  createCheckoutSession(options: CheckoutSessionOptions) {
+    const { getBillingProvider } = require('./provider');
+    return getBillingProvider().createCheckoutSession(options);
+  },
+  getCheckoutSession(sessionId: string) {
+    const { getBillingProvider } = require('./provider');
+    return getBillingProvider().getCheckoutSession(sessionId);
+  },
+  cancelSubscription(providerSubId: string, atPeriodEnd?: boolean) {
+    const { getBillingProvider } = require('./provider');
+    return getBillingProvider().cancelSubscription(providerSubId, atPeriodEnd);
+  },
+  resumeSubscription(providerSubId: string) {
+    const { getBillingProvider } = require('./provider');
+    return getBillingProvider().resumeSubscription(providerSubId);
+  },
+  verifyWebhookSignature(rawPayload: string | Buffer, signature: string, secret?: string) {
+    const { getBillingProvider } = require('./provider');
+    return getBillingProvider().verifyWebhookSignature(rawPayload, signature, secret);
+  }
+};

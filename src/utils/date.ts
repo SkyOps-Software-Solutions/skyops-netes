@@ -62,3 +62,27 @@ export function formatTimeAgo(ts?: number | string): string {
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
 }
+
+export function formatIncidentDetectedDateTime(ts?: number | string): string {
+  if (ts === undefined || ts === null || ts === '') return 'Unknown';
+  const num = typeof ts === 'string' ? Date.parse(ts) : ts;
+  if (typeof num !== 'number' || Number.isNaN(num) || num <= 0) {
+    return 'Unknown';
+  }
+  const d = new Date(num);
+  if (Number.isNaN(d.getTime())) {
+    return 'Unknown';
+  }
+  const dayStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  let tzStr = '';
+  try {
+    const formatted = new Intl.DateTimeFormat([], { timeZoneName: 'short' }).format(d);
+    const parts = formatted.split(' ');
+    tzStr = parts[parts.length - 1] || '';
+  } catch {
+    tzStr = '';
+  }
+  return `${dayStr} · ${timeStr}${tzStr ? ` ${tzStr}` : ''}`;
+}
+

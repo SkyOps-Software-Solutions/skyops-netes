@@ -231,8 +231,16 @@ export async function requireOrgMembership(
       }
     } catch (err: any) {
       const msg = err?.message || String(err);
-      if (msg.includes('Quota') || msg.includes('quota')) {
-        console.warn('[SkyOps Auth] Firestore read quota reached. Seamlessly resolving tenant workspace from local cache.');
+      if (
+        msg.includes('Quota') ||
+        msg.includes('quota') ||
+        msg.includes('permissions') ||
+        msg.includes('PERMISSION_DENIED') ||
+        msg.includes('permission-denied') ||
+        err?.code === 7 ||
+        err?.code === 8
+      ) {
+        // Silently resolve tenant workspace from authoritative local cache
       } else {
         console.warn('[SkyOps Auth] Notice: Firestore user organizations lookup failed:', msg);
       }

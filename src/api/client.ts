@@ -40,7 +40,15 @@ import {
   OrgBillingOverview,
   Plan,
   PlanId,
-  Subscription
+  Subscription,
+  WhatChangedReport,
+  SimilarIncidentSummary,
+  IncidentPostmortem,
+  DeploymentRecord,
+  DeploymentGateEvaluation,
+  ServiceDependency,
+  ServiceHealthRecord,
+  ReliabilityMetrics
 } from '../types/index';
 
 /**
@@ -980,6 +988,7 @@ class ApiClient {
     email: string;
     updatedAt?: number;
     sender: string;
+    testingEmail?: string | null;
   }> {
     return this.request('/api/v1/settings/notifications');
   }
@@ -989,6 +998,7 @@ class ApiClient {
     email: string;
     updatedAt?: number;
     sender: string;
+    testingEmail?: string | null;
   }> {
     return this.request('/api/v1/settings/notifications', {
       method: 'PUT',
@@ -996,7 +1006,7 @@ class ApiClient {
     });
   }
 
-  async sendTestNotification(): Promise<{
+  async sendTestNotification(recipientEmail?: string): Promise<{
     success: boolean;
     messageId?: string;
     error?: string;
@@ -1005,7 +1015,8 @@ class ApiClient {
     timestamp: number;
   }> {
     return this.request('/api/v1/settings/notifications/test', {
-      method: 'POST'
+      method: 'POST',
+      body: recipientEmail ? JSON.stringify({ recipientEmail }) : undefined
     });
   }
 

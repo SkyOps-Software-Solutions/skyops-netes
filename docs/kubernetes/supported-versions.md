@@ -83,7 +83,7 @@ rules:
   # 1. Pods: Discovery, Lifecycle Observation, and Remediation Re-creation
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "list", "watch", "create", "delete"]
+    verbs: ["get", "list", "watch"]
 
   # 2. Logs: Live Streaming for Incident Root Cause Analysis
   - apiGroups: [""]

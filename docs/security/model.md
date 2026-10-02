@@ -85,12 +85,9 @@ securityContext:
 
 ## RBAC Least Privilege
 
-The Kubernetes ClusterRole assigned to the agent (`skyops-agent-reader`) is bounded:
-- **Read-Only:** Nodes, Namespaces, Services, ConfigMaps, Secrets, PVCs, StorageClasses, and Events.
-- **Controlled Mutation:** Limited strictly to:
-  - `pods`: `create`, `delete` (for replacing standalone crashed pods).
-  - `deployments`: `patch` (for rolling image updates and replica scaling).
-- **Prohibited:** Cannot delete Namespaces, PersistentVolumes, Nodes, RBAC Roles, or mutating webhook configurations.
+The Kubernetes ClusterRole assigned to the agent (`skyops-agent-reader`) is strictly read-only:
+- **Read-Only Telemetry & Logs:** Pods, Nodes, Namespaces, Services, ConfigMaps, Secrets, PVCs, StorageClasses, and Events.
+- **Prohibited:** Cannot create, update, or delete Pods, Deployments, Namespaces, PersistentVolumes, Nodes, RBAC Roles, or mutating webhook configurations. Remediation actions are operator-directed via SkyOps manifests and audited workflows.
 
 ---
 

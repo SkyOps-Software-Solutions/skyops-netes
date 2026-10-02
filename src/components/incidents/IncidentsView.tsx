@@ -8,7 +8,8 @@ import {
   Search,
   SlidersHorizontal,
   Trash2,
-  X
+  X,
+  Shield
 } from 'lucide-react';
 import React, { useState } from 'react';
 import { api } from '../../api/client';
@@ -16,6 +17,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Cluster, Incident, IncidentSeverity, IncidentStatus } from '../../types/index';
 import { SeverityBadge, StatusBadge } from '../common/Badges';
 import { Button, EmptyState } from '../common/UI';
+import { PreDeploymentGateModal } from './PreDeploymentGateModal';
 
 interface IncidentsViewProps {
   incidents: Incident[];
@@ -38,6 +40,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
   const [severityFilter, setSeverityFilter] = useState<string>('ALL');
   const [clusterFilter, setClusterFilter] = useState<string>('ALL');
   const [clearing, setClearing] = useState(false);
+  const [isGateModalOpen, setIsGateModalOpen] = useState(false);
 
   const handleClearAll = async () => {
     if (!window.confirm('Are you sure you want to clear all incident tickets? Any active failing resources will regenerate tickets on the next telemetry sync.')) return;
@@ -126,6 +129,15 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
               Clear All
             </Button>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsGateModalOpen(true)}
+            icon={<Shield className="w-3.5 h-3.5 text-purple-400" />}
+            className="text-purple-300 border-purple-500/30 hover:bg-purple-500/10"
+          >
+            Pre-Deployment Gate
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -307,6 +319,16 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Pre-Deployment Health Gate Modal */}
+      <PreDeploymentGateModal
+        clusterId={clusters[0]?.id || 'cluster-killer-coda'}
+        clusterName={clusters[0]?.name || 'Kubernetes Production'}
+        defaultNamespace="production"
+        defaultWorkload="checkout-api"
+        isOpen={isGateModalOpen}
+        onClose={() => setIsGateModalOpen(false)}
+      />
     </div>
   );
 };

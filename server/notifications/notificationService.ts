@@ -13,6 +13,9 @@ import {
   UserNotificationSettings
 } from './types';
 
+// Default testing email available strictly in development/test environments
+export const DEV_TESTING_EMAIL = 'dev-testing@skyops.internal';
+
 export interface NotificationServiceOptions {
   provider?: IEmailProvider;
   senderEmail?: string;
@@ -36,7 +39,14 @@ export class IncidentNotificationService {
 
   constructor(options?: NotificationServiceOptions) {
     this.senderEmail = options?.senderEmail || process.env.SKYOPS_NOTIFICATION_SENDER_EMAIL || 'skyopsnetes2000@gmail.com';
-    this.senderName = options?.senderName || process.env.SKYOPS_NOTIFICATION_SENDER_NAME || 'SkyOps';
+    if (process.env.NODE_ENV === 'production') {
+      if (!options?.appUrl && !process.env.APP_URL && !process.env.SKYOPS_SERVER_URL) {
+        throw new Error('[NotificationService] APP_URL is required in production; localhost fallback is forbidden');
+      }
+      if (this.isTestingEmail(this.senderEmail)) {
+        throw new Error('[NotificationService] Development testing email cannot be used as production sender');
+      }
+    }
     this.appUrl = options?.appUrl || process.env.APP_URL || process.env.SKYOPS_SERVER_URL || 'http://localhost:3000';
     this.storagePath = options?.storagePath || getPersistenceConfig().notificationsFile;
 
@@ -72,6 +82,31 @@ export class IncidentNotificationService {
 
   public getProvider(): IEmailProvider {
     return this.provider;
+  }
+
+  /**
+   * Returns the development testing email address.
+   * STRICTLY returns null in production (NODE_ENV === 'production').
+   */
+  public getTestingEmail(): string | null {
+    if (process.env.NODE_ENV === 'production') {
+      return null;
+    }
+    return process.env.SKYOPS_DEV_TESTING_EMAIL || DEV_TESTING_EMAIL;
+  }
+
+  /**
+   * Checks whether an email address is a development testing email.
+   */
+  public isTestingEmail(email: string): boolean {
+    if (!email) return false;
+    const lower = email.trim().toLowerCase();
+    return (
+      lower === DEV_TESTING_EMAIL.toLowerCase() ||
+      lower.endsWith('@skyops.internal') ||
+      lower.endsWith('.test') ||
+      Boolean(process.env.SKYOPS_DEV_TESTING_EMAIL && lower === process.env.SKYOPS_DEV_TESTING_EMAIL.trim().toLowerCase())
+    );
   }
 
   /**
@@ -118,6 +153,11 @@ export class IncidentNotificationService {
 
       const recipientEmail = recipientInfo.email.trim();
       if (!recipientEmail || !recipientEmail.includes('@')) {
+        continue;
+      }
+
+      // Prohibit delivery to testing emails in production
+      if (process.env.NODE_ENV === 'production' && this.isTestingEmail(recipientEmail)) {
         continue;
       }
 
@@ -234,13 +274,26 @@ export class IncidentNotificationService {
   }
 
   /**
-   * Send a test incident notification email to the authenticated user.
+   * Send a test incident notification email to the authenticated user or testing email in development.
    */
   public async sendTestNotification(
     recipientEmail: string,
     orgName: string,
     orgId: string
   ): Promise<EmailDeliveryResult> {
+    const isProd = process.env.NODE_ENV === 'production';
+    if (!recipientEmail) {
+      if (!isProd) {
+        recipientEmail = this.getTestingEmail() || DEV_TESTING_EMAIL;
+      } else {
+        throw new Error('Recipient email is required in production');
+      }
+    }
+
+    if (isProd && this.isTestingEmail(recipientEmail)) {
+      throw new Error('Development testing emails are prohibited in production environment');
+    }
+
     const testIncident: Incident = {
       id: `SKY-TEST-${crypto.randomBytes(2).toString('hex').toUpperCase()}`,
       fingerprint: `test-fp-${Date.now()}`,

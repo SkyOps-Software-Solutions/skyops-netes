@@ -195,9 +195,16 @@ export function getBillingProvider(): BillingProvider {
   if (customBillingProvider) {
     return customBillingProvider;
   }
-  if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET && process.env.NODE_ENV !== 'test') {
+  const isProd = process.env.NODE_ENV === 'production';
+  const hasRazorpay = Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET);
+  if (hasRazorpay && process.env.NODE_ENV !== 'test') {
     const { RazorpayBillingProvider } = require('./razorpayProvider');
     return new RazorpayBillingProvider();
+  }
+  if (isProd) {
+    throw new Error(
+      '[Billing] Razorpay live credentials (RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET) are required in production. Production must never silently use MockBillingProvider.'
+    );
   }
   return new MockBillingProvider();
 }
@@ -209,7 +216,7 @@ export function setBillingProvider(provider: BillingProvider | null): void {
 export function getBillingConfig(): { provider: 'razorpay' | 'mock'; keyId: string | null; currency: string } {
   const isRazorpay = Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET && process.env.NODE_ENV !== 'test');
   return {
-    provider: isRazorpay ? 'razorpay' : 'mock',
+    provider: isRazorpay ? 'razorpay' : (process.env.NODE_ENV === 'production' ? 'razorpay' : 'mock'),
     keyId: isRazorpay ? (process.env.RAZORPAY_KEY_ID || null) : null,
     currency: 'INR'
   };

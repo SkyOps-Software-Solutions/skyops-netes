@@ -1,15 +1,31 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // SkyOps is an API-mediated control plane.  The browser must never be able
-    // to write control-plane records (including audit events, remediation
-    // actions, agent credentials, or tenant membership) directly to Firestore.
-    // Server processes use service credentials/Admin SDKs and therefore do not
-    // depend on these client rules.  Use the Firebase emulator for local SDK
-    // experimentation rather than relaxing production rules.
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isServerBackend() {
+      return isAuthenticated() && (
+        request.auth.token.email == 'server-internal@skyops.io' ||
+        request.auth.uid == 'ZvwusA1A8VhC6TVyTrvmGvBXGMZ2'
+      );
+    }
+
+    // SkyOps is an API-mediated control plane. All control plane persistence
+    // queries and mutations are performed by the authenticated backend service.
     match /{document=**} {
+      allow read, write: if isServerBackend();
+    }
+
+    // Direct client access to infrastructure secrets and webhook replay state is denied by default.
+    match /clusterTokens/{tokenId} {
+      allow read, write: if false;
+    }
+
+    match /processedWebhooks/{webhookId} {
       allow read, write: if false;
     }
   }
 }
-

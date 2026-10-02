@@ -48,6 +48,7 @@ import { verifyProductionPersistence } from './server/persistence';
 import { skyOpsAIService } from './server/ai/service';
 import { explainArchitectureWithAI } from './server/ai/architectureAI';
 import { SkyOpsIntelligenceEngine } from './server/engine/intelligence';
+import { generateWhatChangedReport, buildServiceDependencyGraph } from './server/engine/correlator';
 import { AGENT_DEFAULT_NAMESPACE, AGENT_VERSION } from './src/config/version';
 import { KubernetesResource } from './src/types/index';
 import { entitlementService } from './server/billing/entitlements';
@@ -1656,6 +1657,62 @@ app.post('/api/v1/incidents/:id/investigate', requireUserAuth, requireOrgMembers
   res.json({ result, intelligence });
 });
 
+// --- PROMPT 2: What Changed? Root-Cause Correlation Endpoint ---
+app.get('/api/v1/incidents/:id/what-changed', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const incident = store.getIncident(req.params.id, req.orgId!);
+  if (!incident) {
+    return res.status(404).json({ error: 'Incident not found' });
+  }
+
+  const minutesBefore = req.query.minutesBefore ? parseInt(req.query.minutesBefore as string, 10) : 15;
+  const minutesAfter = req.query.minutesAfter ? parseInt(req.query.minutesAfter as string, 10) : 5;
+
+  const clusterResources = store.getClusterResources(incident.clusterId, req.orgId!);
+  const deployments = store.getDeployments(incident.clusterId, req.orgId!);
+
+  const report = generateWhatChangedReport(incident, clusterResources, deployments, {
+    minutesBefore: isNaN(minutesBefore) ? 15 : minutesBefore,
+    minutesAfter: isNaN(minutesAfter) ? 5 : minutesAfter
+  });
+
+  res.json({ report });
+});
+
+// --- PROMPT 2: Similar Past Incidents Endpoint ---
+app.get('/api/v1/incidents/:id/similar', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const incident = store.getIncident(req.params.id, req.orgId!);
+  if (!incident) {
+    return res.status(404).json({ error: 'Incident not found' });
+  }
+
+  const similarIncidents = store.getSimilarIncidents(incident.id, req.orgId!);
+  res.json({ similarIncidents });
+});
+
+// --- PROMPT 2: Postmortem & Prevention Endpoints ---
+app.get('/api/v1/incidents/:id/postmortem', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const incident = store.getIncident(req.params.id, req.orgId!);
+  if (!incident) {
+    return res.status(404).json({ error: 'Incident not found' });
+  }
+
+  let postmortem = store.getPostmortem(incident.id);
+  if (!postmortem) {
+    postmortem = store.generatePostmortem(incident.id, req.orgId!);
+  }
+  res.json({ postmortem });
+});
+
+app.post('/api/v1/incidents/:id/postmortem', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const incident = store.getIncident(req.params.id, req.orgId!);
+  if (!incident) {
+    return res.status(404).json({ error: 'Incident not found' });
+  }
+
+  const postmortem = store.generatePostmortem(incident.id, req.orgId!);
+  res.json({ postmortem });
+});
+
 // --- SkyOps AI Incident Root-Cause Analysis Endpoints ---
 app.get('/api/v1/incidents/:id/ai-analysis', requireUserAuth, requireOrgMembership, async (req: AuthenticatedUserRequest, res) => {
   const incident = store.getIncident(req.params.id, req.orgId!);
@@ -2136,6 +2193,37 @@ app.delete(
     res.json({ status: 'CLEARED', count: deletedCount });
   }
 );
+
+// --- PROMPT 2: Deployments & Pre-Deployment Health Gate ---
+app.get('/api/v1/deployments', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const clusterId = req.query.clusterId as string | undefined;
+  const deployments = store.getDeployments(clusterId, req.orgId!);
+  res.json({ deployments });
+});
+
+app.post('/api/v1/deployments/gate-check', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const { clusterId, proposed } = req.body || {};
+  if (!clusterId || !proposed || !proposed.name || !proposed.image) {
+    return res.status(400).json({ error: 'clusterId and proposed workload (name, image) are required' });
+  }
+
+  const evaluation = store.evaluateDeploymentGate(clusterId, req.orgId!, proposed);
+  res.json({ evaluation });
+});
+
+// --- PROMPT 2: Service Dependency & Blast Radius Topology ---
+app.get('/api/v1/services/dependencies', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const clusterId = (req.query.clusterId as string) || undefined;
+  const clusterResources = store.getClusterResources(clusterId || 'default', req.orgId!);
+  const topology = buildServiceDependencyGraph(clusterResources);
+  res.json(topology);
+});
+
+// --- PROMPT 2: Reliability & SRE Metrics ---
+app.get('/api/v1/reliability/metrics', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const metrics = store.getReliabilityMetrics(req.orgId!);
+  res.json({ metrics });
+});
 
 // --- Overview Dashboard Metrics ---
 app.get('/api/v1/overview', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
@@ -2668,11 +2756,13 @@ app.post('/api/v1/dev/simulate-scenario', requireUserAuth, requireOrgMembership,
 app.get('/api/v1/settings/notifications', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
   const user = req.user!;
   const settings = store.getUserNotificationSettings(user.id, user.email);
+  const testingEmail = incidentNotificationService.getTestingEmail();
   res.json({
     incidentEmailEnabled: settings.incidentEmailEnabled,
     email: user.email,
     updatedAt: settings.updatedAt,
-    sender: incidentNotificationService.getSender()
+    sender: incidentNotificationService.getSender(),
+    testingEmail: !isProduction ? testingEmail : null
   });
 });
 
@@ -2708,7 +2798,8 @@ app.put('/api/v1/settings/notifications', requireUserAuth, requireOrgMembership,
     incidentEmailEnabled: updated.incidentEmailEnabled,
     email: user.email,
     updatedAt: updated.updatedAt,
-    sender: incidentNotificationService.getSender()
+    sender: incidentNotificationService.getSender(),
+    testingEmail: !isProduction ? incidentNotificationService.getTestingEmail() : null
   });
 });
 
@@ -2717,13 +2808,27 @@ app.post('/api/v1/settings/notifications/test', requireUserAuth, requireOrgMembe
   const org = store.getOrg(req.orgId!);
   const orgName = org?.name || 'SkyOps Organization';
 
+  let recipient = user.email;
+  if (req.body?.recipientEmail && typeof req.body.recipientEmail === 'string') {
+    const candidate = req.body.recipientEmail.trim();
+    if (isProduction && incidentNotificationService.isTestingEmail(candidate)) {
+      return res.status(400).json({
+        error: 'Testing emails are strictly prohibited in production environment',
+        code: 'TESTING_EMAIL_FORBIDDEN_IN_PROD'
+      });
+    }
+    if (!isProduction || candidate === user.email) {
+      recipient = candidate;
+    }
+  }
+
   try {
-    const result = await incidentNotificationService.sendTestNotification(user.email, orgName, req.orgId!);
+    const result = await incidentNotificationService.sendTestNotification(recipient, orgName, req.orgId!);
     res.json({
       success: result.success,
       messageId: result.messageId,
       error: result.error,
-      recipient: user.email,
+      recipient,
       sender: incidentNotificationService.getSender(),
       timestamp: result.timestamp
     });
@@ -2731,11 +2836,42 @@ app.post('/api/v1/settings/notifications/test', requireUserAuth, requireOrgMembe
     res.status(500).json({
       success: false,
       error: err?.message || 'Failed to send test notification',
-      recipient: user.email,
+      recipient,
       sender: incidentNotificationService.getSender()
     });
   }
 });
+
+// Dedicated dev-only testing email verification endpoints (forbidden/unavailable in production)
+if (!isProduction) {
+  app.get('/api/v1/dev/testing-email', (req, res) => {
+    const testingEmail = incidentNotificationService.getTestingEmail();
+    res.json({
+      testingEmail,
+      environment: process.env.NODE_ENV || 'development',
+      available: true
+    });
+  });
+
+  app.post('/api/v1/dev/testing-email/send', requireUserAuth, requireOrgMembership, async (req: AuthenticatedUserRequest, res) => {
+    try {
+      const testingEmail = incidentNotificationService.getTestingEmail();
+      if (!testingEmail) {
+        return res.status(403).json({ error: 'Testing email is unavailable in production' });
+      }
+      const org = store.getOrg(req.orgId!) || { name: 'Development Org', id: req.orgId! };
+      const result = await incidentNotificationService.sendTestNotification(testingEmail, org.name, org.id);
+      res.json({
+        success: result.success,
+        recipient: testingEmail,
+        messageId: result.messageId,
+        timestamp: result.timestamp
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed to dispatch testing email' });
+    }
+  });
+}
 
 app.get('/api/v1/settings/notifications/deliveries', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
   const user = req.user!;

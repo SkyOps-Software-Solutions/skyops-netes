@@ -408,6 +408,10 @@ export class BillingService {
           throw new Error('Razorpay payment signature verification failed');
         }
       }
+    } else if (process.env.NODE_ENV === 'production' && actor.id !== 'webhook') {
+      throw new Error(
+        'Payment verification signature is required to confirm a subscription upgrade in production. Unverified checkout is prohibited.'
+      );
     }
 
     const plan = PLANS[planId] || PLANS.PRO;
@@ -423,7 +427,7 @@ export class BillingService {
     const now = Date.now();
     const periodMonths = pricing.durationMonths || 1;
     const periodEnd = now + periodMonths * 30 * 86400000;
-    const providerType = (paymentVerification ? 'razorpay' : 'mock') as any;
+    const providerType = (paymentVerification ? 'razorpay' : (process.env.NODE_ENV === 'production' ? 'razorpay' : 'mock')) as any;
     const providerSubId = paymentVerification?.razorpaySubscriptionId || paymentVerification?.razorpayPaymentId || `sub_prov_${crypto.randomBytes(8).toString('hex')}`;
 
     let sub = store.getSubscription(orgId);

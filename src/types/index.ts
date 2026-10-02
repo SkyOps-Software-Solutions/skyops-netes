@@ -1679,5 +1679,192 @@ export interface StorageUsageSummary {
   lastUpdatedAt: number;
 }
 
+// =========================================================================
+// PROMPT 2: INTELLIGENCE + CORRELATION + PREVENTION DATA MODELS
+// =========================================================================
+
+export type ChangeCorrelationLevel =
+  | 'Strong correlation'
+  | 'Relevant change'
+  | 'Possible contributor'
+  | 'No direct correlation found';
+
+export interface WhatChangedItem {
+  id: string;
+  resourceKind: string;
+  resourceName: string;
+  namespace: string;
+  changeType: 'IMAGE_DEPLOYMENT' | 'REPLICA_SCALING' | 'CONFIGMAP_CHANGE' | 'SECRET_CHANGE' | 'RESOURCE_LIMIT' | 'NODE_CONDITION' | 'HPA_CONFIG' | 'INGRESS_CONFIG' | 'CONFIGURATION';
+  field: string;
+  oldValue: string | number | boolean | null;
+  newValue: string | number | boolean | null;
+  timestamp: number;
+  temporalDistance: string; // e.g. "6m before incident"
+  correlation: ChangeCorrelationLevel;
+  evidence: string;
+}
+
+export interface WhatChangedReport {
+  incidentId: string;
+  timeWindowMinutesBefore: number;
+  timeWindowMinutesAfter: number;
+  changes: WhatChangedItem[];
+  summaryText: string;
+  hasStrongCorrelation: boolean;
+}
+
+export interface ServiceDependency {
+  source: string;
+  target: string;
+  protocol?: string;
+  type: 'CALLS' | 'ROUTES_TO' | 'DEPENDS_ON';
+  status: 'HEALTHY' | 'DEGRADED' | 'WARNING';
+}
+
+export interface ServiceHealthRecord {
+  id: string;
+  name: string;
+  namespace: string;
+  clusterId: string;
+  clusterName?: string;
+  status: 'HEALTHY' | 'DEGRADED' | 'WARNING';
+  activeIncidentsCount: number;
+  podsReady: number;
+  podsTotal: number;
+  errorRate?: number;
+  latencyP95Ms?: number;
+  dependencies: string[];
+  dependents: string[];
+}
+
+export interface DeploymentRecord {
+  id: string;
+  name: string;
+  namespace: string;
+  clusterId: string;
+  clusterName?: string;
+  revision: string;
+  image: string;
+  previousImage?: string;
+  replicas: number;
+  previousReplicas?: number;
+  startedAt: number;
+  completedAt?: number;
+  status: 'COMPLETED' | 'PROGRESSING' | 'DEGRADED' | 'FAILED';
+  healthScore: number;
+  healthState: 'HEALTHY' | 'DEGRADED' | 'WARNING';
+  errorRateDelta?: number;
+  restartCountDelta?: number;
+  relatedIncidentsCount: number;
+  checks: Array<{ label: string; passed: boolean; message?: string }>;
+}
+
+export interface DeploymentGateCheckItem {
+  status: 'PASS' | 'WARN' | 'BLOCK';
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+export interface DeploymentGateEvaluation {
+  decision: 'PASS' | 'WARN' | 'BLOCK';
+  reason: string;
+  score: number;
+  evaluatedAt: number;
+  checks: {
+    image: DeploymentGateCheckItem;
+    capacity: DeploymentGateCheckItem;
+    workload: DeploymentGateCheckItem;
+    incidents: DeploymentGateCheckItem;
+    security?: DeploymentGateCheckItem;
+  };
+  evidence: string[];
+  safeToDeploy: boolean;
+}
+
+export interface IncidentPostmortemEvidenceItem {
+  category: 'FACT' | 'INFERENCE' | 'RECOMMENDATION';
+  text: string;
+}
+
+export interface IncidentPostmortemTimelineItem {
+  timestamp: number;
+  timeFormatted: string;
+  label: string;
+  category: 'DEPLOYMENT' | 'EVENT' | 'METRIC' | 'INCIDENT' | 'HEAL' | 'VERIFICATION';
+  details?: string;
+}
+
+export interface IncidentPostmortemPreventiveAction {
+  id: string;
+  action: string;
+  category: 'DEPLOYMENT_GATE' | 'RESOURCE_LIMIT' | 'TEST_AUTOMATION' | 'MONITORING' | 'CONFIG_VALIDATION';
+  status: 'RECOMMENDED' | 'PLANNED' | 'COMPLETED';
+}
+
+export interface IncidentPostmortem {
+  id: string;
+  incidentId: string;
+  title: string;
+  clusterId: string;
+  clusterName: string;
+  namespace: string;
+  resourceKind: string;
+  resourceName: string;
+  durationMinutes: number;
+  detectionTime: number;
+  resolvedTime: number;
+  impactSummary: string;
+  rootCause: string;
+  rootCauseConfidence: number;
+  evidence: IncidentPostmortemEvidenceItem[];
+  timeline: IncidentPostmortemTimelineItem[];
+  resolution: string;
+  verification: string;
+  rollbackDetails?: string;
+  contributingFactors: string[];
+  preventiveActions: IncidentPostmortemPreventiveAction[];
+  relatedDeployments: string[];
+  relatedIncidents: string[];
+  generatedAt: number;
+}
+
+export interface SimilarIncidentSummary {
+  id: string;
+  title: string;
+  severity: IncidentSeverity;
+  status: IncidentStatus;
+  incidentType: IncidentType;
+  firstSeenAt: number;
+  resolvedAt?: number | null;
+  resolutionSource?: string;
+  resolutionSummary?: string;
+  daysAgo: number;
+  similarityReason: string;
+}
+
+export interface ReliabilityMetrics {
+  openIncidents: number;
+  criticalIncidents: number;
+  highIncidents: number;
+  resolvedIncidents: number;
+  totalIncidents: number;
+  mttrMinutes: number;
+  mttdMinutes: number;
+  autoHealedPercentage: number;
+  manuallyHealedCount: number;
+  failedRemediationsCount: number;
+  rollbackCount: number;
+  recurringIncidentsCount: number;
+  trend7Days: Array<{
+    day: string;
+    date: string;
+    count: number;
+    critical: number;
+    high: number;
+    resolved: number;
+  }>;
+}
+
 export * from './billing';
+
 

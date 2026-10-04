@@ -72,6 +72,7 @@ import {
   ClusterHealthSummary,
   IncidentMultiClusterSummary
 } from '../src/types/index';
+import { ResourceRightsizingRecommendation } from '../src/types/enterprise';
 import { TelemetryStore } from './telemetry_store';
 import { AGENT_VERSION } from '../src/config/version';
 import { IncidentDetector } from './engine/detector';
@@ -145,6 +146,7 @@ export class DataStore {
   private processedWebhookIds: Set<string> = new Set();
   private deployments: Map<string, DeploymentRecord> = new Map(); // deploymentId -> DeploymentRecord
   private postmortems: Map<string, IncidentPostmortem> = new Map(); // incidentId -> IncidentPostmortem
+  private appliedRightsizing: Map<string, ResourceRightsizingRecommendation> = new Map(); // recId -> ResourceRightsizingRecommendation
   private incidentCounter = 1001;
   private storagePath = getPersistenceConfig().storeFile;
   private saveTimeout: NodeJS.Timeout | null = null;
@@ -430,6 +432,7 @@ export class DataStore {
         if (data.invoices) this.invoices = new Map(Object.entries(data.invoices));
         if (data.deployments) this.deployments = new Map(Object.entries(data.deployments));
         if (data.postmortems) this.postmortems = new Map(Object.entries(data.postmortems));
+        if (data.appliedRightsizing) this.appliedRightsizing = new Map(Object.entries(data.appliedRightsizing));
         if (data.processedWebhookIds && Array.isArray(data.processedWebhookIds)) {
           this.processedWebhookIds = new Set(data.processedWebhookIds);
         }
@@ -554,6 +557,7 @@ export class DataStore {
         invoices: Object.fromEntries(this.invoices),
         deployments: Object.fromEntries(this.deployments),
         postmortems: Object.fromEntries(this.postmortems),
+        appliedRightsizing: Object.fromEntries(this.appliedRightsizing),
         processedWebhookIds: Array.from(this.processedWebhookIds),
         clusterMetricHistory: Object.fromEntries(this.clusterMetricHistory),
         telemetryStore: this.telemetryStore.exportSnapshot()
@@ -4974,6 +4978,26 @@ export class DataStore {
     const cluster = this.getCluster(clusterId, orgId);
     if (!cluster) return null;
     return this.telemetryStore.calculateBaseline(clusterId, range);
+  }
+
+  // --- Enterprise Cost Intelligence & Rightsizing ---
+  public getAppliedRightsizing(orgId: string): ResourceRightsizingRecommendation[] {
+    return Array.from(this.appliedRightsizing.values()).filter((r) => r.orgId === orgId);
+  }
+
+  public applyRightsizingRecommendation(
+    rec: ResourceRightsizingRecommendation,
+    actorId?: string,
+    actorName?: string
+  ): ResourceRightsizingRecommendation {
+    const updated: ResourceRightsizingRecommendation = {
+      ...rec,
+      status: 'APPLIED',
+      appliedAt: Date.now()
+    };
+    this.appliedRightsizing.set(rec.id, updated);
+    this.saveSnapshot();
+    return updated;
   }
 
   public queueMetricsServerVerificationRequest(clusterId: string): string {

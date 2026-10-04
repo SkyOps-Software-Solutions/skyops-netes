@@ -146,6 +146,108 @@ test('PROMPT 3: Enterprise Operations, Cost, Security, Governance & Production R
   });
 
   await t.test('4. Kubernetes Cost Intelligence & Resource Rightsizing', async () => {
+    const prodCluster = store.getClusters(orgA.id)[0];
+    assert.ok(prodCluster);
+    store.syncClusterResources(prodCluster.id, [
+      {
+        id: `${prodCluster.id}:Node:node-1`,
+        clusterId: prodCluster.id,
+        kind: 'Node',
+        name: 'node-1',
+        namespace: '',
+        status: 'Ready',
+        health: 'HEALTHY',
+        createdAt: Date.now() - 3600000,
+        updatedAt: Date.now(),
+        statusSummary: {
+          capacity: { cpu: '16', memory: '64Gi', pods: '110' },
+          allocatable: { cpu: '16', memory: '64Gi', pods: '110' },
+          usage: { cpu: '4.2', memory: '20Gi' }
+        },
+        conditions: [{ type: 'Ready', status: 'True' }]
+      },
+      {
+        id: `${prodCluster.id}:Deployment:production:checkout-api`,
+        clusterId: prodCluster.id,
+        kind: 'Deployment',
+        name: 'checkout-api',
+        namespace: 'production',
+        status: '2/2',
+        health: 'HEALTHY',
+        createdAt: Date.now() - 3600000,
+        updatedAt: Date.now(),
+        specReplicas: 2,
+        readyReplicas: 2,
+        containers: [
+          {
+            name: 'checkout-api',
+            image: 'checkout-api:v1',
+            restartCount: 0,
+            ready: true,
+            state: 'running',
+            cpuRequest: '4000m',
+            cpuLimit: '8000m',
+            cpuUsage: '1050m',
+            memoryRequest: '8Gi',
+            memoryLimit: '16Gi',
+            memoryUsage: '2.6Gi'
+          }
+        ]
+      },
+      {
+        id: `${prodCluster.id}:Pod:production:checkout-api-pod-1`,
+        clusterId: prodCluster.id,
+        kind: 'Pod',
+        name: 'checkout-api-pod-1',
+        namespace: 'production',
+        status: 'Running',
+        health: 'HEALTHY',
+        createdAt: Date.now() - 3600000,
+        updatedAt: Date.now(),
+        containers: [
+          {
+            name: 'checkout-api',
+            image: 'checkout-api:v1',
+            restartCount: 0,
+            ready: true,
+            state: 'running',
+            cpuRequest: '4000m',
+            cpuLimit: '8000m',
+            cpuUsage: '1050m',
+            memoryRequest: '8Gi',
+            memoryLimit: '16Gi',
+            memoryUsage: '2.6Gi'
+          }
+        ]
+      },
+      {
+        id: `${prodCluster.id}:Pod:production:checkout-api-pod-2`,
+        clusterId: prodCluster.id,
+        kind: 'Pod',
+        name: 'checkout-api-pod-2',
+        namespace: 'production',
+        status: 'Running',
+        health: 'HEALTHY',
+        createdAt: Date.now() - 3600000,
+        updatedAt: Date.now(),
+        containers: [
+          {
+            name: 'checkout-api',
+            image: 'checkout-api:v1',
+            restartCount: 0,
+            ready: true,
+            state: 'running',
+            cpuRequest: '4000m',
+            cpuLimit: '8000m',
+            cpuUsage: '1050m',
+            memoryRequest: '8Gi',
+            memoryLimit: '16Gi',
+            memoryUsage: '2.6Gi'
+          }
+        ]
+      }
+    ]);
+
     const overview = CostEngine.getCostOverview(orgA.id);
     assert.ok(overview);
     assert.ok(overview.estimatedMonthlyCostUsd > 0, 'Estimated monthly cost must be positive');

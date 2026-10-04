@@ -200,7 +200,7 @@ export const CostIntelligenceView: React.FC = () => {
             <span className="text-[11px] font-mono text-zinc-400">Estimated Monthly Cost</span>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-2xl font-bold font-mono text-zinc-100">
-                ${overview?.estimatedMonthlyCostUsd?.toLocaleString() || '18,420'}
+                ${(overview?.estimatedMonthlyCostUsd ?? 0).toLocaleString()}
               </span>
               <span className="text-[11px] font-mono text-zinc-500">/mo</span>
             </div>
@@ -215,7 +215,7 @@ export const CostIntelligenceView: React.FC = () => {
             <span className="text-[11px] font-mono text-emerald-300 font-semibold">Potential Optimization</span>
             <div className="mt-2 flex items-baseline gap-1.5">
               <span className="text-2xl font-bold font-mono text-emerald-400">
-                ${overview?.potentialMonthlySavingsUsd?.toLocaleString() || '3,240'}
+                ${(overview?.potentialMonthlySavingsUsd ?? 0).toLocaleString()}
               </span>
               <span className="text-[11px] font-mono text-emerald-500">/mo</span>
             </div>
@@ -230,7 +230,7 @@ export const CostIntelligenceView: React.FC = () => {
             <span className="text-[11px] font-mono text-zinc-400">CPU Waste</span>
             <div className="mt-2 flex items-baseline gap-1.5">
               <span className="text-2xl font-bold font-mono text-amber-400">
-                {overview?.cpuWastePercent || 18}%
+                {overview?.cpuWastePercent ?? 0}%
               </span>
               <span className="text-[11px] font-mono text-zinc-500">unutilized</span>
             </div>
@@ -245,7 +245,7 @@ export const CostIntelligenceView: React.FC = () => {
             <span className="text-[11px] font-mono text-zinc-400">Memory Waste</span>
             <div className="mt-2 flex items-baseline gap-1.5">
               <span className="text-2xl font-bold font-mono text-amber-400">
-                {overview?.memoryWastePercent || 24}%
+                {overview?.memoryWastePercent ?? 0}%
               </span>
               <span className="text-[11px] font-mono text-zinc-500">unutilized</span>
             </div>
@@ -260,7 +260,7 @@ export const CostIntelligenceView: React.FC = () => {
             <span className="text-[11px] font-mono text-zinc-400">Idle Workloads</span>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-2xl font-bold font-mono text-red-400">
-                {overview?.idleWorkloadsCount || 7}
+                {overview?.idleWorkloadsCount ?? 0}
               </span>
               <span className="text-[11px] font-mono text-zinc-500">under 5%</span>
             </div>
@@ -288,7 +288,7 @@ export const CostIntelligenceView: React.FC = () => {
           <div className="p-3.5 rounded-lg bg-zinc-900/40 border border-zinc-800/80">
             <span className="text-[10px] font-mono text-zinc-400 uppercase">Estimated Opportunity</span>
             <p className="text-lg font-bold font-mono text-zinc-200 mt-1">
-              ${savings?.estimatedOpportunityUsd?.toLocaleString() || '8,420'}/mo
+              ${(savings?.estimatedOpportunityUsd ?? 0).toLocaleString()}/mo
             </p>
             <span className="text-[10px] text-zinc-500">Theoretical upper ceiling</span>
           </div>
@@ -296,7 +296,7 @@ export const CostIntelligenceView: React.FC = () => {
           <div className="p-3.5 rounded-lg bg-zinc-900/40 border border-zinc-800/80">
             <span className="text-[10px] font-mono text-sky-400 uppercase">Projected</span>
             <p className="text-lg font-bold font-mono text-sky-300 mt-1">
-              ${savings?.projectedSavingsUsd?.toLocaleString() || '6,100'}/mo
+              ${(savings?.projectedSavingsUsd ?? 0).toLocaleString()}/mo
             </p>
             <span className="text-[10px] text-zinc-500">Feasible without risk</span>
           </div>
@@ -304,7 +304,7 @@ export const CostIntelligenceView: React.FC = () => {
           <div className="p-3.5 rounded-lg bg-zinc-900/40 border border-zinc-800/80">
             <span className="text-[10px] font-mono text-amber-400 uppercase">Implemented</span>
             <p className="text-lg font-bold font-mono text-amber-300 mt-1">
-              ${savings?.implementedSavingsUsd?.toLocaleString() || '3,180'}/mo
+              ${(savings?.implementedSavingsUsd ?? 0).toLocaleString()}/mo
             </p>
             <span className="text-[10px] text-zinc-500">Applied in cluster</span>
           </div>
@@ -312,7 +312,7 @@ export const CostIntelligenceView: React.FC = () => {
           <div className="p-3.5 rounded-lg bg-zinc-900/40 border border-zinc-800/80">
             <span className="text-[10px] font-mono text-indigo-400 uppercase">Verified</span>
             <p className="text-lg font-bold font-mono text-indigo-300 mt-1">
-              ${savings?.verifiedSavingsUsd?.toLocaleString() || '2,840'}/mo
+              ${(savings?.verifiedSavingsUsd ?? 0).toLocaleString()}/mo
             </p>
             <span className="text-[10px] text-zinc-500">Live metrics confirmed</span>
           </div>
@@ -320,7 +320,7 @@ export const CostIntelligenceView: React.FC = () => {
           <div className="p-3.5 rounded-lg bg-emerald-950/30 border border-emerald-500/30">
             <span className="text-[10px] font-mono text-emerald-300 uppercase font-semibold">Realized</span>
             <p className="text-lg font-bold font-mono text-emerald-400 mt-1">
-              ${savings?.realizedSavingsUsd?.toLocaleString() || '2,640'}/mo
+              ${(savings?.realizedSavingsUsd ?? 0).toLocaleString()}/mo
             </p>
             <span className="text-[10px] text-emerald-400/80">Audited cloud savings</span>
           </div>
@@ -344,96 +344,106 @@ export const CostIntelligenceView: React.FC = () => {
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {recommendations.map((rec) => (
-            <div
-              key={rec.id}
-              className={`p-5 rounded-xl border flex flex-col justify-between transition-all ${
-                rec.status === 'APPLIED'
-                  ? 'bg-emerald-950/20 border-emerald-500/30'
-                  : 'bg-zinc-900/60 border-zinc-800 hover:border-zinc-700'
-              }`}
-            >
-              <div>
-                <div className="flex items-start justify-between gap-2">
+        {recommendations.length === 0 ? (
+          <div className="p-8 rounded-xl bg-zinc-900/40 border border-zinc-800 text-center space-y-2">
+            <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+            <p className="text-sm font-semibold text-zinc-200">No Over-Provisioned Workloads Detected</p>
+            <p className="text-xs text-zinc-400 max-w-lg mx-auto">
+              All active workloads are currently sized within safe resource margins, or awaiting live telemetry from connected cluster nodes.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {recommendations.map((rec) => (
+              <div
+                key={rec.id}
+                className={`p-5 rounded-xl border flex flex-col justify-between transition-all ${
+                  rec.status === 'APPLIED'
+                    ? 'bg-emerald-950/20 border-emerald-500/30'
+                    : 'bg-zinc-900/60 border-zinc-800 hover:border-zinc-700'
+                }`}
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-bold text-zinc-100 font-mono">{rec.workloadName}</h3>
+                      <p className="text-[11px] text-zinc-400 font-mono mt-0.5">
+                        {rec.clusterName} • ns/{rec.namespace}
+                      </p>
+                    </div>
+                    <span
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded font-semibold uppercase ${
+                        rec.risk === 'LOW'
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                          : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                      }`}
+                    >
+                      {rec.risk} Risk
+                    </span>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-2 text-xs font-mono">
+                    <div className="p-2.5 rounded bg-zinc-950/60 border border-zinc-800">
+                      <span className="text-[10px] text-zinc-500 uppercase">CPU Requested</span>
+                      <p className="text-zinc-200 font-semibold mt-0.5">{rec.currentCpuRequested}</p>
+                      <span className="text-[10px] text-zinc-400 mt-1 block">Avg Used: {rec.averageCpuUsed}</span>
+                    </div>
+
+                    <div className="p-2.5 rounded bg-zinc-950/60 border border-zinc-800">
+                      <span className="text-[10px] text-zinc-500 uppercase">Memory Requested</span>
+                      <p className="text-zinc-200 font-semibold mt-0.5">{rec.currentMemoryRequested}</p>
+                      <span className="text-[10px] text-zinc-400 mt-1 block">Avg Used: {rec.averageMemoryUsed}</span>
+                    </div>
+                  </div>
+
+                  {/* Proposed State */}
+                  <div className="mt-3 p-2.5 rounded-lg bg-sky-950/20 border border-sky-500/20 text-xs">
+                    <span className="text-[10px] font-mono text-sky-400 uppercase font-semibold">
+                      Potential Optimization
+                    </span>
+                    <div className="mt-1 flex items-center justify-between text-zinc-200 font-mono">
+                      <span>
+                        CPU: <span className="text-zinc-400">{rec.currentCpuRequested}</span> →{' '}
+                        <span className="text-sky-300 font-semibold">{rec.recommendedCpu}</span>
+                      </span>
+                      <span>
+                        Mem: <span className="text-zinc-400">{rec.currentMemoryRequested}</span> →{' '}
+                        <span className="text-sky-300 font-semibold">{rec.recommendedMemory}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="mt-3 text-[11px] text-zinc-400 leading-relaxed line-clamp-2">{rec.reason}</p>
+                </div>
+
+                <div className="mt-5 pt-3 border-t border-zinc-800/80 flex items-center justify-between">
                   <div>
-                    <h3 className="text-sm font-bold text-zinc-100 font-mono">{rec.workloadName}</h3>
-                    <p className="text-[11px] text-zinc-400 font-mono mt-0.5">
-                      {rec.clusterName} • ns/{rec.namespace}
+                    <span className="text-[10px] font-mono text-zinc-500">Estimated Saving</span>
+                    <p className="text-sm font-bold font-mono text-emerald-400">
+                      ${rec.estimatedMonthlySavingsUsd}/month
                     </p>
                   </div>
-                  <span
-                    className={`text-[10px] font-mono px-2 py-0.5 rounded font-semibold uppercase ${
-                      rec.risk === 'LOW'
-                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                        : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                    }`}
-                  >
-                    {rec.risk} Risk
-                  </span>
-                </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-2 text-xs font-mono">
-                  <div className="p-2.5 rounded bg-zinc-950/60 border border-zinc-800">
-                    <span className="text-[10px] text-zinc-500 uppercase">CPU Requested</span>
-                    <p className="text-zinc-200 font-semibold mt-0.5">{rec.currentCpuRequested}</p>
-                    <span className="text-[10px] text-zinc-400 mt-1 block">Avg Used: {rec.averageCpuUsed}</span>
-                  </div>
-
-                  <div className="p-2.5 rounded bg-zinc-950/60 border border-zinc-800">
-                    <span className="text-[10px] text-zinc-500 uppercase">Memory Requested</span>
-                    <p className="text-zinc-200 font-semibold mt-0.5">{rec.currentMemoryRequested}</p>
-                    <span className="text-[10px] text-zinc-400 mt-1 block">Avg Used: {rec.averageMemoryUsed}</span>
-                  </div>
-                </div>
-
-                {/* Proposed State */}
-                <div className="mt-3 p-2.5 rounded-lg bg-sky-950/20 border border-sky-500/20 text-xs">
-                  <span className="text-[10px] font-mono text-sky-400 uppercase font-semibold">
-                    Potential Optimization
-                  </span>
-                  <div className="mt-1 flex items-center justify-between text-zinc-200 font-mono">
-                    <span>
-                      CPU: <span className="text-zinc-400">{rec.currentCpuRequested}</span> →{' '}
-                      <span className="text-sky-300 font-semibold">{rec.recommendedCpu}</span>
+                  {rec.status === 'APPLIED' ? (
+                    <span className="flex items-center gap-1.5 text-xs font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/20">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Applied
                     </span>
-                    <span>
-                      Mem: <span className="text-zinc-400">{rec.currentMemoryRequested}</span> →{' '}
-                      <span className="text-sky-300 font-semibold">{rec.recommendedMemory}</span>
-                    </span>
-                  </div>
+                  ) : (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={isViewer}
+                      onClick={() => setSelectedRec(rec)}
+                    >
+                      Review Recommendation
+                    </Button>
+                  )}
                 </div>
-
-                <p className="mt-3 text-[11px] text-zinc-400 leading-relaxed line-clamp-2">{rec.reason}</p>
               </div>
-
-              <div className="mt-5 pt-3 border-t border-zinc-800/80 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] font-mono text-zinc-500">Estimated Saving</span>
-                  <p className="text-sm font-bold font-mono text-emerald-400">
-                    ${rec.estimatedMonthlySavingsUsd}/month
-                  </p>
-                </div>
-
-                {rec.status === 'APPLIED' ? (
-                  <span className="flex items-center gap-1.5 text-xs font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/20">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Applied
-                  </span>
-                ) : (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    disabled={isViewer}
-                    onClick={() => setSelectedRec(rec)}
-                  >
-                    Review Recommendation
-                  </Button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* SECTION 8: COST WASTE DETECTION */}
@@ -443,38 +453,48 @@ export const CostIntelligenceView: React.FC = () => {
           Cost Waste Detection
         </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {wasteItems.map((item) => (
-            <div
-              key={item.id}
-              className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800 flex items-start justify-between gap-4"
-            >
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold font-mono text-zinc-200">{item.title}</span>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                    {item.clusterName}
+        {wasteItems.length === 0 ? (
+          <div className="p-8 rounded-xl bg-zinc-900/40 border border-zinc-800 text-center space-y-2">
+            <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+            <p className="text-sm font-semibold text-zinc-200">Zero Resource Waste Detected</p>
+            <p className="text-xs text-zinc-400 max-w-lg mx-auto">
+              No unutilized worker nodes, idle workloads, or off-hours compute waste detected across registered clusters.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {wasteItems.map((item) => (
+              <div
+                key={item.id}
+                className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800 flex items-start justify-between gap-4"
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold font-mono text-zinc-200">{item.title}</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                      {item.clusterName}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 leading-relaxed">{item.description}</p>
+                  <div className="flex items-center gap-2 pt-1 text-[11px] text-zinc-400">
+                    <span className="text-sky-300 font-mono">Action:</span>
+                    <span>{item.recommendedAction}</span>
+                  </div>
+                </div>
+
+                <div className="text-right shrink-0">
+                  <span className="text-[10px] font-mono text-zinc-500">Monthly Waste</span>
+                  <p className="text-sm font-bold font-mono text-amber-400">
+                    ${item.potentialMonthlyWasteUsd}
+                  </p>
+                  <span className="inline-block mt-2 text-[10px] font-mono text-zinc-400 px-2 py-0.5 rounded bg-zinc-800">
+                    Review
                   </span>
                 </div>
-                <p className="text-xs text-zinc-400 leading-relaxed">{item.description}</p>
-                <div className="flex items-center gap-2 pt-1 text-[11px] text-zinc-400">
-                  <span className="text-sky-300 font-mono">Action:</span>
-                  <span>{item.recommendedAction}</span>
-                </div>
               </div>
-
-              <div className="text-right shrink-0">
-                <span className="text-[10px] font-mono text-zinc-500">Monthly Waste</span>
-                <p className="text-sm font-bold font-mono text-amber-400">
-                  ${item.potentialMonthlyWasteUsd}
-                </p>
-                <span className="inline-block mt-2 text-[10px] font-mono text-zinc-400 px-2 py-0.5 rounded bg-zinc-800">
-                  Review
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* SECTION 6: COST ALLOCATION */}
@@ -534,46 +554,54 @@ export const CostIntelligenceView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/60">
-              {filteredAllocationList.map((item) => (
-                <tr key={item.id} className="hover:bg-zinc-800/30 transition-colors">
-                  <td className="p-3">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-zinc-100">{item.name}</span>
-                      {item.namespace && (
-                        <span className="text-[10px] text-zinc-500">ns/{item.namespace}</span>
-                      )}
-                      {item.clusterName && (
-                        <span className="text-[10px] text-zinc-400 bg-zinc-800 px-1.5 py-0.5 rounded">
-                          {item.clusterName}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="p-3 text-zinc-300">
-                    {item.cpuRequestedCores}c <span className="text-zinc-500">/ {item.cpuUsedCores}c</span>
-                  </td>
-                  <td className="p-3 text-zinc-300">
-                    {item.memoryRequestedGib}Gi <span className="text-zinc-500">/ {item.memoryUsedGib}Gi</span>
-                  </td>
-                  <td className="p-3">
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                        item.wastePercent > 35
-                          ? 'bg-amber-500/10 text-amber-400'
-                          : 'bg-emerald-500/10 text-emerald-400'
-                      }`}
-                    >
-                      {item.wastePercent}%
-                    </span>
-                  </td>
-                  <td className="p-3 font-bold text-zinc-100">
-                    ${item.monthlyCostUsd?.toLocaleString()}/month
-                  </td>
-                  <td className="p-3 text-emerald-400 font-semibold">
-                    ${item.potentialSavingsUsd?.toLocaleString()}/month
+              {filteredAllocationList.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-zinc-500 font-mono text-xs">
+                    No resource allocation data available for this category.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filteredAllocationList.map((item) => (
+                  <tr key={item.id} className="hover:bg-zinc-800/30 transition-colors">
+                    <td className="p-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-zinc-100">{item.name}</span>
+                        {item.namespace && (
+                          <span className="text-[10px] text-zinc-500">ns/{item.namespace}</span>
+                        )}
+                        {item.clusterName && (
+                          <span className="text-[10px] text-zinc-400 bg-zinc-800 px-1.5 py-0.5 rounded">
+                            {item.clusterName}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="p-3 text-zinc-300">
+                      {item.cpuRequestedCores}c <span className="text-zinc-500">/ {item.cpuUsedCores}c</span>
+                    </td>
+                    <td className="p-3 text-zinc-300">
+                      {item.memoryRequestedGib}Gi <span className="text-zinc-500">/ {item.memoryUsedGib}Gi</span>
+                    </td>
+                    <td className="p-3">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                          item.wastePercent > 35
+                            ? 'bg-amber-500/10 text-amber-400'
+                            : 'bg-emerald-500/10 text-emerald-400'
+                        }`}
+                      >
+                        {item.wastePercent}%
+                      </span>
+                    </td>
+                    <td className="p-3 font-bold text-zinc-100">
+                      ${item.monthlyCostUsd?.toLocaleString()}/month
+                    </td>
+                    <td className="p-3 text-emerald-400 font-semibold">
+                      ${item.potentialSavingsUsd?.toLocaleString()}/month
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

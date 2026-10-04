@@ -128,6 +128,15 @@ export function normalizeClusterResourcesResponse(data: unknown): KubernetesReso
 
 class ApiClient {
   private async getHeaders(): Promise<HeadersInit> {
+    // If auth state is still resolving on initial page load, wait for Firebase to finish
+    if (!auth.currentUser && typeof (auth as any).authStateReady === 'function') {
+      try {
+        await auth.authStateReady();
+      } catch {
+        // Fallback gracefully
+      }
+    }
+
     const savedOrg = localStorage.getItem('skyops_active_org_id');
     const headers: Record<string, string> = {
       'Content-Type': 'application/json'

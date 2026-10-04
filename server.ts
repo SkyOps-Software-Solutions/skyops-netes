@@ -2990,9 +2990,8 @@ app.post('/api/v1/cost/rightsizing/:id/apply', requireUserAuth, requireOrgMember
     }
   });
 
-  rec.status = 'APPLIED';
-  rec.appliedAt = Date.now();
-  res.json({ success: true, message: `Rightsizing recommendation applied for ${rec.workloadName}. Verified safety checks passed.`, recommendation: rec });
+  const appliedRec = store.applyRightsizingRecommendation(rec, req.user!.id, req.user!.name);
+  res.json({ success: true, message: `Rightsizing recommendation applied for ${rec.workloadName}. Verified safety checks passed.`, recommendation: appliedRec });
 });
 
 app.get('/api/v1/cost/waste', requireUserAuth, requireOrgMembership, requirePermission('cost.view'), (req: AuthenticatedUserRequest, res) => {

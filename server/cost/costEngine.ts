@@ -2,7 +2,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  * SkyOps Kubernetes Cost Intelligence Engine
- * Identifies resource waste, cost allocation, rightsizing recommendations, and savings tracking.
+ * Identifies resource waste, cost allocation, rightsizing recommendations, and savings tracking
+ * strictly grounded in live and recorded Kubernetes telemetry. Never fabricates synthetic data.
  */
 
 import {
@@ -14,58 +15,293 @@ import {
   ResourceRightsizingRecommendation
 } from '../../src/types/enterprise';
 import { Cluster, KubernetesResource } from '../../src/types/index';
+import { parseCpuQuantity, parseMemoryQuantity } from '../metrics';
 import { store } from '../store';
 
 // Standard blended cloud compute pricing basis ($0.040 per vCPU-hour, $0.0050 per GiB-hour)
-// ~ $28.80 / vCPU-month, ~ $3.60 / GiB-month
-const CPU_CORE_HOUR_USD = 0.04;
-const MEMORY_GIB_HOUR_USD = 0.005;
-const HOURS_PER_MONTH = 730;
+// ~ $29.20 / vCPU-month, ~ $3.65 / GiB-month
+export const CPU_CORE_HOUR_USD = 0.04;
+export const MEMORY_GIB_HOUR_USD = 0.005;
+export const HOURS_PER_MONTH = 730;
+
+export interface ExtractedWorkloadCostInfo {
+  clusterId: string;
+  clusterName: string;
+  namespace: string;
+  workloadName: string;
+  workloadKind: 'Deployment' | 'StatefulSet' | 'DaemonSet';
+  containerName: string;
+  replicas: number;
+  readyReplicas: number;
+  requestedCpuMillicores: number;
+  usedCpuMillicores: number | null;
+  requestedMemoryBytes: number;
+  usedMemoryBytes: number | null;
+  isUsageAvailable: boolean;
+  monthlyCostUsd: number;
+  cpuWastePercent: number;
+  memoryWastePercent: number;
+  overallWastePercent: number;
+  isIdle: boolean;
+}
 
 export class CostEngine {
   /**
-   * Helper: Parse CPU millicores from resource string or number
+   * Helper: Parse CPU millicores using canonical metrics parser
    */
-  private static parseCpuMillicores(val: unknown): number {
-    if (typeof val === 'number') return val;
-    if (!val || typeof val !== 'string') return 0;
-    const str = val.trim();
-    if (str.endsWith('m')) {
-      return parseFloat(str.replace('m', '')) || 0;
-    }
-    return (parseFloat(str) || 0) * 1000;
+  public static parseCpuMillicores(val: unknown): number {
+    const res = parseCpuQuantity(val);
+    return res !== null ? res : 0;
   }
 
   /**
-   * Helper: Parse Memory bytes/GiB from resource string or number
+   * Helper: Parse Memory bytes using canonical metrics parser
    */
-  private static parseMemoryBytes(val: unknown): number {
-    if (typeof val === 'number') return val;
-    if (!val || typeof val !== 'string') return 0;
-    const str = val.trim();
-    if (str.endsWith('Gi') || str.endsWith('G')) {
-      return (parseFloat(str) || 0) * 1024 * 1024 * 1024;
-    }
-    if (str.endsWith('Mi') || str.endsWith('M')) {
-      return (parseFloat(str) || 0) * 1024 * 1024;
-    }
-    if (str.endsWith('Ki') || str.endsWith('K')) {
-      return (parseFloat(str) || 0) * 1024;
-    }
-    return parseFloat(str) || 0;
+  public static parseMemoryBytes(val: unknown): number {
+    const res = parseMemoryQuantity(val);
+    return res !== null ? res : 0;
   }
 
   /**
    * Calculate monthly cost for given CPU cores and Memory GiB
    */
   public static calculateMonthlyCost(cores: number, gib: number): number {
-    const cpuCost = cores * CPU_CORE_HOUR_USD * HOURS_PER_MONTH;
-    const memCost = gib * MEMORY_GIB_HOUR_USD * HOURS_PER_MONTH;
+    const cpuCost = Math.max(0, cores) * CPU_CORE_HOUR_USD * HOURS_PER_MONTH;
+    const memCost = Math.max(0, gib) * MEMORY_GIB_HOUR_USD * HOURS_PER_MONTH;
     return Math.round((cpuCost + memCost) * 100) / 100;
   }
 
   /**
-   * Generate Cost Overview for an organization across all its clusters
+   * Format CPU millicores into standard human-readable Kubernetes notation
+   */
+  public static formatCpu(millicores: number): string {
+    if (millicores <= 0) return '0m';
+    if (millicores >= 1000) {
+      const cores = millicores / 1000;
+      return cores === Math.floor(cores) ? `${cores} cores` : `${cores.toFixed(1)} cores`;
+    }
+    return `${Math.round(millicores)}m`;
+  }
+
+  /**
+   * Format Memory bytes into standard human-readable Kubernetes notation
+   */
+  public static formatMemory(bytes: number): string {
+    if (bytes <= 0) return '0Mi';
+    const gib = bytes / (1024 * 1024 * 1024);
+    if (gib >= 1) {
+      return gib === Math.floor(gib) ? `${gib}Gi` : `${gib.toFixed(1)}Gi`;
+    }
+    const mib = Math.round(bytes / (1024 * 1024));
+    return `${mib}Mi`;
+  }
+
+  /**
+   * Extract authoritative telemetry for all workloads in a cluster without any fabrication.
+   */
+  public static extractClusterWorkloadCosts(
+    cluster: Cluster,
+    resources: KubernetesResource[],
+    orgId: string
+  ): ExtractedWorkloadCostInfo[] {
+    const workloads = resources.filter((r) =>
+      ['Deployment', 'StatefulSet', 'DaemonSet'].includes(r.kind)
+    );
+    const pods = resources.filter((r) => r.kind === 'Pod');
+    const metrics = store.getClusterObservabilityMetrics(cluster.id, orgId);
+
+    const clusterName = cluster.displayName || cluster.name;
+    const results: ExtractedWorkloadCostInfo[] = [];
+
+    for (const wl of workloads) {
+      const ns = wl.namespace || 'default';
+      const specSummary = (wl.specSummary || {}) as Record<string, unknown>;
+      const statusSummary = (wl.statusSummary || {}) as Record<string, unknown>;
+
+      const replicas = Math.max(0, Number(specSummary.replicas ?? wl.specReplicas ?? 1));
+      const readyReplicas = Math.max(0, Number(statusSummary.readyReplicas ?? statusSummary.numberReady ?? wl.readyReplicas ?? 0));
+
+      let containerName = 'app';
+      if (Array.isArray(wl.containers) && wl.containers.length > 0) {
+        containerName = wl.containers[0].name || 'app';
+      }
+
+      // Check if observability metrics aggregated child pods for this workload
+      const wMetric = metrics?.workloads.find(
+        (w) => w.name === wl.name && w.namespace === ns && (w.kind === wl.kind || w.workloadKind === wl.kind)
+      );
+
+      let requestedCpuMillicores = 0;
+      let usedCpuMillicores: number | null = null;
+      let requestedMemoryBytes = 0;
+      let usedMemoryBytes: number | null = null;
+      let isUsageAvailable = false;
+
+      if (wMetric) {
+        requestedCpuMillicores = wMetric.totalCpuRequests?.value || 0;
+        requestedMemoryBytes = wMetric.totalMemoryRequests?.value || 0;
+        if (wMetric.isUsageAvailable) {
+          usedCpuMillicores = wMetric.totalCpuUsage?.value ?? null;
+          usedMemoryBytes = wMetric.totalMemoryUsage?.value ?? null;
+          isUsageAvailable = usedCpuMillicores !== null || usedMemoryBytes !== null;
+        }
+      }
+
+      // If wMetric did not report requests or usage, inspect matching child pods directly
+      if (requestedCpuMillicores === 0 && requestedMemoryBytes === 0) {
+        const childPods = pods.filter((p) => {
+          if (p.namespace !== ns) return false;
+          if (p.ownerReferences && p.ownerReferences.length > 0) {
+            return p.ownerReferences.some(
+              (o) =>
+                (o.kind === wl.kind && o.name === wl.name) ||
+                (wl.kind === 'Deployment' && o.kind === 'ReplicaSet' && o.name?.startsWith(wl.name))
+            );
+          }
+          return p.name.startsWith(`${wl.name}-`);
+        });
+
+        if (childPods.length > 0) {
+          let pReqCpu = 0;
+          let pReqMem = 0;
+          let pUsedCpu = 0;
+          let pUsedMem = 0;
+          let anyPodUsage = false;
+
+          for (const pod of childPods) {
+            const containers = pod.containers || [];
+            for (const c of containers) {
+              const reqC = parseCpuQuantity(c.cpuRequest) || 0;
+              const reqM = parseMemoryQuantity(c.memoryRequest) || 0;
+              pReqCpu += reqC;
+              pReqMem += reqM;
+
+              const useC = parseCpuQuantity(c.cpuUsage);
+              const useM = parseMemoryQuantity(c.memoryUsage);
+              if (useC !== null) {
+                pUsedCpu += useC;
+                anyPodUsage = true;
+              }
+              if (useM !== null) {
+                pUsedMem += useM;
+                anyPodUsage = true;
+              }
+            }
+          }
+
+          requestedCpuMillicores = pReqCpu;
+          requestedMemoryBytes = pReqMem;
+          if (anyPodUsage) {
+            usedCpuMillicores = pUsedCpu;
+            usedMemoryBytes = pUsedMem;
+            isUsageAvailable = true;
+          }
+        }
+      }
+
+      // Fallback: If no child pods found, derive requests from template container specs on the workload
+      if (requestedCpuMillicores === 0 && requestedMemoryBytes === 0) {
+        const containers = wl.containers || [];
+        let cReqCpu = 0;
+        let cReqMem = 0;
+        let cUsedCpu = 0;
+        let cUsedMem = 0;
+        let anyUsage = false;
+
+        for (const c of containers) {
+          const reqC = parseCpuQuantity(c.cpuRequest) || 0;
+          const reqM = parseMemoryQuantity(c.memoryRequest) || 0;
+          cReqCpu += reqC;
+          cReqMem += reqM;
+
+          const useC = parseCpuQuantity(c.cpuUsage);
+          const useM = parseMemoryQuantity(c.memoryUsage);
+          if (useC !== null) {
+            cUsedCpu += useC;
+            anyUsage = true;
+          }
+          if (useM !== null) {
+            cUsedMem += useM;
+            anyUsage = true;
+          }
+        }
+
+        requestedCpuMillicores = cReqCpu * replicas;
+        requestedMemoryBytes = cReqMem * replicas;
+        if (anyUsage) {
+          usedCpuMillicores = cUsedCpu * replicas;
+          usedMemoryBytes = cUsedMem * replicas;
+          isUsageAvailable = true;
+        }
+      }
+
+      // Workload cores and GiB
+      const cores = requestedCpuMillicores > 0
+        ? requestedCpuMillicores / 1000
+        : (usedCpuMillicores !== null ? usedCpuMillicores / 1000 : 0);
+      const gib = requestedMemoryBytes > 0
+        ? requestedMemoryBytes / (1024 * 1024 * 1024)
+        : (usedMemoryBytes !== null ? usedMemoryBytes / (1024 * 1024 * 1024) : 0);
+
+      const monthlyCostUsd = this.calculateMonthlyCost(cores, gib);
+
+      // Waste percentages: only calculated when live usage is genuinely reported
+      let cpuWastePercent = 0;
+      let memoryWastePercent = 0;
+      let overallWastePercent = 0;
+
+      if (isUsageAvailable) {
+        if (requestedCpuMillicores > 0 && usedCpuMillicores !== null) {
+          const wasteCores = Math.max(0, requestedCpuMillicores - usedCpuMillicores);
+          cpuWastePercent = Math.min(100, Math.round((wasteCores / requestedCpuMillicores) * 100));
+        }
+        if (requestedMemoryBytes > 0 && usedMemoryBytes !== null) {
+          const wasteBytes = Math.max(0, requestedMemoryBytes - usedMemoryBytes);
+          memoryWastePercent = Math.min(100, Math.round((wasteBytes / requestedMemoryBytes) * 100));
+        }
+        overallWastePercent = Math.round((cpuWastePercent * 0.5) + (memoryWastePercent * 0.5));
+      }
+
+      // Idle detection: must have live telemetry, active replicas, and < 5% utilization (or minimal absolute usage)
+      let isIdle = false;
+      if (isUsageAvailable && replicas > 0) {
+        const isCpuIdle =
+          usedCpuMillicores !== null &&
+          (usedCpuMillicores < 25 || (requestedCpuMillicores > 0 && (usedCpuMillicores / requestedCpuMillicores) < 0.05));
+        const isMemIdle =
+          usedMemoryBytes !== null &&
+          (usedMemoryBytes < 20 * 1024 * 1024 || (requestedMemoryBytes > 0 && (usedMemoryBytes / requestedMemoryBytes) < 0.05));
+
+        isIdle = Boolean(isCpuIdle && isMemIdle);
+      }
+
+      results.push({
+        clusterId: cluster.id,
+        clusterName,
+        namespace: ns,
+        workloadName: wl.name,
+        workloadKind: wl.kind as any,
+        containerName,
+        replicas,
+        readyReplicas,
+        requestedCpuMillicores,
+        usedCpuMillicores,
+        requestedMemoryBytes,
+        usedMemoryBytes,
+        isUsageAvailable,
+        monthlyCostUsd,
+        cpuWastePercent,
+        memoryWastePercent,
+        overallWastePercent,
+        isIdle
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * Generate Cost Overview for an organization across all its clusters strictly from live telemetry.
    */
   public static getCostOverview(orgId: string): CostOverview {
     const clusters = store.getClusters(orgId);
@@ -73,79 +309,80 @@ export class CostEngine {
     let totalCpuUsedCores = 0;
     let totalMemoryRequestedGib = 0;
     let totalMemoryUsedGib = 0;
+    let hasLiveMetrics = false;
     let idleWorkloadsCount = 0;
 
     for (const cluster of clusters) {
       const resources = store.getClusterResources(cluster.id, orgId);
       const metrics = store.getClusterObservabilityMetrics(cluster.id, orgId);
+      const workloadCosts = this.extractClusterWorkloadCosts(cluster, resources, orgId);
 
-      // Node and cluster level capacity / utilization
-      if (metrics) {
-        const reqCpu = (metrics.cpu.request?.value || 0) / 1000;
-        const usedCpu = (metrics.cpu.usage?.value || 0) / 1000;
-        const reqMem = (metrics.memory.request?.value || 0) / (1024 * 1024 * 1024);
-        const usedMem = (metrics.memory.usage?.value || 0) / (1024 * 1024 * 1024);
+      for (const w of workloadCosts) {
+        totalCpuRequestedCores += w.requestedCpuMillicores / 1000;
+        totalMemoryRequestedGib += w.requestedMemoryBytes / (1024 * 1024 * 1024);
 
-        totalCpuRequestedCores += reqCpu > 0 ? reqCpu : (metrics.nodeCount * 4);
-        totalCpuUsedCores += usedCpu > 0 ? usedCpu : (totalCpuRequestedCores * 0.42);
-        totalMemoryRequestedGib += reqMem > 0 ? reqMem : (metrics.nodeCount * 16);
-        totalMemoryUsedGib += usedMem > 0 ? usedMem : (totalMemoryRequestedGib * 0.51);
-      } else {
-        // Fallback based on node and pod counts
-        const baseNodes = Math.max(1, cluster.nodeCount || 2);
-        totalCpuRequestedCores += baseNodes * 4 * 0.75;
-        totalCpuUsedCores += baseNodes * 4 * 0.40;
-        totalMemoryRequestedGib += baseNodes * 16 * 0.75;
-        totalMemoryUsedGib += baseNodes * 16 * 0.48;
+        if (w.isUsageAvailable && w.usedCpuMillicores !== null) {
+          totalCpuUsedCores += w.usedCpuMillicores / 1000;
+          hasLiveMetrics = true;
+        }
+        if (w.isUsageAvailable && w.usedMemoryBytes !== null) {
+          totalMemoryUsedGib += w.usedMemoryBytes / (1024 * 1024 * 1024);
+          hasLiveMetrics = true;
+        }
+
+        if (w.isIdle) {
+          idleWorkloadsCount++;
+        }
       }
 
-      // Detect idle workloads (< 5% CPU/Memory utilization)
-      const workloads = resources.filter((r) =>
-        ['Deployment', 'StatefulSet', 'DaemonSet'].includes(r.kind)
-      );
-      for (const wl of workloads) {
-        const cpuUtil = wl.cpuUsage ?? (wl.metrics?.cpu?.utilizationPercent);
-        const memUtil = wl.memoryUsage ?? (wl.metrics?.memory?.utilizationPercent);
-        const isIdle =
-          (typeof cpuUtil === 'number' && cpuUtil < 5) ||
-          (typeof memUtil === 'number' && memUtil < 5) ||
-          ((wl.specReplicas || 1) > 0 && wl.readyReplicas === 0 && wl.health === 'HEALTHY');
-        if (isIdle) {
-          idleWorkloadsCount++;
+      // If cluster has nodes but no workloads, account for node infrastructure capacity
+      if (workloadCosts.length === 0 && metrics && metrics.nodes.length > 0) {
+        for (const n of metrics.nodes) {
+          if (n.cpu.request) totalCpuRequestedCores += n.cpu.request.value / 1000;
+          if (n.memory.request) totalMemoryRequestedGib += n.memory.request.value / (1024 * 1024 * 1024);
+          if (n.cpu.usage) {
+            totalCpuUsedCores += n.cpu.usage.value / 1000;
+            hasLiveMetrics = true;
+          }
+          if (n.memory.usage) {
+            totalMemoryUsedGib += n.memory.usage.value / (1024 * 1024 * 1024);
+            hasLiveMetrics = true;
+          }
         }
       }
     }
 
-    // Default realistic baseline if minimal telemetry is present
-    if (totalCpuRequestedCores === 0) totalCpuRequestedCores = 48;
-    if (totalCpuUsedCores === 0) totalCpuUsedCores = 28;
-    if (totalMemoryRequestedGib === 0) totalMemoryRequestedGib = 192;
-    if (totalMemoryUsedGib === 0) totalMemoryUsedGib = 124;
-    if (idleWorkloadsCount === 0 && clusters.length > 0) idleWorkloadsCount = 7;
-
-    const estimatedMonthlyCostUsd = Math.round(
-      this.calculateMonthlyCost(totalCpuRequestedCores, totalMemoryRequestedGib)
+    const estimatedMonthlyCostUsd = this.calculateMonthlyCost(
+      totalCpuRequestedCores,
+      totalMemoryRequestedGib
     );
 
-    const cpuWasteRatio = Math.max(
-      0.05,
-      (totalCpuRequestedCores - totalCpuUsedCores) / Math.max(1, totalCpuRequestedCores)
-    );
-    const memWasteRatio = Math.max(
-      0.05,
-      (totalMemoryRequestedGib - totalMemoryUsedGib) / Math.max(1, totalMemoryRequestedGib)
-    );
+    // Calculate real waste percentages only when usage telemetry is genuinely available
+    let cpuWastePercent = 0;
+    let memoryWastePercent = 0;
 
-    const cpuWastePercent = Math.min(85, Math.round(cpuWasteRatio * 100));
-    const memoryWastePercent = Math.min(85, Math.round(memWasteRatio * 100));
+    if (hasLiveMetrics && totalCpuRequestedCores > 0) {
+      const wasteCores = Math.max(0, totalCpuRequestedCores - totalCpuUsedCores);
+      cpuWastePercent = Math.min(100, Math.round((wasteCores / totalCpuRequestedCores) * 100));
+    }
+    if (hasLiveMetrics && totalMemoryRequestedGib > 0) {
+      const wasteGib = Math.max(0, totalMemoryRequestedGib - totalMemoryUsedGib);
+      memoryWastePercent = Math.min(100, Math.round((wasteGib / totalMemoryRequestedGib) * 100));
+    }
 
-    // Potential savings from recoverable waste (conservative 60% of calculated waste)
-    const wastedMonthly =
-      this.calculateMonthlyCost(
-        Math.max(0, totalCpuRequestedCores - totalCpuUsedCores),
-        Math.max(0, totalMemoryRequestedGib - totalMemoryUsedGib)
-      );
-    const potentialMonthlySavingsUsd = Math.max(650, Math.round(wastedMonthly * 0.60));
+    // Potential savings are strictly computed from actionable rightsizing recommendations & idle reductions
+    const recommendations = this.getRightsizingRecommendations(orgId);
+    const wasteItems = this.getCostWasteItems(orgId);
+
+    const recSavings = recommendations
+      .filter((r) => r.status === 'PENDING_REVIEW')
+      .reduce((sum, r) => sum + r.estimatedMonthlySavingsUsd, 0);
+
+    const idleWasteSavings = wasteItems
+      .filter((w) => w.category === 'IDLE_WORKLOAD' && !recommendations.some((r) => r.workloadName === w.resourceName))
+      .reduce((sum, w) => sum + w.potentialMonthlyWasteUsd, 0);
+
+    const potentialMonthlySavingsUsd = Math.round(recSavings + idleWasteSavings);
 
     return {
       estimatedMonthlyCostUsd,
@@ -162,7 +399,7 @@ export class CostEngine {
       },
       isEstimate: true,
       estimateDisclaimer:
-        'Cost figures are estimated from Kubernetes resource requests, node capacities, and live Prometheus/metrics.k8s.io usage using standard cloud provider rates ($0.040/vCPU-hr, $0.005/GiB-hr). Figures are estimated opportunities and are clearly distinguished from actual cloud provider invoices. Actual cloud invoices may vary based on committed use discounts, spot instances, and provider contracts.'
+        'Cost figures are estimated from live Kubernetes resource requests, node capacities, and active Prometheus/metrics.k8s.io usage using standard cloud provider rates ($0.040/vCPU-hr, $0.005/GiB-hr). Figures are estimated opportunities and are clearly distinguished from actual cloud provider invoices. Actual cloud invoices may vary based on committed use discounts, spot instances, and provider contracts.'
     };
   }
 
@@ -174,113 +411,123 @@ export class CostEngine {
     const byCluster: CostAllocationItem[] = [];
     const namespaceMap = new Map<string, { cores: number; usedCores: number; gib: number; usedGib: number; count: number }>();
     const workloadItems: CostAllocationItem[] = [];
-    const envMap = new Map<string, { cores: number; usedCores: number; gib: number; usedGib: number }>();
+    const envMap = new Map<string, { cores: number; usedCores: number; gib: number; usedGib: number; count: number }>();
+    const teamMap = new Map<string, { cores: number; usedCores: number; gib: number; usedGib: number; count: number }>();
+    const serviceMap = new Map<string, CostAllocationItem>();
 
     for (const cluster of clusters) {
       const resources = store.getClusterResources(cluster.id, orgId);
-      const metrics = store.getClusterObservabilityMetrics(cluster.id, orgId);
       const env = (cluster.environment || 'production').toLowerCase();
+      const workloadCosts = this.extractClusterWorkloadCosts(cluster, resources, orgId);
 
-      const clusterCores = metrics?.cpu.request?.value
-        ? metrics.cpu.request.value / 1000
-        : Math.max(4, cluster.nodeCount * 4 * 0.8);
-      const clusterUsedCores = metrics?.cpu.usage?.value
-        ? metrics.cpu.usage.value / 1000
-        : clusterCores * 0.62;
-      const clusterGib = metrics?.memory.request?.value
-        ? metrics.memory.request.value / (1024 * 1024 * 1024)
-        : Math.max(16, cluster.nodeCount * 16 * 0.75);
-      const clusterUsedGib = metrics?.memory.usage?.value
-        ? metrics.memory.usage.value / (1024 * 1024 * 1024)
-        : clusterGib * 0.68;
+      let cCores = 0;
+      let cUsedCores = 0;
+      let cGib = 0;
+      let cUsedGib = 0;
 
-      const clusterCost = this.calculateMonthlyCost(clusterCores, clusterGib);
-      const clusterWaste = Math.round(
-        ((clusterCores - clusterUsedCores) / clusterCores) * 50 +
-        ((clusterGib - clusterUsedGib) / clusterGib) * 50
-      );
+      for (const w of workloadCosts) {
+        const wCores = w.requestedCpuMillicores / 1000;
+        const wUsedCores = w.usedCpuMillicores !== null ? w.usedCpuMillicores / 1000 : 0;
+        const wGib = w.requestedMemoryBytes / (1024 * 1024 * 1024);
+        const wUsedGib = w.usedMemoryBytes !== null ? w.usedMemoryBytes / (1024 * 1024 * 1024) : 0;
+
+        cCores += wCores;
+        cUsedCores += wUsedCores;
+        cGib += wGib;
+        cUsedGib += wUsedGib;
+
+        // Namespace aggregation
+        const nsEntry = namespaceMap.get(w.namespace) || { cores: 0, usedCores: 0, gib: 0, usedGib: 0, count: 0 };
+        nsEntry.cores += wCores;
+        nsEntry.usedCores += wUsedCores;
+        nsEntry.gib += wGib;
+        nsEntry.usedGib += wUsedGib;
+        nsEntry.count += 1;
+        namespaceMap.set(w.namespace, nsEntry);
+
+        // Potential savings for this workload
+        const wPotentialSavings = w.isIdle
+          ? Math.round(w.monthlyCostUsd * (w.replicas > 1 ? (w.replicas - 1) / w.replicas : 0.6))
+          : Math.round(w.monthlyCostUsd * (w.overallWastePercent / 100) * 0.5);
+
+        workloadItems.push({
+          id: `${cluster.id}:${w.namespace}:${w.workloadName}`,
+          name: w.workloadName,
+          type: 'workload',
+          monthlyCostUsd: w.monthlyCostUsd,
+          potentialSavingsUsd: wPotentialSavings,
+          cpuRequestedCores: Math.round(wCores * 100) / 100,
+          cpuUsedCores: Math.round(wUsedCores * 100) / 100,
+          memoryRequestedGib: Math.round(wGib * 100) / 100,
+          memoryUsedGib: Math.round(wUsedGib * 100) / 100,
+          wastePercent: w.overallWastePercent,
+          clusterName: w.clusterName,
+          namespace: w.namespace
+        });
+
+        // Team mapping based on actual Kubernetes workload labels or namespace conventions
+        const wlResource = resources.find((r) => r.kind === w.workloadKind && r.name === w.workloadName && r.namespace === w.namespace);
+        const teamLabel = wlResource?.labels?.['app.kubernetes.io/part-of'] || wlResource?.labels?.['team'] || wlResource?.labels?.['owner'];
+        const teamName = teamLabel || (w.namespace.startsWith('kube-') || w.namespace === 'skyops' ? 'Platform Engineering' : `Team ${w.namespace}`);
+
+        const teamEntry = teamMap.get(teamName) || { cores: 0, usedCores: 0, gib: 0, usedGib: 0, count: 0 };
+        teamEntry.cores += wCores;
+        teamEntry.usedCores += wUsedCores;
+        teamEntry.gib += wGib;
+        teamEntry.usedGib += wUsedGib;
+        teamEntry.count += 1;
+        teamMap.set(teamName, teamEntry);
+      }
+
+      // Cluster allocation item
+      const clusterCost = this.calculateMonthlyCost(cCores, cGib);
+      const clusterWaste = cCores > 0 && cGib > 0
+        ? Math.round((Math.max(0, cCores - cUsedCores) / cCores) * 50 + (Math.max(0, cGib - cUsedGib) / cGib) * 50)
+        : 0;
 
       byCluster.push({
         id: cluster.id,
         name: cluster.displayName || cluster.name,
         type: 'cluster',
         monthlyCostUsd: clusterCost,
-        potentialSavingsUsd: Math.round(clusterCost * (clusterWaste / 100) * 0.6),
-        cpuRequestedCores: Math.round(clusterCores * 10) / 10,
-        cpuUsedCores: Math.round(clusterUsedCores * 10) / 10,
-        memoryRequestedGib: Math.round(clusterGib * 10) / 10,
-        memoryUsedGib: Math.round(clusterUsedGib * 10) / 10,
-        wastePercent: Math.max(5, clusterWaste),
-        workloadCount: resources.filter((r) => ['Deployment', 'StatefulSet', 'DaemonSet'].includes(r.kind)).length
+        potentialSavingsUsd: Math.round(clusterCost * (clusterWaste / 100) * 0.5),
+        cpuRequestedCores: Math.round(cCores * 100) / 100,
+        cpuUsedCores: Math.round(cUsedCores * 100) / 100,
+        memoryRequestedGib: Math.round(cGib * 100) / 100,
+        memoryUsedGib: Math.round(cUsedGib * 100) / 100,
+        wastePercent: clusterWaste,
+        workloadCount: workloadCosts.length
       });
 
-      // Accumulate environment
-      const envEntry = envMap.get(env) || { cores: 0, usedCores: 0, gib: 0, usedGib: 0 };
-      envEntry.cores += clusterCores;
-      envEntry.usedCores += clusterUsedCores;
-      envEntry.gib += clusterGib;
-      envEntry.usedGib += clusterUsedGib;
+      // Environment aggregation
+      const envEntry = envMap.get(env) || { cores: 0, usedCores: 0, gib: 0, usedGib: 0, count: 0 };
+      envEntry.cores += cCores;
+      envEntry.usedCores += cUsedCores;
+      envEntry.gib += cGib;
+      envEntry.usedGib += cUsedGib;
+      envEntry.count += workloadCosts.length;
       envMap.set(env, envEntry);
 
-      // Accumulate namespaces and workloads
-      for (const res of resources) {
-        if (!['Deployment', 'StatefulSet', 'DaemonSet'].includes(res.kind)) continue;
-        const ns = res.namespace || 'default';
-        const replicas = res.specReplicas || 1;
-
-        // Container-level resource derivation
-        let wCores = 0;
-        let wUsedCores = 0;
-        let wGib = 0;
-        let wUsedGib = 0;
-
-        if (Array.isArray(res.containers) && res.containers.length > 0) {
-          for (const c of res.containers) {
-            const reqC = (this.parseCpuMillicores(c.cpuRequest) || 500) / 1000;
-            const useC = (this.parseCpuMillicores(c.cpuUsage) || reqC * 0.35) / 1000;
-            const reqM = (this.parseMemoryBytes(c.memoryRequest) || 1024 * 1024 * 1024) / (1024 * 1024 * 1024);
-            const useM = (this.parseMemoryBytes(c.memoryUsage) || reqM * 0.45) / (1024 * 1024 * 1024);
-            wCores += reqC * replicas;
-            wUsedCores += useC * replicas;
-            wGib += reqM * replicas;
-            wUsedGib += useM * replicas;
-          }
-        } else {
-          // Heuristic based on workload name
-          const isHeavy = /checkout|payment|order|search|database|worker/i.test(res.name);
-          wCores = isHeavy ? 4 * replicas : 1 * replicas;
-          wUsedCores = wCores * (isHeavy ? 0.38 : 0.25);
-          wGib = isHeavy ? 8 * replicas : 2 * replicas;
-          wUsedGib = wGib * (isHeavy ? 0.42 : 0.30);
+      // Kubernetes Service cost mapping
+      const k8sServices = resources.filter((r) => r.kind === 'Service');
+      for (const svc of k8sServices) {
+        const matchingWorkload = workloadItems.find((wi) => wi.namespace === svc.namespace && (wi.name === svc.name || svc.name.startsWith(wi.name)));
+        if (matchingWorkload) {
+          serviceMap.set(`${svc.namespace}:${svc.name}`, {
+            id: `svc-${cluster.id}-${svc.namespace}-${svc.name}`,
+            name: svc.name,
+            type: 'service',
+            monthlyCostUsd: matchingWorkload.monthlyCostUsd,
+            potentialSavingsUsd: matchingWorkload.potentialSavingsUsd,
+            cpuRequestedCores: matchingWorkload.cpuRequestedCores,
+            cpuUsedCores: matchingWorkload.cpuUsedCores,
+            memoryRequestedGib: matchingWorkload.memoryRequestedGib,
+            memoryUsedGib: matchingWorkload.memoryUsedGib,
+            wastePercent: matchingWorkload.wastePercent,
+            clusterName: matchingWorkload.clusterName,
+            namespace: svc.namespace
+          });
         }
-
-        const nsEntry = namespaceMap.get(ns) || { cores: 0, usedCores: 0, gib: 0, usedGib: 0, count: 0 };
-        nsEntry.cores += wCores;
-        nsEntry.usedCores += wUsedCores;
-        nsEntry.gib += wGib;
-        nsEntry.usedGib += wUsedGib;
-        nsEntry.count += 1;
-        namespaceMap.set(ns, nsEntry);
-
-        const wCost = this.calculateMonthlyCost(wCores, wGib);
-        const wWaste = Math.round(
-          Math.max(5, ((wCores - wUsedCores) / Math.max(0.1, wCores)) * 60 + ((wGib - wUsedGib) / Math.max(0.1, wGib)) * 40)
-        );
-
-        workloadItems.push({
-          id: `${cluster.id}:${ns}:${res.name}`,
-          name: res.name,
-          type: 'workload',
-          monthlyCostUsd: wCost,
-          potentialSavingsUsd: Math.round(wCost * (wWaste / 100) * 0.65),
-          cpuRequestedCores: Math.round(wCores * 10) / 10,
-          cpuUsedCores: Math.round(wUsedCores * 10) / 10,
-          memoryRequestedGib: Math.round(wGib * 10) / 10,
-          memoryUsedGib: Math.round(wUsedGib * 10) / 10,
-          wastePercent: Math.min(95, wWaste),
-          clusterName: cluster.displayName || cluster.name,
-          namespace: ns
-        });
       }
     }
 
@@ -288,327 +535,175 @@ export class CostEngine {
     workloadItems.sort((a, b) => b.monthlyCostUsd - a.monthlyCostUsd);
 
     // Build Namespace Breakdown
-    const byNamespace: CostAllocationItem[] = Array.from(namespaceMap.entries()).map(([ns, val]) => {
-      const cost = this.calculateMonthlyCost(val.cores, val.gib);
-      const waste = Math.round(
-        Math.max(5, ((val.cores - val.usedCores) / Math.max(0.1, val.cores)) * 50 + ((val.gib - val.usedGib) / Math.max(0.1, val.gib)) * 50)
-      );
-      return {
-        id: `ns-${ns}`,
-        name: ns,
-        type: 'namespace',
-        monthlyCostUsd: cost,
-        potentialSavingsUsd: Math.round(cost * (waste / 100) * 0.6),
-        cpuRequestedCores: Math.round(val.cores * 10) / 10,
-        cpuUsedCores: Math.round(val.usedCores * 10) / 10,
-        memoryRequestedGib: Math.round(val.gib * 10) / 10,
-        memoryUsedGib: Math.round(val.usedGib * 10) / 10,
-        wastePercent: Math.min(95, waste),
-        workloadCount: val.count
-      };
-    }).sort((a, b) => b.monthlyCostUsd - a.monthlyCostUsd);
-
-    // Prompt 3, Section 6 Canonical Baseline when newly registered clusters have not synced resources
-    if (byNamespace.length === 0) {
-      byNamespace.push(
-        {
-          id: 'ns-production',
-          name: 'production',
+    const byNamespace: CostAllocationItem[] = Array.from(namespaceMap.entries())
+      .map(([ns, val]) => {
+        const cost = this.calculateMonthlyCost(val.cores, val.gib);
+        const waste = val.cores > 0 && val.gib > 0
+          ? Math.round((Math.max(0, val.cores - val.usedCores) / val.cores) * 50 + (Math.max(0, val.gib - val.usedGib) / val.gib) * 50)
+          : 0;
+        return {
+          id: `ns-${ns}`,
+          name: ns,
           type: 'namespace',
-          monthlyCostUsd: 9240,
-          potentialSavingsUsd: 1840,
-          cpuRequestedCores: 28,
-          cpuUsedCores: 18,
-          memoryRequestedGib: 112,
-          memoryUsedGib: 78,
-          wastePercent: 18,
-          workloadCount: 24
-        },
-        {
-          id: 'ns-staging',
-          name: 'staging',
-          type: 'namespace',
-          monthlyCostUsd: 3820,
-          potentialSavingsUsd: 780,
-          cpuRequestedCores: 12,
-          cpuUsedCores: 6,
-          memoryRequestedGib: 48,
-          memoryUsedGib: 26,
-          wastePercent: 28,
-          workloadCount: 14
-        },
-        {
-          id: 'ns-development',
-          name: 'development',
-          type: 'namespace',
-          monthlyCostUsd: 1120,
-          potentialSavingsUsd: 290,
-          cpuRequestedCores: 4,
-          cpuUsedCores: 1.5,
-          memoryRequestedGib: 16,
-          memoryUsedGib: 7,
-          wastePercent: 35,
-          workloadCount: 8
-        }
-      );
-    }
-
-    if (workloadItems.length === 0) {
-      workloadItems.push(
-        {
-          id: 'wl-checkout-api',
-          name: 'checkout-api',
-          type: 'workload',
-          monthlyCostUsd: 1420,
-          potentialSavingsUsd: 780,
-          cpuRequestedCores: 8,
-          cpuUsedCores: 2.1,
-          memoryRequestedGib: 16,
-          memoryUsedGib: 5.2,
-          wastePercent: 42,
-          clusterName: 'Production-EKS',
-          namespace: 'production'
-        },
-        {
-          id: 'wl-payment-api',
-          name: 'payment-api',
-          type: 'workload',
-          monthlyCostUsd: 980,
-          potentialSavingsUsd: 420,
-          cpuRequestedCores: 6,
-          cpuUsedCores: 2.4,
-          memoryRequestedGib: 12,
-          memoryUsedGib: 4.8,
-          wastePercent: 38,
-          clusterName: 'Production-EKS',
-          namespace: 'production'
-        },
-        {
-          id: 'wl-search-api',
-          name: 'search-api',
-          type: 'workload',
-          monthlyCostUsd: 640,
-          potentialSavingsUsd: 210,
-          cpuRequestedCores: 4,
-          cpuUsedCores: 1.8,
-          memoryRequestedGib: 8,
-          memoryUsedGib: 3.5,
-          wastePercent: 31,
-          clusterName: 'Production-EKS',
-          namespace: 'production'
-        }
-      );
-    }
+          monthlyCostUsd: cost,
+          potentialSavingsUsd: Math.round(cost * (waste / 100) * 0.5),
+          cpuRequestedCores: Math.round(val.cores * 100) / 100,
+          cpuUsedCores: Math.round(val.usedCores * 100) / 100,
+          memoryRequestedGib: Math.round(val.gib * 100) / 100,
+          memoryUsedGib: Math.round(val.usedGib * 100) / 100,
+          wastePercent: waste,
+          workloadCount: val.count
+        };
+      })
+      .sort((a, b) => b.monthlyCostUsd - a.monthlyCostUsd);
 
     // Build Environment Breakdown
-    const byEnvironment: CostAllocationItem[] = Array.from(envMap.entries()).map(([env, val]) => {
-      const cost = this.calculateMonthlyCost(val.cores, val.gib);
-      const waste = Math.round(
-        Math.max(5, ((val.cores - val.usedCores) / Math.max(0.1, val.cores)) * 50 + ((val.gib - val.usedGib) / Math.max(0.1, val.gib)) * 50)
-      );
-      return {
-        id: `env-${env}`,
-        name: env.charAt(0).toUpperCase() + env.slice(1),
-        type: 'environment',
-        monthlyCostUsd: cost,
-        potentialSavingsUsd: Math.round(cost * (waste / 100) * 0.6),
-        cpuRequestedCores: Math.round(val.cores * 10) / 10,
-        cpuUsedCores: Math.round(val.usedCores * 10) / 10,
-        memoryRequestedGib: Math.round(val.gib * 10) / 10,
-        memoryUsedGib: Math.round(val.usedGib * 10) / 10,
-        wastePercent: Math.min(95, waste)
-      };
-    }).sort((a, b) => b.monthlyCostUsd - a.monthlyCostUsd);
-
-    // Build Service and Team Breakdown (attributed by label or namespace naming convention)
-    const teams = [
-      { name: 'Core Platform', namespaces: ['kube-system', 'monitoring', 'ingress-nginx', 'skyops'] },
-      { name: 'Payments & Checkout', namespaces: ['payments', 'checkout', 'billing'] },
-      { name: 'Customer Experience', namespaces: ['frontend', 'web', 'mobile-api'] },
-      { name: 'Data Platform', namespaces: ['data', 'analytics', 'search'] }
-    ];
-
-    const byTeam: CostAllocationItem[] = teams.map((t, idx) => {
-      let tCores = 0;
-      let tUsedCores = 0;
-      let tGib = 0;
-      let tUsedGib = 0;
-      let count = 0;
-
-      for (const [ns, val] of namespaceMap.entries()) {
-        if (t.namespaces.some((sub) => ns.toLowerCase().includes(sub))) {
-          tCores += val.cores;
-          tUsedCores += val.usedCores;
-          tGib += val.gib;
-          tUsedGib += val.usedGib;
-          count += val.count;
-        }
-      }
-
-      if (tCores === 0) {
-        // Fallback proportional allocation
-        const factor = [0.35, 0.30, 0.20, 0.15][idx] || 0.1;
-        const totalCost = byCluster.reduce((sum, c) => sum + c.monthlyCostUsd, 0);
+    const byEnvironment: CostAllocationItem[] = Array.from(envMap.entries())
+      .map(([env, val]) => {
+        const cost = this.calculateMonthlyCost(val.cores, val.gib);
+        const waste = val.cores > 0 && val.gib > 0
+          ? Math.round((Math.max(0, val.cores - val.usedCores) / val.cores) * 50 + (Math.max(0, val.gib - val.usedGib) / val.gib) * 50)
+          : 0;
         return {
-          id: `team-${idx}`,
-          name: t.name,
-          type: 'team',
-          monthlyCostUsd: Math.round(totalCost * factor),
-          potentialSavingsUsd: Math.round(totalCost * factor * 0.18),
-          cpuRequestedCores: Math.round(factor * 32 * 10) / 10,
-          cpuUsedCores: Math.round(factor * 18 * 10) / 10,
-          memoryRequestedGib: Math.round(factor * 128 * 10) / 10,
-          memoryUsedGib: Math.round(factor * 78 * 10) / 10,
-          wastePercent: 24,
-          workloadCount: Math.round(factor * 20)
+          id: `env-${env}`,
+          name: env.charAt(0).toUpperCase() + env.slice(1),
+          type: 'environment' as const,
+          monthlyCostUsd: cost,
+          potentialSavingsUsd: Math.round(cost * (waste / 100) * 0.5),
+          cpuRequestedCores: Math.round(val.cores * 100) / 100,
+          cpuUsedCores: Math.round(val.usedCores * 100) / 100,
+          memoryRequestedGib: Math.round(val.gib * 100) / 100,
+          memoryUsedGib: Math.round(val.usedGib * 100) / 100,
+          wastePercent: waste,
+          workloadCount: val.count
         };
-      }
+      })
+      .sort((a, b) => b.monthlyCostUsd - a.monthlyCostUsd);
 
-      const cost = this.calculateMonthlyCost(tCores, tGib);
-      return {
-        id: `team-${idx}`,
-        name: t.name,
-        type: 'team',
-        monthlyCostUsd: cost,
-        potentialSavingsUsd: Math.round(cost * 0.22),
-        cpuRequestedCores: Math.round(tCores * 10) / 10,
-        cpuUsedCores: Math.round(tUsedCores * 10) / 10,
-        memoryRequestedGib: Math.round(tGib * 10) / 10,
-        memoryUsedGib: Math.round(tUsedGib * 10) / 10,
-        wastePercent: Math.round(((tCores - tUsedCores) / Math.max(0.1, tCores)) * 100),
-        workloadCount: count
-      };
-    }).sort((a, b) => b.monthlyCostUsd - a.monthlyCostUsd);
+    // Build Team Breakdown
+    const byTeam: CostAllocationItem[] = Array.from(teamMap.entries())
+      .map(([teamName, val]) => {
+        const cost = this.calculateMonthlyCost(val.cores, val.gib);
+        const waste = val.cores > 0 && val.gib > 0
+          ? Math.round((Math.max(0, val.cores - val.usedCores) / val.cores) * 50 + (Math.max(0, val.gib - val.usedGib) / val.gib) * 50)
+          : 0;
+        return {
+          id: `team-${teamName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+          name: teamName,
+          type: 'team' as const,
+          monthlyCostUsd: cost,
+          potentialSavingsUsd: Math.round(cost * (waste / 100) * 0.5),
+          cpuRequestedCores: Math.round(val.cores * 100) / 100,
+          cpuUsedCores: Math.round(val.usedCores * 100) / 100,
+          memoryRequestedGib: Math.round(val.gib * 100) / 100,
+          memoryUsedGib: Math.round(val.usedGib * 100) / 100,
+          wastePercent: waste,
+          workloadCount: val.count
+        };
+      })
+      .sort((a, b) => b.monthlyCostUsd - a.monthlyCostUsd);
 
-    // Map top workloads to services
-    const byService: CostAllocationItem[] = workloadItems.slice(0, 10).map((w) => ({
-      ...w,
-      type: 'service',
-      name: `${w.name}-svc`
-    }));
+    const byService = Array.from(serviceMap.values()).sort((a, b) => b.monthlyCostUsd - a.monthlyCostUsd);
 
     return {
       byCluster,
       byNamespace,
-      byWorkload: workloadItems.slice(0, 25),
-      byService,
+      byWorkload: workloadItems.slice(0, 50),
+      byService: byService.slice(0, 50),
       byEnvironment,
       byTeam
     };
   }
 
   /**
-   * Detect Resource Rightsizing opportunities across workloads
-   * Identifies workloads where requested resources significantly exceed actual historical usage.
-   * Recommendations MUST go through the existing safety/remediation system.
+   * Detect Resource Rightsizing opportunities across workloads strictly from actual requests and usage.
+   * Recommendations target overprovisioned workloads where requested capacity significantly exceeds actual usage.
    */
   public static getRightsizingRecommendations(orgId: string): ResourceRightsizingRecommendation[] {
     const clusters = store.getClusters(orgId);
     const recommendations: ResourceRightsizingRecommendation[] = [];
+    const appliedRecs = store.getAppliedRightsizing(orgId);
+    const appliedMap = new Map(appliedRecs.map((r) => [r.id, r]));
 
     for (const cluster of clusters) {
       const resources = store.getClusterResources(cluster.id, orgId);
-      const workloads = resources.filter((r) =>
-        ['Deployment', 'StatefulSet'].includes(r.kind)
-      );
+      const workloadCosts = this.extractClusterWorkloadCosts(cluster, resources, orgId);
 
-      for (const wl of workloads) {
-        // Look for significant request vs usage discrepancies
-        const containers = wl.containers || [];
-        const isCommonTarget = /checkout|payment|search|api|worker|frontend|auth/i.test(wl.name);
+      for (const w of workloadCosts) {
+        // Only evaluate workloads where usage telemetry is actively reporting and replicas >= 1
+        if (!w.isUsageAvailable || w.replicas <= 0) continue;
 
-        // Determine live or estimated requests vs usage
-        let reqCores = 0;
-        let avgUsedCores = 0;
-        let reqGib = 0;
-        let avgUsedGib = 0;
-        let containerName = 'app';
+        const reqCores = w.requestedCpuMillicores / 1000;
+        const usedCores = w.usedCpuMillicores !== null ? w.usedCpuMillicores / 1000 : 0;
+        const reqGib = w.requestedMemoryBytes / (1024 * 1024 * 1024);
+        const usedGib = w.usedMemoryBytes !== null ? w.usedMemoryBytes / (1024 * 1024 * 1024) : 0;
 
-        if (containers.length > 0) {
-          containerName = containers[0].name || 'app';
-          reqCores = (this.parseCpuMillicores(containers[0].cpuRequest) || 4000) / 1000;
-          avgUsedCores = (this.parseCpuMillicores(containers[0].cpuUsage) || reqCores * 0.28) / 1000;
-          reqGib = (this.parseMemoryBytes(containers[0].memoryRequest) || 8 * 1024 * 1024 * 1024) / (1024 * 1024 * 1024);
-          avgUsedGib = (this.parseMemoryBytes(containers[0].memoryUsage) || reqGib * 0.35) / (1024 * 1024 * 1024);
-        } else if (isCommonTarget) {
-          // Synthetic realistic workload parameters
-          reqCores = wl.name.includes('checkout') ? 8 : 4;
-          avgUsedCores = wl.name.includes('checkout') ? 2.1 : 1.2;
-          reqGib = wl.name.includes('checkout') ? 16 : 8;
-          avgUsedGib = wl.name.includes('checkout') ? 5.2 : 2.8;
-        }
+        // Check if workload is significantly overprovisioned
+        // (Usage is less than 50% of request and requested resources are non-trivial)
+        const isCpuOverprovisioned = reqCores >= 0.1 && (usedCores / Math.max(0.001, reqCores)) < 0.5;
+        const isMemOverprovisioned = reqGib >= 0.125 && (usedGib / Math.max(0.001, reqGib)) < 0.5;
 
-        // Only recommend when requested significantly exceeds usage (e.g. usage < 45% of request)
-        if (reqCores >= 2 && avgUsedCores < reqCores * 0.5) {
-          // Conservative recommended size (provide at least 40% headroom above average usage)
-          const targetCores = Math.max(1, Math.ceil(avgUsedCores * 1.5));
-          const targetGib = Math.max(2, Math.ceil(avgUsedGib * 1.5));
+        if (isCpuOverprovisioned || isMemOverprovisioned) {
+          // Conservative target recommendation with 50% burst headroom above observed usage
+          const usedPerPodCpuMilli = (w.usedCpuMillicores || 0) / w.replicas;
+          const usedPerPodMemBytes = (w.usedMemoryBytes || 0) / w.replicas;
 
-          const currentCost = this.calculateMonthlyCost(reqCores, reqGib);
-          const targetCost = this.calculateMonthlyCost(targetCores, targetGib);
-          const estimatedMonthlySavingsUsd = Math.max(80, Math.round(currentCost - targetCost));
+          const targetPerPodCpuMilli = Math.max(50, Math.ceil((usedPerPodCpuMilli * 1.5) / 10) * 10);
+          const targetPerPodMemBytes = Math.max(64 * 1024 * 1024, Math.ceil((usedPerPodMemBytes * 1.5) / (16 * 1024 * 1024)) * 16 * 1024 * 1024);
 
-          // Confidence score based on usage headroom and telemetry quality
-          const confidencePercent = Math.min(96, Math.max(82, Math.round(88 + (reqCores - targetCores) * 2)));
+          const targetTotalCpuMilli = targetPerPodCpuMilli * w.replicas;
+          const targetTotalMemBytes = targetPerPodMemBytes * w.replicas;
 
-          recommendations.push({
-            id: `rec-${cluster.id}-${wl.namespace || 'default'}-${wl.name}`,
-            orgId,
-            clusterId: cluster.id,
-            clusterName: cluster.displayName || cluster.name,
-            namespace: wl.namespace || 'default',
-            workloadName: wl.name,
-            workloadKind: wl.kind as any,
-            containerName,
-            currentCpuRequested: `${reqCores} cores`,
-            averageCpuUsed: `${Math.round(avgUsedCores * 10) / 10} cores`,
-            currentMemoryRequested: `${reqGib}Gi`,
-            averageMemoryUsed: `${Math.round(avgUsedGib * 10) / 10}Gi`,
-            recommendedCpu: `${targetCores} cores`,
-            recommendedMemory: `${targetGib}Gi`,
-            estimatedMonthlySavingsUsd,
-            confidencePercent,
-            risk: 'LOW',
-            reason: `Average CPU usage is ${Math.round(avgUsedCores * 10) / 10} cores (${Math.round((avgUsedCores / reqCores) * 100)}% of requested ${reqCores} cores). Downsizing to ${targetCores} cores provides 50% burst headroom while avoiding resource starvation.`,
-            rollbackAvailable: true,
-            status: 'PENDING_REVIEW'
-          });
+          // Only recommend if target actually provides a reduction
+          if (targetTotalCpuMilli < w.requestedCpuMillicores || targetTotalMemBytes < w.requestedMemoryBytes) {
+            const currentCost = this.calculateMonthlyCost(reqCores, reqGib);
+            const targetCost = this.calculateMonthlyCost(targetTotalCpuMilli / 1000, targetTotalMemBytes / (1024 * 1024 * 1024));
+            const estimatedMonthlySavingsUsd = Math.max(1, Math.round(currentCost - targetCost));
+
+            const confidencePercent = Math.min(
+              98,
+              Math.max(82, Math.round(86 + (1 - (usedCores / Math.max(0.01, reqCores))) * 10))
+            );
+
+            const recId = `rec-${cluster.id}-${w.namespace}-${w.workloadName}`;
+            const appliedEntry = appliedMap.get(recId);
+
+            const cpuUtilPct = Math.round((usedCores / Math.max(0.001, reqCores)) * 100);
+            const memUtilPct = Math.round((usedGib / Math.max(0.001, reqGib)) * 100);
+
+            recommendations.push({
+              id: recId,
+              orgId,
+              clusterId: cluster.id,
+              clusterName: w.clusterName,
+              namespace: w.namespace,
+              workloadName: w.workloadName,
+              workloadKind: w.workloadKind,
+              containerName: w.containerName,
+              currentCpuRequested: this.formatCpu(w.requestedCpuMillicores),
+              averageCpuUsed: this.formatCpu(w.usedCpuMillicores || 0),
+              currentMemoryRequested: this.formatMemory(w.requestedMemoryBytes),
+              averageMemoryUsed: this.formatMemory(w.usedMemoryBytes || 0),
+              recommendedCpu: this.formatCpu(targetTotalCpuMilli),
+              recommendedMemory: this.formatMemory(targetTotalMemBytes),
+              estimatedMonthlySavingsUsd,
+              confidencePercent,
+              risk: 'LOW',
+              reason: `Observed CPU usage is ${this.formatCpu(w.usedCpuMillicores || 0)} (${cpuUtilPct}% of requested ${this.formatCpu(w.requestedCpuMillicores)}) and memory usage is ${this.formatMemory(w.usedMemoryBytes || 0)} (${memUtilPct}% of requested ${this.formatMemory(w.requestedMemoryBytes)}). Downsizing to ${this.formatCpu(targetTotalCpuMilli)} and ${this.formatMemory(targetTotalMemBytes)} provides 50% burst headroom while avoiding resource waste.`,
+              rollbackAvailable: true,
+              status: appliedEntry ? 'APPLIED' : 'PENDING_REVIEW',
+              appliedAt: appliedEntry?.appliedAt
+            });
+          }
         }
       }
-    }
-
-    // Ensure our signature checkout-api recommendation is always present for demonstration
-    if (!recommendations.some((r) => r.workloadName.includes('checkout-api'))) {
-      const primaryCluster = clusters[0] || { id: 'cluster-prod-1', name: 'Production-EKS', displayName: 'Production-EKS' };
-      recommendations.unshift({
-        id: `rec-${primaryCluster.id}-production-checkout-api`,
-        orgId,
-        clusterId: primaryCluster.id,
-        clusterName: primaryCluster.displayName || primaryCluster.name,
-        namespace: 'production',
-        workloadName: 'checkout-api',
-        workloadKind: 'Deployment',
-        containerName: 'checkout-api',
-        currentCpuRequested: '8 cores',
-        averageCpuUsed: '2.1 cores',
-        currentMemoryRequested: '16Gi',
-        averageMemoryUsed: '5.2Gi',
-        recommendedCpu: '4 cores',
-        recommendedMemory: '8Gi',
-        estimatedMonthlySavingsUsd: 780,
-        confidencePercent: 91,
-        risk: 'LOW',
-        reason: 'Requested CPU (8 cores) and Memory (16Gi) exceed p95 usage (2.1 cores, 5.2Gi). Right-sizing to 4 cores and 8Gi retains ample burst headroom for peak traffic while reclaiming over-allocated resources.',
-        rollbackAvailable: true,
-        status: 'PENDING_REVIEW'
-      });
     }
 
     return recommendations;
   }
 
   /**
-   * Detect Cost Waste across clusters and namespaces
+   * Detect genuine Cost Waste across clusters strictly based on telemetry.
    */
   public static getCostWasteItems(orgId: string): CostWasteItem[] {
     const clusters = store.getClusters(orgId);
@@ -616,106 +711,170 @@ export class CostEngine {
 
     for (const cluster of clusters) {
       const resources = store.getClusterResources(cluster.id, orgId);
-      const cName = cluster.displayName || cluster.name;
+      const metrics = store.getClusterObservabilityMetrics(cluster.id, orgId);
+      const workloadCosts = this.extractClusterWorkloadCosts(cluster, resources, orgId);
 
       // 1. Idle Workloads (< 5% utilization)
-      const workloads = resources.filter((r) => ['Deployment', 'StatefulSet'].includes(r.kind));
-      for (const wl of workloads) {
-        const cpuUtil = wl.cpuUsage ?? 2;
-        if (cpuUtil < 5 && (wl.specReplicas || 1) >= 2) {
+      for (const w of workloadCosts) {
+        if (w.isIdle && w.replicas > 0) {
+          const wasteReplicas = w.replicas > 1 ? w.replicas - 1 : 1;
+          const wasteCost = Math.max(1, Math.round(w.monthlyCostUsd * (wasteReplicas / w.replicas)));
+
           wasteItems.push({
-            id: `waste-idle-${cluster.id}-${wl.name}`,
+            id: `waste-idle-${cluster.id}-${w.namespace}-${w.workloadName}`,
             category: 'IDLE_WORKLOAD',
-            title: `Idle Workload: ${wl.name}`,
-            description: `${wl.name} has maintained under 5% average CPU utilization for the past 14 days across ${wl.specReplicas} replicas.`,
+            title: `Idle Workload: ${w.workloadName}`,
+            description: `${w.workloadName} has maintained under 5% CPU and memory utilization across ${w.replicas} replica${w.replicas > 1 ? 's' : ''} in namespace ${w.namespace}.`,
             clusterId: cluster.id,
-            clusterName: cName,
-            namespace: wl.namespace || 'default',
-            resourceKind: wl.kind,
-            resourceName: wl.name,
-            averageUtilizationPercent: Math.round(cpuUtil * 10) / 10,
-            currentReplicas: wl.specReplicas || 2,
-            recommendedReplicas: 1,
-            potentialMonthlyWasteUsd: 240,
+            clusterName: w.clusterName,
+            namespace: w.namespace,
+            resourceKind: w.workloadKind,
+            resourceName: w.workloadName,
+            averageUtilizationPercent: Math.max(0, Math.round(100 - w.overallWastePercent)),
+            currentReplicas: w.replicas,
+            recommendedReplicas: Math.max(0, w.replicas - wasteReplicas),
+            potentialMonthlyWasteUsd: wasteCost,
             severity: 'HIGH',
-            recommendedAction: 'Scale replicas from 2 to 1 or configure Horizontal Pod Autoscaler (HPA) to scale to 1 during low-traffic windows.',
+            recommendedAction: w.replicas > 1
+              ? `Scale replicas from ${w.replicas} to 1 or configure Horizontal Pod Autoscaler (HPA) to scale to 1 during low-traffic windows.`
+              : 'Evaluate decommissioning this unutilized deployment or configuring automatic hibernation.',
+            canSafelyDownscale: true
+          });
+        } else if (w.isUsageAvailable && w.overallWastePercent >= 70 && w.monthlyCostUsd >= 10) {
+          // 2. Overprovisioned Workloads (severe waste >= 70%)
+          wasteItems.push({
+            id: `waste-overprov-${cluster.id}-${w.namespace}-${w.workloadName}`,
+            category: 'OVERPROVISIONED_CPU',
+            title: `Over-Provisioned Resources: ${w.workloadName}`,
+            description: `${w.workloadName} requests ${this.formatCpu(w.requestedCpuMillicores)} CPU and ${this.formatMemory(w.requestedMemoryBytes)} Memory but actively uses only ${this.formatCpu(w.usedCpuMillicores || 0)} (${w.overallWastePercent}% waste).`,
+            clusterId: cluster.id,
+            clusterName: w.clusterName,
+            namespace: w.namespace,
+            resourceKind: w.workloadKind,
+            resourceName: w.workloadName,
+            averageUtilizationPercent: Math.max(0, Math.round(100 - w.overallWastePercent)),
+            currentReplicas: w.replicas,
+            potentialMonthlyWasteUsd: Math.round(w.monthlyCostUsd * (w.overallWastePercent / 100)),
+            severity: 'MEDIUM',
+            recommendedAction: 'Apply recommended rightsizing to align CPU and memory requests with live workload traffic.',
             canSafelyDownscale: true
           });
         }
       }
 
-      // 2. Dev / Staging Workloads running during off-hours
-      if (cluster.environment === 'development' || cluster.environment === 'staging') {
-        wasteItems.push({
-          id: `waste-dev-offhours-${cluster.id}`,
-          category: 'DEV_OFF_HOURS_RUNNING',
-          title: `Non-Production Off-Hours Compute: ${cName}`,
-          description: 'Development cluster pods and nodegroups run continuously 24/7 including weekends, consuming full capacity during zero-developer hours.',
-          clusterId: cluster.id,
-          clusterName: cName,
-          potentialMonthlyWasteUsd: 680,
-          severity: 'MEDIUM',
-          recommendedAction: 'Apply scheduled cluster hibernation to scale worker node pools down to 0 during nights and weekends.',
-          canSafelyDownscale: true
-        });
-      }
+      // 3. Low Utilization Nodes (Worker nodes with < 15% CPU and memory utilization)
+      if (metrics && metrics.nodes.length >= 2) {
+        for (const node of metrics.nodes) {
+          const isMaster = /master|controlplane|control-plane/i.test(node.name);
+          if (isMaster) continue;
 
-      // 3. Oversized Node Pools / Low-Utilization Nodes
-      if (cluster.nodeCount >= 3) {
-        wasteItems.push({
-          id: `waste-nodepool-${cluster.id}`,
-          category: 'LOW_UTILIZATION_NODE',
-          title: `Fragmented Node Pool: ${cName}`,
-          description: `${cluster.nodeCount} worker nodes average only 28% CPU and 34% memory allocation due to pod affinity constraints and lack of bin-packing.`,
-          clusterId: cluster.id,
-          clusterName: cName,
-          potentialMonthlyWasteUsd: 420,
-          severity: 'HIGH',
-          recommendedAction: 'Consolidate workloads and remove 1 underutilized worker node from the cluster nodegroup.',
-          canSafelyDownscale: true
-        });
-      }
-    }
+          if (node.isUsageAvailable && node.cpu.allocatable && node.cpu.usage) {
+            const cpuUtil = node.cpu.usage.value / Math.max(1, node.cpu.allocatable.value);
+            const memUtil = (node.memory.usage?.value || 0) / Math.max(1, node.memory.allocatable?.value || 1);
 
-    // Default canonical items for demonstration
-    if (wasteItems.length === 0) {
-      wasteItems.push({
-        id: 'waste-idle-checkout-dev',
-        category: 'IDLE_WORKLOAD',
-        title: '7 Workloads under 5% average utilization',
-        description: '7 dev and preview workloads have had no incoming traffic for over 7 days while holding 14 allocated vCPUs.',
-        clusterId: clusters[0]?.id || 'cluster-1',
-        clusterName: clusters[0]?.name || 'Production-EKS',
-        namespace: 'development',
-        potentialMonthlyWasteUsd: 1240,
-        severity: 'HIGH',
-        recommendedAction: 'Downscale idle preview deployments or implement scheduled TTL auto-deletion.',
-        canSafelyDownscale: true
-      });
+            if (cpuUtil < 0.15 && memUtil < 0.25) {
+              const nodeCores = node.cpu.allocatable.value / 1000;
+              const nodeGib = (node.memory.allocatable?.value || 0) / (1024 * 1024 * 1024);
+              const nodeCost = this.calculateMonthlyCost(nodeCores, nodeGib);
+
+              wasteItems.push({
+                id: `waste-node-${cluster.id}-${node.name}`,
+                category: 'LOW_UTILIZATION_NODE',
+                title: `Underutilized Worker Node: ${node.name}`,
+                description: `Node ${node.name} averages only ${Math.round(cpuUtil * 100)}% CPU and ${Math.round(memUtil * 100)}% memory allocation across ${node.podCount} scheduled pods.`,
+                clusterId: cluster.id,
+                clusterName: cluster.displayName || cluster.name,
+                resourceKind: 'Node',
+                resourceName: node.name,
+                averageUtilizationPercent: Math.round(((cpuUtil + memUtil) / 2) * 100),
+                potentialMonthlyWasteUsd: Math.round(nodeCost * 0.7),
+                severity: 'HIGH',
+                recommendedAction: 'Consolidate workloads onto remaining worker nodes and drain this underutilized instance.',
+                canSafelyDownscale: true
+              });
+            }
+          }
+        }
+      }
     }
 
     return wasteItems;
   }
 
   /**
-   * Cost Savings Tracking across lifecycle stages
+   * Cost Savings Tracking across lifecycle stages strictly calculated from active and applied recommendations.
    * Distinguishes: Estimated, Projected, Implemented, Verified, Realized
    */
   public static getCostSavingsTracking(orgId: string): CostSavingsTracking {
+    const recommendations = this.getRightsizingRecommendations(orgId);
+    const appliedRecs = store.getAppliedRightsizing(orgId);
+    const appliedIds = new Set(appliedRecs.map((r) => r.id));
+
+    let pendingReviewSavingsUsd = 0;
+    let projectedSavingsUsd = 0;
+    let implementedSavingsUsd = 0;
+    let verifiedSavingsUsd = 0;
+    let realizedSavingsUsd = 0;
+
+    for (const rec of recommendations) {
+      if (appliedIds.has(rec.id) || rec.status === 'APPLIED') {
+        implementedSavingsUsd += rec.estimatedMonthlySavingsUsd;
+        // Check if workload is healthy in cluster
+        const clusterRes = store.getClusterResources(rec.clusterId, orgId);
+        const wl = clusterRes.find((r) => r.kind === rec.workloadKind && r.name === rec.workloadName && r.namespace === rec.namespace);
+        const isHealthy = !wl || wl.health === 'HEALTHY';
+        if (isHealthy) {
+          verifiedSavingsUsd += rec.estimatedMonthlySavingsUsd;
+          realizedSavingsUsd += rec.estimatedMonthlySavingsUsd;
+        }
+      } else {
+        pendingReviewSavingsUsd += rec.estimatedMonthlySavingsUsd;
+        if (rec.risk === 'LOW' && rec.confidencePercent >= 80) {
+          projectedSavingsUsd += rec.estimatedMonthlySavingsUsd;
+        }
+      }
+    }
+
+    const estimatedOpportunityUsd = pendingReviewSavingsUsd + implementedSavingsUsd;
+
+    // Monthly historical series from real applied rightsizing actions
+    const monthlyMap = new Map<string, { implemented: number; verified: number; realized: number }>();
+    for (const applied of appliedRecs) {
+      const d = new Date(applied.appliedAt || Date.now());
+      const monthKey = d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+      const current = monthlyMap.get(monthKey) || { implemented: 0, verified: 0, realized: 0 };
+      current.implemented += applied.estimatedMonthlySavingsUsd;
+      current.verified += applied.estimatedMonthlySavingsUsd;
+      current.realized += applied.estimatedMonthlySavingsUsd;
+      monthlyMap.set(monthKey, current);
+    }
+
+    const trackingBreakdown = Array.from(monthlyMap.entries()).map(([month, vals]) => ({
+      month,
+      implemented: Math.round(vals.implemented),
+      verified: Math.round(vals.verified),
+      realized: Math.round(vals.realized)
+    }));
+
+    if (trackingBreakdown.length === 0) {
+      const nowMonth = new Date().toLocaleString('en-US', { month: 'short', year: 'numeric' });
+      trackingBreakdown.push({
+        month: nowMonth,
+        implemented: Math.round(implementedSavingsUsd),
+        verified: Math.round(verifiedSavingsUsd),
+        realized: Math.round(realizedSavingsUsd)
+      });
+    }
+
     return {
-      estimatedOpportunityUsd: 8420,
-      projectedSavingsUsd: 6100,
-      implementedSavingsUsd: 3180,
-      verifiedSavingsUsd: 2840,
-      realizedSavingsUsd: 2640,
-      pendingReviewSavingsUsd: 5240,
+      estimatedOpportunityUsd: Math.round(estimatedOpportunityUsd),
+      projectedSavingsUsd: Math.round(projectedSavingsUsd),
+      implementedSavingsUsd: Math.round(implementedSavingsUsd),
+      verifiedSavingsUsd: Math.round(verifiedSavingsUsd),
+      realizedSavingsUsd: Math.round(realizedSavingsUsd),
+      pendingReviewSavingsUsd: Math.round(pendingReviewSavingsUsd),
       distinctionNote: 'Distinguishes lifecycle stages: Estimated opportunity -> Projected savings -> Implemented in cluster -> Verified stable -> Realized ROI.',
-      trackingBreakdown: [
-        { month: 'Jun 2026', implemented: 1400, verified: 1350, realized: 1350 },
-        { month: 'Jul 2026', implemented: 2100, verified: 1980, realized: 1980 },
-        { month: 'Aug 2026', implemented: 2750, verified: 2500, realized: 2480 },
-        { month: 'Sep 2026', implemented: 3180, verified: 2840, realized: 2640 }
-      ]
+      trackingBreakdown
     };
   }
 }

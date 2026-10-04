@@ -135,7 +135,7 @@ export const SecurityPostureView: React.FC = () => {
       const nextEnabled = nextMode !== 'DISABLED';
       const res = await api.updateSecurityPolicy(policy.key, {
         enabled: nextEnabled,
-        enforcementMode: nextMode
+        enforcementMode: (nextMode === 'DISABLED' ? 'AUDIT' : nextMode) as 'AUDIT' | 'ENFORCE'
       });
 
       setPolicies((prev) =>
@@ -156,7 +156,7 @@ export const SecurityPostureView: React.FC = () => {
       const q = search.toLowerCase();
       const matchName = f.resourceName.toLowerCase().includes(q);
       const matchKind = f.resourceKind.toLowerCase().includes(q);
-      const matchDesc = f.description.toLowerCase().includes(q);
+      const matchDesc = (f.riskDescription || f.risk || f.title).toLowerCase().includes(q);
       const matchNs = f.namespace.toLowerCase().includes(q);
       const matchClust = f.clusterName.toLowerCase().includes(q);
       if (!matchName && !matchKind && !matchDesc && !matchNs && !matchClust) return false;
@@ -207,7 +207,7 @@ export const SecurityPostureView: React.FC = () => {
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              Findings ({findings.filter((f) => f.status === 'ACTIVE').length})
+              Findings ({findings.filter((f) => f.status !== 'RESOLVED').length})
             </button>
             <button
               onClick={() => setActiveTab('policies')}
@@ -545,7 +545,7 @@ export const SecurityPostureView: React.FC = () => {
                     </div>
                     <p className="text-xs text-zinc-400">{policy.description}</p>
                     <div className="text-[10px] font-mono text-zinc-500">
-                      Applies to: {policy.scope} • Target: {policy.targetEnvironments?.join(', ') || 'All'}
+                      Severity: {policy.severity} • Target: {policy.targetEnvironments?.join(', ') || 'All Clusters'}
                     </div>
                   </div>
 

@@ -544,7 +544,7 @@ export class CostEngine {
         return {
           id: `ns-${ns}`,
           name: ns,
-          type: 'namespace',
+          type: 'namespace' as const,
           monthlyCostUsd: cost,
           potentialSavingsUsd: Math.round(cost * (waste / 100) * 0.5),
           cpuRequestedCores: Math.round(val.cores * 100) / 100,

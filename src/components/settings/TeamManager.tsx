@@ -30,7 +30,10 @@ const ROLE_DESCRIPTIONS: Record<Role, string> = {
   ADMIN: 'Manage clusters, incidents, remediation, webhooks, and team members.',
   OPERATOR: 'Operate clusters, trigger remediations, triage incidents, and read telemetry.',
   ENGINEER: 'Triage incidents, execute automated remediations, and view cluster telemetry.',
-  VIEWER: 'Read-only access to clusters, incidents, and audit logs.'
+  VIEWER: 'Read-only access to clusters, incidents, and audit logs.',
+  SRE: 'Incident remediation, rollback authorization, pre-deployment gates, and reliability engineering.',
+  DEVELOPER: 'Workload deployments, environment telemetry, root-cause investigation, and pre-flight gate checks.',
+  AUDITOR: 'Cryptographic audit ledger verification, security posture compliance, and cost intelligence.'
 };
 
 export const TeamManager: React.FC = () => {

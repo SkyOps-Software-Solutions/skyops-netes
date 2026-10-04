@@ -105,8 +105,11 @@ export const Modal: React.FC<{
   title: string;
   children: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'max-w-sm' | 'max-w-md' | 'max-w-lg' | 'max-w-xl' | 'max-w-2xl' | string;
-}> = ({ isOpen, onClose, title, children, maxWidth = 'lg' }) => {
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | string;
+}> = ({ isOpen, onClose, title, children, maxWidth = 'lg', size }) => {
   if (!isOpen) return null;
+
+  const targetWidth = size || maxWidth;
 
   const widths: Record<string, string> = {
     sm: 'max-w-md',
@@ -124,7 +127,7 @@ export const Modal: React.FC<{
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
       <div
-        className={`w-full ${widths[maxWidth]} bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]`}
+        className={`w-full ${widths[targetWidth] || targetWidth} bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]`}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-900/90">
           <h3 className="text-base font-semibold text-zinc-100">{title}</h3>

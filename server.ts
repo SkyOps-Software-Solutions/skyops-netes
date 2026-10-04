@@ -3147,7 +3147,7 @@ app.get('/api/v1/audit/logs', requireUserAuth, requireOrgMembership, requirePerm
     resourceType: resourceType as string,
     search: search as string,
     limit: isNaN(parsedLimit) ? 50 : Math.min(200, parsedLimit),
-    offset: isNaN(parsedOffset) ? 0 : parsedOffset
+    page: isNaN(parsedOffset) || parsedOffset <= 0 ? 1 : Math.floor(parsedOffset / (isNaN(parsedLimit) ? 50 : parsedLimit)) + 1
   });
 
   res.json(result);

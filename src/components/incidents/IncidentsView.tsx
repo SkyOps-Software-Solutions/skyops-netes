@@ -78,8 +78,8 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
           environment: environmentFilter !== 'ALL' ? environmentFilter : undefined,
           namespace: namespaceFilter !== 'ALL' ? namespaceFilter : undefined,
           workload: workloadFilter !== 'ALL' ? workloadFilter : undefined,
-          severity: severityFilter !== 'ALL' ? severityFilter : undefined,
-          status: statusFilter !== 'ALL' ? statusFilter : undefined,
+          severity: severityFilter !== 'ALL' ? (severityFilter as IncidentSeverity) : undefined,
+          status: statusFilter !== 'ALL' ? (statusFilter as IncidentStatus) : undefined,
           incidentType: incidentTypeFilter !== 'ALL' ? incidentTypeFilter : undefined,
           search: searchTerm.trim() || undefined,
           limit: 100

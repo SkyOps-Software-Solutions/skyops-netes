@@ -266,10 +266,13 @@ export const ClustersView: React.FC<ClustersViewProps> = ({
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 ml-4">
                         {envClusters.map((cluster) => {
-                          const isHealthy = cluster.status === 'READY' || cluster.status === 'CONNECTED';
+                          const isHealthy =
+                            cluster.status === 'connected' ||
+                            (cluster as any).status === 'READY' ||
+                            cluster.agentStatus === 'CONNECTED';
                           const hasCritical = cluster.openIncidentCount > 0;
                           const agentConnected =
-                            cluster.agentStatus === 'CONNECTED' || cluster.connectionState === 'connected';
+                            cluster.agentStatus === 'CONNECTED' || (cluster as any).connectionState === 'connected' || cluster.status === 'connected';
 
                           return (
                             <div
@@ -592,7 +595,7 @@ export const ClustersView: React.FC<ClustersViewProps> = ({
                 <div className="bg-zinc-950 p-3 rounded-lg border border-zinc-800/80">
                   <div className="text-zinc-500 text-[10px] uppercase">Kubernetes Version</div>
                   <div className="text-sm font-bold text-zinc-200 mt-1">
-                    {healthSummary?.kubernetesVersion ?? healthModalCluster.k8sVersion ?? '1.31.0'}
+                    {healthSummary?.k8sVersion ?? healthModalCluster.k8sVersion ?? '1.31.0'}
                   </div>
                 </div>
               </div>

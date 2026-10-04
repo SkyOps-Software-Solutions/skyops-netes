@@ -661,19 +661,35 @@ class ApiClient {
     status?: IncidentStatus;
     severity?: IncidentSeverity;
     clusterId?: string;
+    environment?: string;
     namespace?: string;
+    workload?: string;
+    service?: string;
+    incidentType?: string;
     search?: string;
-  }): Promise<Incident[]> {
+    limit?: number;
+    offset?: number;
+  }): Promise<Incident[] & { incidents: Incident[]; total: number; summary?: IncidentMultiClusterSummary }> {
     const params = new URLSearchParams();
     if (filters?.status) params.set('status', filters.status);
     if (filters?.severity) params.set('severity', filters.severity);
     if (filters?.clusterId) params.set('clusterId', filters.clusterId);
+    if (filters?.environment) params.set('environment', filters.environment);
     if (filters?.namespace) params.set('namespace', filters.namespace);
+    if (filters?.workload) params.set('workload', filters.workload);
+    if (filters?.service) params.set('service', filters.service);
+    if (filters?.incidentType) params.set('incidentType', filters.incidentType);
     if (filters?.search) params.set('search', filters.search);
+    if (filters?.limit) params.set('limit', String(filters.limit));
+    if (filters?.offset) params.set('offset', String(filters.offset));
 
     const url = `/api/v1/incidents${params.toString() ? `?${params.toString()}` : ''}`;
-    const data = await this.request<{ incidents: Incident[] }>(url);
-    return data.incidents;
+    const data = await this.request<{ incidents: Incident[]; total: number; summary?: IncidentMultiClusterSummary }>(url);
+    const result: any = Array.isArray(data.incidents) ? [...data.incidents] : [];
+    result.incidents = result;
+    result.total = data.total ?? result.length;
+    result.summary = data.summary;
+    return result;
   }
 
   async getIncident(id: string): Promise<{
@@ -879,6 +895,51 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ clusterId, scenario })
     });
+  }
+
+  // --- Reliability, Root-Cause & Incident Postmortems ---
+  async getWhatChanged(
+    incidentId: string,
+    params?: { minutesBefore?: number; minutesAfter?: number }
+  ): Promise<{ report: WhatChangedReport }> {
+    const searchParams = new URLSearchParams();
+    if (params?.minutesBefore !== undefined) searchParams.set('minutesBefore', String(params.minutesBefore));
+    if (params?.minutesAfter !== undefined) searchParams.set('minutesAfter', String(params.minutesAfter));
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
+    return this.request<{ report: WhatChangedReport }>(`/api/v1/incidents/${incidentId}/what-changed${query}`);
+  }
+
+  async getSimilarIncidents(incidentId: string): Promise<{ similarIncidents: SimilarIncidentSummary[] }> {
+    return this.request<{ similarIncidents: SimilarIncidentSummary[] }>(`/api/v1/incidents/${incidentId}/similar`);
+  }
+
+  async getPostmortem(incidentId: string): Promise<{ postmortem: IncidentPostmortem }> {
+    return this.request<{ postmortem: IncidentPostmortem }>(`/api/v1/incidents/${incidentId}/postmortem`);
+  }
+
+  async generatePostmortem(incidentId: string): Promise<{ postmortem: IncidentPostmortem }> {
+    return this.request<{ postmortem: IncidentPostmortem }>(`/api/v1/incidents/${incidentId}/postmortem`, {
+      method: 'POST'
+    });
+  }
+
+  async evaluateDeploymentGate(
+    clusterId: string,
+    proposed: any
+  ): Promise<{ evaluation: DeploymentGateEvaluation }> {
+    return this.request<{ evaluation: DeploymentGateEvaluation }>('/api/v1/deployments/gate-check', {
+      method: 'POST',
+      body: JSON.stringify({ clusterId, proposed })
+    });
+  }
+
+  async getServiceDependencies(
+    clusterId?: string
+  ): Promise<{ services: ServiceHealthRecord[]; dependencies: ServiceDependency[] }> {
+    const query = clusterId ? `?clusterId=${encodeURIComponent(clusterId)}` : '';
+    return this.request<{ services: ServiceHealthRecord[]; dependencies: ServiceDependency[] }>(
+      `/api/v1/services/dependencies${query}`
+    );
   }
 
   // --- Enterprise Audit Center ---
@@ -1253,25 +1314,6 @@ class ApiClient {
   // ==========================================
   async getRoleCapabilities(): Promise<{ capabilities: RoleCapabilitySummary[] }> {
     return this.request('/api/v1/auth/roles/capabilities');
-  }
-
-  async getAuditLogs(params?: {
-    action?: string;
-    actorId?: string;
-    resourceType?: string;
-    search?: string;
-    limit?: number;
-    offset?: number;
-  }): Promise<{ items: EnterpriseAuditRecord[]; total: number; limit: number; offset: number }> {
-    const searchParams = new URLSearchParams();
-    if (params?.action) searchParams.set('action', params.action);
-    if (params?.actorId) searchParams.set('actorId', params.actorId);
-    if (params?.resourceType) searchParams.set('resourceType', params.resourceType);
-    if (params?.search) searchParams.set('search', params.search);
-    if (params?.limit) searchParams.set('limit', String(params.limit));
-    if (params?.offset) searchParams.set('offset', String(params.offset));
-    const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
-    return this.request(`/api/v1/audit/logs${query}`);
   }
 }
 

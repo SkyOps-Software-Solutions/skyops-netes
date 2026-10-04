@@ -15,10 +15,11 @@ import {
 } from 'lucide-react';
 import React, { useState } from 'react';
 import { api } from '../../api/client';
-import { DeploymentGateEvaluation } from '../../types/index';
+import { Cluster, DeploymentGateEvaluation } from '../../types/index';
 
 interface PreDeploymentGateModalProps {
-  clusterId: string;
+  clusterId?: string;
+  clusters?: Cluster[];
   clusterName?: string;
   defaultNamespace?: string;
   defaultWorkload?: string;
@@ -28,7 +29,8 @@ interface PreDeploymentGateModalProps {
 }
 
 export const PreDeploymentGateModal: React.FC<PreDeploymentGateModalProps> = ({
-  clusterId,
+  clusterId: initialClusterId,
+  clusters = [],
   clusterName = 'Kubernetes Cluster',
   defaultNamespace = 'production',
   defaultWorkload = 'checkout-api',
@@ -36,6 +38,9 @@ export const PreDeploymentGateModal: React.FC<PreDeploymentGateModalProps> = ({
   isOpen,
   onClose
 }) => {
+  const [selectedClusterId, setSelectedClusterId] = useState<string>(
+    initialClusterId || (clusters[0]?.id ?? 'default')
+  );
   const [workloadName, setWorkloadName] = useState<string>(defaultWorkload);
   const [namespace, setNamespace] = useState<string>(defaultNamespace);
   const [image, setImage] = useState<string>(defaultImage);
@@ -47,6 +52,8 @@ export const PreDeploymentGateModal: React.FC<PreDeploymentGateModalProps> = ({
 
   if (!isOpen) return null;
 
+  const activeClusterId = selectedClusterId || initialClusterId || (clusters[0]?.id ?? 'default');
+
   const handleEvaluate = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!image.trim() || !workloadName.trim()) return;
@@ -54,7 +61,7 @@ export const PreDeploymentGateModal: React.FC<PreDeploymentGateModalProps> = ({
     try {
       setLoading(true);
       setError(null);
-      const res = await api.evaluateDeploymentGate(clusterId, {
+      const res = await api.evaluateDeploymentGate(activeClusterId, {
         name: workloadName.trim(),
         namespace: namespace.trim(),
         image: image.trim(),

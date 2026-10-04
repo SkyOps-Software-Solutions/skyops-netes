@@ -253,9 +253,14 @@ export class InMemoryStore implements IPersistenceStore {
     return this.clusterTokens.get(tokenHash) || null;
   }
 
-  public async listClusterTokens(clusterId?: string): Promise<ClusterTokenRecord[]> {
-    const list = Array.from(this.clusterTokens.values()).map(r => ({ ...r }));
-    if (clusterId) return list.filter(r => r.clusterId === clusterId);
+  public async listClusterTokens(clusterId?: string, orgId?: string): Promise<ClusterTokenRecord[]> {
+    let list = Array.from(this.clusterTokens.values()).map(r => ({ ...r }));
+    if (clusterId) {
+      list = list.filter(r => r.clusterId === clusterId);
+    }
+    if (orgId) {
+      list = list.filter(r => r.orgId === orgId);
+    }
     return list;
   }
 
@@ -265,14 +270,6 @@ export class InMemoryStore implements IPersistenceStore {
 
   public async deleteClusterToken(tokenHash: string): Promise<boolean> {
     return this.clusterTokens.delete(tokenHash);
-  }
-
-  public async listClusterTokens(orgId?: string): Promise<ClusterTokenRecord[]> {
-    const list = Array.from(this.clusterTokens.values());
-    if (orgId) {
-      return list.filter((t) => t.orgId === orgId);
-    }
-    return list;
   }
 
   // --- Cluster Resources ---

@@ -115,6 +115,10 @@ test('Cost Intelligence: Killercoda Ground Truth & Non-Fabrication Suite', async
         containers: [
           {
             name: 'app',
+            image: 'app:v1',
+            restartCount: 0,
+            ready: true,
+            state: 'running',
             cpuRequest: '200m',
             cpuLimit: '500m',
             cpuUsage: '0m',
@@ -140,6 +144,10 @@ test('Cost Intelligence: Killercoda Ground Truth & Non-Fabrication Suite', async
         containers: [
           {
             name: 'app',
+            image: 'app:v1',
+            restartCount: 0,
+            ready: true,
+            state: 'running',
             cpuRequest: '200m',
             cpuLimit: '500m',
             cpuUsage: '0m',
@@ -165,6 +173,10 @@ test('Cost Intelligence: Killercoda Ground Truth & Non-Fabrication Suite', async
         containers: [
           {
             name: 'app',
+            image: 'app:v1',
+            restartCount: 0,
+            ready: true,
+            state: 'running',
             cpuRequest: '200m',
             cpuLimit: '500m',
             cpuUsage: '0m',
@@ -190,6 +202,10 @@ test('Cost Intelligence: Killercoda Ground Truth & Non-Fabrication Suite', async
         containers: [
           {
             name: 'stress',
+            image: 'busybox:latest',
+            restartCount: 0,
+            ready: true,
+            state: 'running',
             cpuRequest: '1000m',
             cpuLimit: '1000m',
             cpuUsage: '969m',
@@ -215,6 +231,10 @@ test('Cost Intelligence: Killercoda Ground Truth & Non-Fabrication Suite', async
         containers: [
           {
             name: 'stress',
+            image: 'busybox:latest',
+            restartCount: 0,
+            ready: true,
+            state: 'running',
             cpuRequest: '1000m',
             cpuLimit: '1000m',
             cpuUsage: '969m',

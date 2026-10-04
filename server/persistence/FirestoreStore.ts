@@ -782,14 +782,17 @@ export class FirestoreStore implements IPersistenceStore {
     }
   }
 
-  public async listClusterTokens(clusterId?: string): Promise<ClusterTokenRecord[]> {
+  public async listClusterTokens(clusterId?: string, orgId?: string): Promise<ClusterTokenRecord[]> {
     await this.ensureConnected();
     try {
+      let query: any = this.firestore.collection('clusterTokens');
       if (clusterId) {
-        const snap = await this.firestore.collection('clusterTokens').where('clusterId', '==', clusterId).get();
-        return snap.docs.map((d: any) => d.data() as ClusterTokenRecord);
+        query = query.where('clusterId', '==', clusterId);
       }
-      const snap = await this.firestore.collection('clusterTokens').get();
+      if (orgId) {
+        query = query.where('orgId', '==', orgId);
+      }
+      const snap = await query.get();
       return snap.docs.map((d: any) => d.data() as ClusterTokenRecord);
     } catch (err: any) {
       throw err;
@@ -810,20 +813,6 @@ export class FirestoreStore implements IPersistenceStore {
     try {
       await this.firestore.collection('clusterTokens').doc(tokenHash).delete();
       return true;
-    } catch (err: any) {
-      throw err;
-    }
-  }
-
-  public async listClusterTokens(orgId?: string): Promise<ClusterTokenRecord[]> {
-    try {
-      let query: any = this.firestore.collection('clusterTokens');
-      if (orgId) {
-        query = query.where('orgId', '==', orgId);
-      }
-      const snap = await query.get();
-      const docs = snap.docs.map((d: any) => d.data() as ClusterTokenRecord);
-      return docs;
     } catch (err: any) {
       throw err;
     }

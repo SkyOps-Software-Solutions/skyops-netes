@@ -22,6 +22,7 @@ export interface BaseKubernetesResource {
   createdAt: number;
   updatedAt: number;
   uid?: string;
+  generation?: number;
   apiVersion?: string;
   nodeName?: string;
   labels?: Record<string, string>;

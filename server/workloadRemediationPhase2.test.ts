@@ -11,12 +11,15 @@ test('SKYOPS — PHASE 2: WORKLOAD REMEDIATION ENGINE SUITE', async (t) => {
   store.upsertUser({
     id: userId,
     email: 'lead@workload-corp.io',
-    name: 'SRE Workload Lead',
-    role: 'OWNER'
+    name: 'SRE Workload Lead'
   });
   const org = store.createOrganization('Workload Reliability Corp', userId);
 
-  const { cluster, token } = store.createCluster(org.id, 'prod-k8s-us-central', 'GKE', 'us-central1', 'production');
+  const { cluster } = store.createCluster(org.id, 'prod-k8s-us-central', 'Production cluster', {
+    provider: 'gcp',
+    region: 'us-central1',
+    environment: 'production'
+  });
   store.registerAgent(cluster.id, '1.4.0', 'v1.29.2');
   store.recordAgentHeartbeat(cluster.id, '1.4.0', 'v1.29.2', 3, 10);
 
@@ -56,7 +59,8 @@ test('SKYOPS — PHASE 2: WORKLOAD REMEDIATION ENGINE SUITE', async (t) => {
           ready: false,
           state: 'waiting',
           waitingReason: 'CrashLoopBackOff',
-          waitingMessage: 'Process exited with code 137'
+          waitingMessage: 'Process exited with code 1',
+          exitCode: 1
         }
       ]
     };
@@ -76,7 +80,8 @@ test('SKYOPS — PHASE 2: WORKLOAD REMEDIATION ENGINE SUITE', async (t) => {
 
     assert.ok(result.action, 'RemediationAction must be generated');
     assert.equal(result.action.actionType, 'RestartPod');
-    assert.equal(result.action.status, 'DISPATCHED');
+    assert.equal(result.action.status, 'PENDING');
+    assert.equal(result.remediation.status, 'DISPATCHED');
 
     // Agent claims action
     const actions = store.claimPendingRemediationActions(cluster.id);
@@ -124,7 +129,7 @@ test('SKYOPS — PHASE 2: WORKLOAD REMEDIATION ENGINE SUITE', async (t) => {
 
     // Audit record exists
     const audits = auditService.query({ orgId: org.id });
-    const auditRecord = audits.events.find((e) => e.details?.incidentId === incident.id && e.result === 'SUCCESS');
+    const auditRecord = audits.items.find((e) => e.details?.incidentId === incident.id && e.result === 'SUCCESS');
     assert.ok(auditRecord, 'Audit record must exist for verified resolution');
   });
 
@@ -176,7 +181,8 @@ test('SKYOPS — PHASE 2: WORKLOAD REMEDIATION ENGINE SUITE', async (t) => {
     assert.equal(result.action.actionType, 'RolloutRestart');
     assert.equal(result.action.target.kind, 'Deployment');
     assert.equal(result.action.target.name, depName);
-    assert.equal(result.action.status, 'DISPATCHED');
+    assert.equal(result.action.status, 'PENDING');
+    assert.equal(result.remediation.status, 'DISPATCHED');
 
     // Agent claims action
     const actions = store.claimPendingRemediationActions(cluster.id);
@@ -366,11 +372,11 @@ test('SKYOPS — PHASE 2: WORKLOAD REMEDIATION ENGINE SUITE', async (t) => {
       health: 'CRITICAL',
       createdAt: t0 - 60000,
       updatedAt: t0,
-      specReplicas: 2,
-      readyReplicas: 2,
-      availableReplicas: 2,
-      specSummary: { replicas: 2 },
-      statusSummary: { replicas: 2, readyReplicas: 2, availableReplicas: 2 }
+      specReplicas: 3,
+      readyReplicas: 1,
+      availableReplicas: 1,
+      specSummary: { replicas: 3 },
+      statusSummary: { replicas: 3, readyReplicas: 1, availableReplicas: 1, updatedReplicas: 1 }
     };
 
     store.syncClusterResources(cluster.id, [underprovisionedDeployment]);

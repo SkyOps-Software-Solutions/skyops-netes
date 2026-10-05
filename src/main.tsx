@@ -19,6 +19,36 @@ import './index.css';
   }
 })();
 
+// Intercept known non-fatal Firebase Auth popup/redirect race conditions in iframe environments
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason;
+    const msg = String(reason?.message || reason || '');
+    if (
+      msg.includes('Pending promise was never set') ||
+      msg.includes('INTERNAL ASSERTION FAILED: Pending promise') ||
+      (msg.includes('@firebase/auth') && msg.includes('INTERNAL ASSERTION FAILED'))
+    ) {
+      console.warn('[SkyOps Auth] Gracefully handled Firebase popup/redirect race condition:', msg);
+      event.preventDefault();
+      event.stopImmediatePropagation?.();
+    }
+  });
+
+  window.addEventListener('error', (event) => {
+    const msg = String(event.message || event.error?.message || '');
+    if (
+      msg.includes('Pending promise was never set') ||
+      msg.includes('INTERNAL ASSERTION FAILED: Pending promise') ||
+      (msg.includes('@firebase/auth') && msg.includes('INTERNAL ASSERTION FAILED'))
+    ) {
+      console.warn('[SkyOps Auth] Gracefully intercepted internal assertion error:', msg);
+      event.preventDefault();
+      event.stopImmediatePropagation?.();
+    }
+  });
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

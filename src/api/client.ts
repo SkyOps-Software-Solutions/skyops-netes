@@ -1098,7 +1098,10 @@ class ApiClient {
     email: string;
     updatedAt?: number;
     sender: string;
+    replyTo?: string;
     testingEmail?: string | null;
+    diagnostics?: any;
+    smtp?: any;
   }> {
     return this.request('/api/v1/settings/notifications');
   }
@@ -1108,11 +1111,45 @@ class ApiClient {
     email: string;
     updatedAt?: number;
     sender: string;
+    replyTo?: string;
     testingEmail?: string | null;
+    diagnostics?: any;
+    smtp?: any;
   }> {
     return this.request('/api/v1/settings/notifications', {
       method: 'PUT',
       body: JSON.stringify({ incidentEmailEnabled })
+    });
+  }
+
+  async updateSmtpSettings(smtpConfig: {
+    host: string;
+    port: number;
+    secure: boolean;
+    user?: string;
+    pass?: string;
+    senderEmail?: string;
+    senderName?: string;
+    replyTo?: string;
+  }): Promise<{
+    success: boolean;
+    message: string;
+    diagnostics: any;
+    smtp: any;
+  }> {
+    return this.request('/api/v1/settings/notifications/smtp', {
+      method: 'POST',
+      body: JSON.stringify(smtpConfig)
+    });
+  }
+
+  async verifySmtpSettings(candidateConfig?: any): Promise<{
+    success: boolean;
+    error?: string;
+  }> {
+    return this.request('/api/v1/settings/notifications/smtp/verify', {
+      method: 'POST',
+      body: candidateConfig ? JSON.stringify(candidateConfig) : undefined
     });
   }
 
@@ -1122,6 +1159,8 @@ class ApiClient {
     error?: string;
     recipient: string;
     sender: string;
+    replyTo?: string;
+    diagnostics?: any;
     timestamp: number;
   }> {
     return this.request('/api/v1/settings/notifications/test', {

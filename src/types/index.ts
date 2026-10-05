@@ -938,6 +938,7 @@ export interface KubernetesResource {
   containers?: ContainerDiagnostic[];
   events?: K8sEvent[];
   uid?: string;
+  generation?: number;
   resourceVersion?: string;
   apiVersion?: string;
   nodeName?: string;

@@ -6,6 +6,8 @@ export interface EmailMessage {
   subject: string;
   html: string;
   text: string;
+  replyTo?: string;
+  listUnsubscribe?: string;
   headers?: Record<string, string>;
 }
 
@@ -16,6 +18,41 @@ export interface EmailDeliveryResult {
   error?: string;
   duplicate?: boolean;
   timestamp: number;
+  diagnostics?: {
+    antiSpamHeadersApplied: boolean;
+    listUnsubscribeHeader: boolean;
+    senderDomain: string;
+  };
+}
+
+export interface SmtpConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  user?: string;
+  pass?: string;
+  senderEmail?: string;
+  senderName?: string;
+  replyTo?: string;
+}
+
+export interface DeliverabilityDiagnostic {
+  smtpConfigured: boolean;
+  smtpHost?: string;
+  authType: 'GMAIL_APP_PASSWORD' | 'ENTERPRISE_RELAY' | 'CUSTOM_SMTP' | 'STREAM_DEV';
+  senderEmail: string;
+  senderDomain: string;
+  replyToEmail: string;
+  antiSpamHeaders: {
+    listUnsubscribe: boolean;
+    autoSubmitted: boolean;
+    precedence: boolean;
+    feedbackId: boolean;
+    rfcMessageId: boolean;
+  };
+  spfDmarcAlignment: 'OPTIMAL' | 'PASS' | 'WARNING_NEEDS_APP_PASSWORD';
+  recommendations: string[];
+  canSpamCompliant: boolean;
 }
 
 export interface IEmailProvider {

@@ -153,6 +153,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         friendlyMessage = 'Google Sign-In popup was closed before completing authentication.';
       } else if (err.code === 'auth/popup-blocked') {
         friendlyMessage = 'Popup was blocked by your browser. Please allow popups or use Email/Password sign-in.';
+      } else if (err.message?.includes('Pending promise was never set') || err.message?.includes('INTERNAL ASSERTION FAILED')) {
+        console.warn('[Firebase Auth] Handled popup promise race condition.');
+        if (auth.currentUser) {
+          await syncUserWithFirestore(auth.currentUser);
+          await refreshSession();
+          return;
+        }
+        friendlyMessage = 'Google Sign-In was interrupted by browser popup policy. Please use Email & Password sign-in.';
       } else {
         console.error('Google Sign In failed:', err);
       }

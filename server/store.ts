@@ -731,6 +731,34 @@ export class DataStore {
     return updated;
   }
 
+  public unsubscribeUserByEmail(email: string): boolean {
+    const cleanEmail = email.trim().toLowerCase();
+    let updatedAny = false;
+    for (const [userId, settings] of this.userNotificationSettings.entries()) {
+      if (settings.email && settings.email.trim().toLowerCase() === cleanEmail) {
+        settings.incidentEmailEnabled = false;
+        settings.updatedAt = Date.now();
+        updatedAny = true;
+      }
+    }
+    for (const members of this.members.values()) {
+      for (const m of members) {
+        if (m.email && m.email.trim().toLowerCase() === cleanEmail) {
+          this.userNotificationSettings.set(m.userId, {
+            incidentEmailEnabled: false,
+            email: cleanEmail,
+            updatedAt: Date.now()
+          });
+          updatedAny = true;
+        }
+      }
+    }
+    if (updatedAny) {
+      this.saveSnapshot();
+    }
+    return updatedAny;
+  }
+
   public getOrganizationsForUser(userId: string, userEmail?: string): Organization[] {
     const userOrgs: Organization[] = [];
     const normalizedEmail = userEmail?.trim().toLowerCase();
@@ -2827,7 +2855,7 @@ export class DataStore {
           const vResult = RemediationPolicyEngine.verifyTelemetry(action, matchingResource, Date.now());
 
           if (vResult.status === 'VERIFIED') {
-            const isRollback = action.rollbackPlan?.supported === false;
+            const isRollback = (rem as any).isRollback === true || (action as any).isRollback === true || (action.parameters as any)?.isRollback === true;
             rem.status = isRollback ? 'ROLLED_BACK' : 'VERIFIED_RESOLVED';
             rem.updatedAt = Date.now();
             rem.verification = {
@@ -4207,11 +4235,13 @@ export class DataStore {
       strategy: 'Terminal rollback action',
       rollbackValue: ''
     };
+    (rollbackAction as any).isRollback = true;
 
     this.remediationActions.set(rollbackAction.id, rollbackAction);
     this.recordClusterAction(incident.clusterId);
 
     rem.status = 'DISPATCHED';
+    (rem as any).isRollback = true;
     rem.orgId = orgId;
     rem.clusterId = incident.clusterId;
     rem.clusterName = cluster?.name || incident.clusterName;

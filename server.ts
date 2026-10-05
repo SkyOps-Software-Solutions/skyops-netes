@@ -2884,17 +2884,145 @@ app.post('/api/v1/dev/simulate-scenario', requireUserAuth, requireOrgMembership,
 // ==========================================
 // NOTIFICATION SETTINGS & AUDIT ROUTES
 // ==========================================
+// ==========================================
+// NOTIFICATION SETTINGS, DELIVERABILITY & AUDIT ROUTES
+// ==========================================
+
+// Public RFC 8058 One-Click Unsubscribe Routes (no auth required so mail clients and email links work seamlessly)
+app.get('/api/v1/notifications/unsubscribe', (req, res) => {
+  const email = (req.query.email as string)?.trim().toLowerCase();
+  if (email && email.includes('@')) {
+    store.unsubscribeUserByEmail(email);
+  }
+  const safeEmail = email ? email.replace(/[&<>"']/g, '') : '';
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Unsubscribed — SkyOps Alerts</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { background-color: #090d16; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 24px; box-sizing: border-box; }
+    .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; padding: 36px 32px; max-width: 480px; text-align: center; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+    .icon { width: 48px; height: 48px; margin: 0 auto 16px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; color: #10b981; }
+    h1 { font-size: 20px; font-weight: 700; color: #f1f5f9; margin: 0 0 10px; }
+    p { font-size: 14px; color: #94a3b8; line-height: 1.6; margin: 0 0 18px; }
+    .badge { font-family: monospace; background: #1e293b; color: #38bdf8; padding: 3px 8px; border-radius: 6px; font-size: 13px; }
+    .btn { display: inline-block; background: #0284c7; color: #ffffff; text-decoration: none; padding: 10px 22px; border-radius: 8px; font-weight: 600; font-size: 13px; transition: background 0.2s; }
+    .btn:hover { background: #0369a1; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">✓</div>
+    <h1>Successfully Unsubscribed</h1>
+    <p>Incident email notifications have been turned off for <span class="badge">${safeEmail || 'your email address'}</span>.</p>
+    <p>You will no longer receive automated Kubernetes operational alerts from SkyOps. You can re-enable alerts anytime from your workspace settings.</p>
+    <a href="/" class="btn">Return to SkyOps Console</a>
+  </div>
+</body>
+</html>`);
+});
+
+app.post('/api/v1/notifications/unsubscribe', (req, res) => {
+  const email = (req.query.email as string || req.body?.email as string)?.trim().toLowerCase();
+  if (email && email.includes('@')) {
+    store.unsubscribeUserByEmail(email);
+  }
+  res.json({ success: true, message: 'Unsubscribed from SkyOps incident alert notifications' });
+});
+
 app.get('/api/v1/settings/notifications', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
   const user = req.user!;
   const settings = store.getUserNotificationSettings(user.id, user.email);
   const testingEmail = incidentNotificationService.getTestingEmail();
+  const diagnostics = incidentNotificationService.getDeliverabilityDiagnostics();
+  const smtp = incidentNotificationService.getSmtpConfig();
+
   res.json({
     incidentEmailEnabled: settings.incidentEmailEnabled,
     email: user.email,
     updatedAt: settings.updatedAt,
     sender: incidentNotificationService.getSender(),
-    testingEmail: !isProduction ? testingEmail : null
+    replyTo: incidentNotificationService.getReplyTo(),
+    testingEmail: !isProduction ? testingEmail : null,
+    diagnostics,
+    smtp
   });
+});
+
+app.get('/api/v1/settings/notifications/diagnostics', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  res.json({
+    diagnostics: incidentNotificationService.getDeliverabilityDiagnostics(),
+    smtp: incidentNotificationService.getSmtpConfig(),
+    sender: incidentNotificationService.getSender(),
+    replyTo: incidentNotificationService.getReplyTo()
+  });
+});
+
+const SmtpConfigSchema = z.object({
+  host: z.string().min(1, 'SMTP Host is required'),
+  port: z.number().int().min(1).max(65535).default(465),
+  secure: z.boolean().default(true),
+  user: z.string().optional(),
+  pass: z.string().optional(),
+  senderEmail: z.string().email('Valid sender email is required').optional(),
+  senderName: z.string().optional(),
+  replyTo: z.string().email('Valid reply-to email is required').optional()
+});
+
+app.post('/api/v1/settings/notifications/smtp', requireUserAuth, requireOrgMembership, requireRole(['OWNER', 'ADMIN']), async (req: AuthenticatedUserRequest, res) => {
+  const parsed = SmtpConfigSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid SMTP configuration' });
+  }
+
+  try {
+    const existing = incidentNotificationService.getSmtpConfig();
+    const configToSave = {
+      ...parsed.data,
+      pass: parsed.data.pass && parsed.data.pass !== '********' ? parsed.data.pass : existing.pass
+    };
+
+    incidentNotificationService.updateSmtpConfig(configToSave as any);
+
+    auditService.record({
+      orgId: req.orgId!,
+      actorId: req.user!.id,
+      actorName: req.user!.name || req.user!.email,
+      actorType: 'USER',
+      action: 'integration.smtp_configured',
+      resourceType: 'INTEGRATION',
+      resourceId: 'smtp-relay',
+      result: 'SUCCESS',
+      details: {
+        host: configToSave.host,
+        port: configToSave.port,
+        senderEmail: configToSave.senderEmail
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'SMTP settings updated successfully',
+      diagnostics: incidentNotificationService.getDeliverabilityDiagnostics(),
+      smtp: incidentNotificationService.getSmtpConfig()
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to update SMTP settings' });
+  }
+});
+
+app.post('/api/v1/settings/notifications/smtp/verify', requireUserAuth, requireOrgMembership, async (req: AuthenticatedUserRequest, res) => {
+  const parsed = SmtpConfigSchema.partial().safeParse(req.body);
+  const candidateConfig = parsed.success && parsed.data.host ? (parsed.data as any) : undefined;
+
+  try {
+    const result = await incidentNotificationService.verifySmtp(candidateConfig);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err?.message || 'SMTP connection verification failed' });
+  }
 });
 
 app.put('/api/v1/settings/notifications', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
@@ -2930,7 +3058,10 @@ app.put('/api/v1/settings/notifications', requireUserAuth, requireOrgMembership,
     email: user.email,
     updatedAt: updated.updatedAt,
     sender: incidentNotificationService.getSender(),
-    testingEmail: !isProduction ? incidentNotificationService.getTestingEmail() : null
+    replyTo: incidentNotificationService.getReplyTo(),
+    testingEmail: !isProduction ? incidentNotificationService.getTestingEmail() : null,
+    diagnostics: incidentNotificationService.getDeliverabilityDiagnostics(),
+    smtp: incidentNotificationService.getSmtpConfig()
   });
 });
 
@@ -2961,6 +3092,8 @@ app.post('/api/v1/settings/notifications/test', requireUserAuth, requireOrgMembe
       error: result.error,
       recipient,
       sender: incidentNotificationService.getSender(),
+      replyTo: incidentNotificationService.getReplyTo(),
+      diagnostics: result.diagnostics,
       timestamp: result.timestamp
     });
   } catch (err: any) {

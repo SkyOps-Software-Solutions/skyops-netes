@@ -50,7 +50,8 @@ import {
   IntelligenceAnalysis,
   SkyOpsAIAnalysis,
   StructuredRemediation,
-  TimelineEvent
+  TimelineEvent,
+  WhatChangedReport
 } from '../../types/index';
 import { formatIncidentDetectedDateTime, formatTimeAgo } from '../../utils/date';
 import { generateIncidentPdf, getPriorityLabel } from '../../utils/incidentPdfGenerator';
@@ -97,6 +98,7 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
 
   // PROMPT 2: Drawers & Modals State
   const [isWhatChangedOpen, setIsWhatChangedOpen] = useState<boolean>(false);
+  const [whatChangedReport, setWhatChangedReport] = useState<WhatChangedReport | null>(null);
   const [isPostmortemOpen, setIsPostmortemOpen] = useState<boolean>(false);
   const [isPreDeploymentGateOpen, setIsPreDeploymentGateOpen] = useState<boolean>(false);
 
@@ -153,6 +155,16 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
         setIntelligence(data.incident.intelligence);
       } else if (data.aiAnalysis?.intelligence) {
         setIntelligence(data.aiAnalysis.intelligence);
+      }
+
+      // Fetch What Changed correlation report
+      try {
+        const wcRes = await api.getWhatChanged(incidentId);
+        if (wcRes?.report) {
+          setWhatChangedReport(wcRes.report);
+        }
+      } catch (wcErr) {
+        // Optional correlation fetch, ignore error
       }
     } catch (err) {
       console.error('Failed to fetch incident details:', err);
@@ -580,7 +592,9 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
               WHAT CHANGED?
             </span>
             <span className="text-xs text-zinc-400 font-medium">
-              3 relevant changes detected · 6 minutes before incident
+              {whatChangedReport?.changes?.length
+                ? `${whatChangedReport.changes.length} relevant change${whatChangedReport.changes.length > 1 ? 's' : ''} detected in correlation window`
+                : 'Correlated against cluster event streams and deployment history'}
             </span>
           </div>
 
@@ -593,61 +607,59 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
           </button>
         </div>
 
-        {/* Change Diffs Grid matching Prompt Example */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {/* Change 1: Image */}
-          <div className="p-3.5 rounded-lg bg-zinc-900/60 border border-zinc-800 space-y-2">
-            <div className="flex items-center justify-between text-[11px] font-mono">
-              <span className="text-zinc-400 font-bold uppercase tracking-wider">Image</span>
-              <span className="text-amber-400 text-[10px] font-semibold">Strong correlation</span>
-            </div>
-            <div className="flex items-center gap-2 font-mono text-xs">
-              <span className="px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-300">
-                v41
-              </span>
-              <span className="text-zinc-500">↓</span>
-              <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-bold">
-                {tech.image || 'v42'}
-              </span>
-            </div>
+        {/* Change Diffs Grid or truthful empty state */}
+        {whatChangedReport?.changes && whatChangedReport.changes.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {whatChangedReport.changes.slice(0, 3).map((change, idx) => (
+              <div key={change.id || idx} className="p-3.5 rounded-lg bg-zinc-900/60 border border-zinc-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-mono">
+                  <span className="text-zinc-400 font-bold uppercase tracking-wider truncate max-w-[140px]" title={`${change.resourceKind}/${change.resourceName}`}>
+                    {change.field || change.changeType}
+                  </span>
+                  <span className={`text-[10px] font-semibold ${
+                    change.correlation === 'Strong correlation'
+                      ? 'text-amber-400'
+                      : change.correlation === 'Relevant change'
+                      ? 'text-blue-400'
+                      : 'text-purple-400'
+                  }`}>
+                    {change.correlation}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 font-mono text-xs overflow-hidden">
+                  <span className="px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-300 truncate max-w-[100px]" title={String(change.oldValue ?? 'none')}>
+                    {String(change.oldValue ?? '(none)')}
+                  </span>
+                  <span className="text-zinc-500">↓</span>
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-bold truncate max-w-[120px]" title={String(change.newValue ?? 'none')}>
+                    {String(change.newValue ?? '(none)')}
+                  </span>
+                </div>
+                <div className="text-[10px] text-zinc-500 font-mono">
+                  {change.temporalDistance || 'Pre-incident'} · {change.resourceKind}/{change.resourceName}
+                </div>
+              </div>
+            ))}
           </div>
-
-          {/* Change 2: Deployment Replicas */}
-          <div className="p-3.5 rounded-lg bg-zinc-900/60 border border-zinc-800 space-y-2">
-            <div className="flex items-center justify-between text-[11px] font-mono">
-              <span className="text-zinc-400 font-bold uppercase tracking-wider">Deployment</span>
-              <span className="text-blue-400 text-[10px] font-semibold">Relevant change</span>
+        ) : (
+          <div className="p-4 rounded-lg bg-zinc-900/40 border border-zinc-800/80 text-xs text-zinc-400 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Info className="w-4 h-4 text-zinc-500 shrink-0" />
+              <span>No configuration mutations or deployment diffs observed in the immediate correlation window prior to incident onset.</span>
             </div>
-            <div className="flex items-center gap-2 font-mono text-xs">
-              <span className="px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-300">
-                replicas 6
-              </span>
-              <span className="text-zinc-500">↓</span>
-              <span className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-300 font-bold">
-                replicas 3
-              </span>
-            </div>
+            <span className="text-[11px] text-zinc-500 font-mono shrink-0">Baseline telemetry verified</span>
           </div>
-
-          {/* Change 3: Config */}
-          <div className="p-3.5 rounded-lg bg-zinc-900/60 border border-zinc-800 space-y-2">
-            <div className="flex items-center justify-between text-[11px] font-mono">
-              <span className="text-zinc-400 font-bold uppercase tracking-wider">Config</span>
-              <span className="text-purple-400 text-[10px] font-semibold">Possible contributor</span>
-            </div>
-            <div className="font-mono text-xs text-zinc-200">
-              <span className="text-purple-300 font-semibold">{incident.resourceName}-config</span> changed
-            </div>
-          </div>
-        </div>
+        )}
 
         <div className="text-[11px] text-zinc-400 flex items-center justify-between pt-1">
           <span className="text-zinc-500 italic">
-            Calibrated against historical rollout windows & kubernetes admission logs.
+            {whatChangedReport?.summaryText || 'Calibrated against historical rollout windows & kubernetes admission logs.'}
           </span>
-          <span className="font-semibold text-amber-400">
-            Strong correlation with incident
-          </span>
+          {whatChangedReport?.hasStrongCorrelation && (
+            <span className="font-semibold text-amber-400">
+              Strong correlation with incident
+            </span>
+          )}
         </div>
       </div>
 

@@ -30,6 +30,7 @@ export interface ClusterHealthSummary {
   provider: CloudProvider;
   region: string;
   k8sVersion: string;
+  kubernetesVersion?: string;
   agentVersion: string;
   connectionStatus: 'connected' | 'offline' | 'disconnected' | 'degraded' | 'stale';
   healthStatus: 'Healthy' | 'Warning' | 'Critical' | 'Agent Offline';
@@ -269,6 +270,7 @@ export interface SecurityPolicyRule {
   enabled: boolean;
   enforcementMode: 'AUDIT' | 'ENFORCE'; // AUDIT generates findings; ENFORCE can block deployment gate
   targetEnvironments: ClusterEnvironment[]; // e.g. ['production']
+  scope?: string;
   config?: Record<string, unknown>;
 }
 

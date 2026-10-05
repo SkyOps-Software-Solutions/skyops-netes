@@ -60,6 +60,7 @@ export interface AuditQueryFilters {
   search?: string;
   limit?: number;
   page?: number;
+  offset?: number;
 }
 
 export interface PaginatedResult<T> {

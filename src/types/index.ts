@@ -1,3 +1,5 @@
+export * from './k8s';
+
 export type Role =
   | 'OWNER'
   | 'ADMIN'
@@ -487,6 +489,34 @@ export interface TechnicalDetails {
   [key: string]: unknown;
 }
 
+export type IncidentLifecycleStage =
+  | 'OBSERVED'
+  | 'CANDIDATE'
+  | 'CORRELATING'
+  | 'CONFIRMED'
+  | 'REMEDIATION_PENDING'
+  | 'REMEDIATION_EXECUTING'
+  | 'VERIFYING'
+  | 'RESOLVED'
+  | 'CLOSED_WITHOUT_INCIDENT'
+  | 'REMEDIATION_FAILED';
+
+export type IncidentRemediationMode =
+  | 'OFF'
+  | 'MANUAL_TRIGGERED'
+  | 'AUTONOMOUS'
+  | 'NONE';
+
+export type IncidentRemediationStatus =
+  | 'NONE'
+  | 'ELIGIBILITY_CHECK'
+  | 'REMEDIATION_PLANNED'
+  | 'EXECUTING'
+  | 'VERIFYING'
+  | 'VERIFIED'
+  | 'FAILED'
+  | 'PAUSED';
+
 export interface Incident {
   id: string; // e.g. "SKY-0001"
   fingerprint: string;
@@ -503,12 +533,30 @@ export interface Incident {
   occurrenceCount: number;
   firstSeenAt: number;
   lastSeenAt: number;
+  confirmedAt?: number | null;
   resolvedAt?: number | null;
   technicalDetails: TechnicalDetails;
   autoHealingDisabled?: boolean;
   autoHealingOverride?: 'ENABLED' | 'DISABLED';
   environment?: string;
   workload?: string;
+  remediationMode?: IncidentRemediationMode;
+  remediationStatus?: IncidentRemediationStatus;
+  lifecycleStage?: IncidentLifecycleStage;
+  facts?: Array<{ statement: string; timestamp?: number; source?: string }>;
+  inferences?: Array<{ statement: string; confidence?: string; source?: string }>;
+  unknowns?: Array<{ statement: string; reason?: string }>;
+  impactSummary?: {
+    unavailableReplicas?: number;
+    totalReplicas?: number;
+    impactDescription?: string;
+    affectedWorkload?: string;
+  };
+  whySummary?: string;
+  whyEvidence?: Array<{ text: string; verified: boolean; type?: string }>;
+  rollbackAvailable?: boolean;
+  rollbackTargetRevision?: string;
+  rollbackTargetImage?: string;
   assignee?: {
     userId: string;
     name: string;
@@ -861,6 +909,18 @@ export interface KubernetesResource {
   readyReplicas?: number;
   availableReplicas?: number;
   unavailableReplicas?: number;
+  desiredNumberScheduled?: number;
+  currentNumberScheduled?: number;
+  numberReady?: number;
+  numberAvailable?: number;
+  updatedNumberScheduled?: number;
+  totalEndpoints?: number;
+  readyEndpoints?: number;
+  cpuAllocatable?: string;
+  memoryAllocatable?: string;
+  osImage?: string;
+  architecture?: string;
+  kubeletVersion?: string;
   observedAt?: number;
   ingestedAt?: number;
 }
@@ -1285,7 +1345,9 @@ export type AIRemediationActionType =
   | 'CONFIG_REVISION'
   | 'MANUAL_INSPECTION'
   | 'UNSPECIFIED'
-  | 'ReplacePodImage';
+  | 'ReplacePodImage'
+  | CanonicalRemediationActionType;
+
 
 export type RemediationStatus =
   | 'PROPOSED'

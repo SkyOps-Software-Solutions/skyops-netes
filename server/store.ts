@@ -82,7 +82,9 @@ import { RemediationPolicyEngine, AUTONOMOUS_ACTION_ALLOWLIST, normalizeRemediat
 import {
   buildClusterObservabilityMetrics,
   buildNodeMetricsSummary,
-  buildWorkloadMetricsSummary
+  buildWorkloadMetricsSummary,
+  parseCpuQuantity,
+  parseMemoryQuantity
 } from './metrics';
 import { fetchInClusterPodLogs, parseLogLines } from './logs';
 import { auditService } from './audit';
@@ -1836,9 +1838,9 @@ export class DataStore {
       displayName: options?.displayName || name,
       description: description || '',
       environment: options?.environment || 'production',
-      provider: options?.provider || 'aws',
-      region: options?.region || 'us-east-1',
-      k8sVersion: options?.k8sVersion || 'v1.33.0',
+      provider: options?.provider || 'Unknown',
+      region: options?.region || 'Unknown',
+      k8sVersion: options?.k8sVersion || 'Unknown',
       agentVersion: options?.agentVersion || AGENT_VERSION,
       status: 'pending',
       agentStatus: 'PENDING',
@@ -1890,18 +1892,47 @@ export class DataStore {
     const workloads = resources.filter((r) => ['Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob'].includes(r.kind));
     const nodes = resources.filter((r) => r.kind === 'Node');
 
-    const nodeCount = Math.max(cluster.nodeCount || 0, nodes.length);
-    const workloadCount = Math.max(workloads.length, 1);
-    const podCount = Math.max(cluster.podCount || 0, resources.filter((r) => r.kind === 'Pod').length);
+    const nodeCount = nodes.length > 0 ? nodes.length : (cluster.nodeCount || 0);
+    const workloadCount = workloads.length;
+    const podCount = resources.filter((r) => r.kind === 'Pod').length > 0 ? resources.filter((r) => r.kind === 'Pod').length : (cluster.podCount || 0);
+
+    let totalAllocCpu = 0;
+    let totalUsedCpu = 0;
+    let totalAllocMem = 0;
+    let totalUsedMem = 0;
+    let hasNodeMetrics = false;
+
+    for (const node of nodes) {
+      const statusSummary = (node.statusSummary || {}) as Record<string, any>;
+      const alloc = (statusSummary.allocatable || {}) as Record<string, string>;
+      const usage = (statusSummary.usage || {}) as Record<string, string>;
+      const cpuA = parseCpuQuantity(alloc.cpu);
+      const cpuU = parseCpuQuantity(statusSummary.cpuUsage ?? usage.cpu);
+      const memA = parseMemoryQuantity(alloc.memory);
+      const memU = parseMemoryQuantity(statusSummary.memoryUsage ?? usage.memory);
+
+      if (cpuA !== null) totalAllocCpu += cpuA;
+      if (cpuU !== null) { totalUsedCpu += cpuU; hasNodeMetrics = true; }
+      if (memA !== null) totalAllocMem += memA;
+      if (memU !== null) { totalUsedMem += memU; hasNodeMetrics = true; }
+    }
 
     let cpuUtil = metrics?.cpu?.utilizationPercent;
     let memUtil = metrics?.memory?.utilizationPercent;
 
     if (typeof cpuUtil !== 'number' || isNaN(cpuUtil)) {
-      cpuUtil = cluster.status === 'CRITICAL' ? 88 : cluster.status === 'WARNING' ? 76 : 61;
+      if (totalAllocCpu > 0 && hasNodeMetrics) {
+        cpuUtil = Math.min(100, Math.round((totalUsedCpu / totalAllocCpu) * 100));
+      } else {
+        cpuUtil = 0;
+      }
     }
     if (typeof memUtil !== 'number' || isNaN(memUtil)) {
-      memUtil = cluster.status === 'CRITICAL' ? 92 : cluster.status === 'WARNING' ? 82 : 68;
+      if (totalAllocMem > 0 && hasNodeMetrics) {
+        memUtil = Math.min(100, Math.round((totalUsedMem / totalAllocMem) * 100));
+      } else {
+        memUtil = 0;
+      }
     }
 
     const now = Date.now();
@@ -1932,9 +1963,9 @@ export class DataStore {
       name: cluster.name,
       displayName: cluster.displayName || cluster.name,
       environment: (cluster.environment || 'production').toLowerCase(),
-      provider: cluster.provider || 'aws',
-      region: cluster.region || 'us-east-1',
-      k8sVersion: cluster.k8sVersion || 'v1.33.0',
+      provider: cluster.provider || 'Unknown',
+      region: cluster.region || 'Unknown',
+      k8sVersion: cluster.k8sVersion || 'Unknown',
       agentVersion: cluster.agentVersion || AGENT_VERSION,
       connectionStatus: (cluster.connectionStatus as any) || (cluster.agentStatus === 'CONNECTED' ? 'connected' : 'offline'),
       healthStatus,
@@ -1942,10 +1973,10 @@ export class DataStore {
       lastHeartbeat: cluster.lastHeartbeat,
       lastHeartbeatFormatted: cluster.lastHeartbeat ? `${Math.max(1, Math.round((now - cluster.lastHeartbeat) / 1000))}s ago` : 'Never',
       lastTelemetryReceived: lastTelemetry,
-      lastTelemetryFormatted: elapsedSec !== null ? `${elapsedSec} seconds ago` : 'No telemetry received',
-      lastTelemetryAgo: elapsedSec !== null ? `${elapsedSec} seconds ago` : '8 seconds ago',
-      nodeCount: Math.max(1, nodeCount),
-      nodes: Math.max(1, nodeCount),
+      lastTelemetryFormatted: elapsedSec !== null ? `${elapsedSec}s ago` : 'No telemetry received',
+      lastTelemetryAgo: elapsedSec !== null ? `${elapsedSec}s ago` : 'No telemetry received',
+      nodeCount,
+      nodes: nodeCount,
       workloadCount,
       workloads: workloadCount,
       podCount,
@@ -4122,6 +4153,316 @@ export class DataStore {
 
     this.saveSnapshot();
     return rem;
+  }
+
+  // --- Manual Heal & Incident Action Execution ---
+  public executeManualHeal(
+    incidentId: string,
+    orgId: string,
+    operator: { id: string; name: string; email?: string },
+    options?: {
+      actionType?: string;
+      proposedImage?: string;
+      targetRevision?: string;
+      replicas?: number;
+      reason?: string;
+      idempotencyKey?: string;
+    }
+  ): { action: RemediationAction; incident: Incident; remediation: StructuredRemediation } {
+    const incident = this.incidents.get(incidentId);
+    if (!incident || incident.orgId !== orgId) {
+      throw new Error('Incident not found or unauthorized');
+    }
+
+    if (incident.status === 'RESOLVED' || incident.status === 'CLOSED') {
+      throw new Error('Incident is already resolved or closed');
+    }
+
+    const clusterRes = this.resources.get(incident.clusterId) || [];
+    const targetKind = incident.resourceKind || 'Pod';
+    const targetNamespace = incident.namespace || 'default';
+    const targetName = incident.resourceName;
+    const containerName = (incident.technicalDetails as any)?.containerName || incident.resourceName;
+
+    // Check if target resource still exists in cluster
+    const targetRes = clusterRes.find(
+      (r) =>
+        r.kind.toLowerCase() === targetKind.toLowerCase() &&
+        (r.namespace || 'default').toLowerCase() === targetNamespace.toLowerCase() &&
+        r.name.toLowerCase() === targetName.toLowerCase()
+    );
+
+    if (!targetRes) {
+      throw new Error(`Target ${targetKind} "${targetNamespace}/${targetName}" not found in live cluster telemetry.`);
+    }
+
+    // Check for active conflicting action lock
+    const hasActiveLock = this.hasActiveTargetRemediation(
+      incident.clusterId,
+      targetKind,
+      targetNamespace,
+      targetName,
+      containerName
+    );
+    if (hasActiveLock) {
+      throw new Error(`A remediation action is already actively executing for ${targetKind}/${targetName}. Duplicate concurrent execution is prohibited.`);
+    }
+
+    // Determine canonical action type
+    let actionType: CanonicalRemediationActionType = 'RestartPod';
+    if (options?.actionType) {
+      const at = options.actionType.trim();
+      if (at === 'RollbackDeployment') actionType = 'RollbackDeployment';
+      else if (at === 'RolloutRestart') actionType = 'RolloutRestart';
+      else if (at === 'ReplacePodImage') actionType = 'ReplacePodImage';
+      else if (at === 'ScaleDeployment') actionType = 'ScaleDeployment';
+      else if (at === 'DeletePod') actionType = 'DeletePod';
+      else if (at === 'RestartPod') actionType = 'RestartPod';
+      else if (at === 'PauseRollout') actionType = 'PauseRollout';
+      else if (at === 'ResumeRollout') actionType = 'ResumeRollout';
+    } else if (incident.incidentType === 'ImagePullBackOff') {
+      if (targetKind.toLowerCase() === 'deployment') {
+        actionType = 'RollbackDeployment';
+      } else {
+        actionType = 'ReplacePodImage';
+      }
+    } else if (incident.incidentType === 'CrashLoopBackOff') {
+      actionType = targetKind.toLowerCase() === 'deployment' ? 'RolloutRestart' : 'RestartPod';
+    } else if (incident.incidentType === 'DeploymentDegraded') {
+      actionType = 'RolloutRestart';
+    } else if (targetKind.toLowerCase() === 'deployment') {
+      actionType = 'RolloutRestart';
+    }
+
+    // Determine expected current and proposed values
+    let proposedValue = '';
+    let expectedCurrentValue = '';
+    if (actionType === 'RollbackDeployment') {
+      const prevRev = options?.targetRevision || (incident.technicalDetails as any)?.previousRevision || 'v41';
+      const currRev = (incident.technicalDetails as any)?.currentRevision || 'v42';
+      proposedValue = prevRev;
+      expectedCurrentValue = currRev;
+    } else if (actionType === 'ReplacePodImage') {
+      const propImg = options?.proposedImage || (incident.technicalDetails as any)?.previousImage || (incident.technicalDetails as any)?.image;
+      if (!propImg) throw new Error('No target image provided for image replacement');
+      proposedValue = propImg;
+      expectedCurrentValue = (incident.technicalDetails as any)?.image || 'failing-image';
+    } else if (actionType === 'ScaleDeployment') {
+      proposedValue = String(options?.replicas || 2);
+      expectedCurrentValue = String((targetRes.specSummary as any)?.replicas ?? targetRes.specReplicas ?? 1);
+    } else if (actionType === 'DeletePod') {
+      proposedValue = 'DELETED';
+      expectedCurrentValue = targetRes.uid || 'active';
+    } else {
+      proposedValue = new Date().toISOString();
+      expectedCurrentValue = targetRes.uid || 'active';
+    }
+
+    const policy = this.getRemediationPolicy(orgId, incident.clusterId);
+    const now = Date.now();
+
+    const action = this.createCanonicalRemediationAction({
+      incident,
+      actionType,
+      targetKind,
+      targetName,
+      targetNamespace,
+      targetContainer: containerName,
+      targetUid: targetRes.uid,
+      expectedCurrentValue,
+      proposedValue,
+      requestedBy: { type: 'USER', id: operator.id, name: operator.name },
+      approver: operator,
+      riskLevel: 'LOW',
+      policy
+    });
+
+    if (options?.idempotencyKey) {
+      action.idempotencyKey = options.idempotencyKey;
+    }
+
+    this.remediationActions.set(action.id, action);
+    this.recordClusterAction(incident.clusterId);
+
+    // Active takeover of incident lifecycle
+    incident.remediationMode = 'MANUAL_TRIGGERED';
+    incident.remediationStatus = 'EXECUTING';
+    incident.lifecycleStage = 'REMEDIATION_EXECUTING';
+    incident.status = 'IN_PROGRESS';
+    incident.updatedAt = now;
+
+    // StructuredRemediation state sync
+    let rem = this.remediations.get(incidentId);
+    if (!rem) {
+      rem = {
+        id: `rem-${action.id}`,
+        incidentId,
+        orgId,
+        clusterId: incident.clusterId,
+        clusterName: incident.clusterName,
+        actionType,
+        targetResource: { kind: targetKind, namespace: targetNamespace, name: targetName },
+        parameters: { containerName, currentImage: expectedCurrentValue, proposedImage: proposedValue },
+        reasoning: {
+          summary: options?.reason || `Manual heal triggered by ${operator.name}`,
+          rootCause: incident.whySummary || incident.aiAnalysis?.rootCause || 'Direct operator manual intervention',
+          whyRecommended: 'Operator explicitly requested execution of remediation action',
+          risk: 'LOW',
+          riskExplanation: 'Action initiated and verified under operator control',
+          expectedImpact: 'Restores healthy workload status',
+          rollbackStrategy: action.rollbackPlan ? 'Automatic rollback available' : 'Manual rollback',
+          confidence: 0.95,
+          confidenceExplanation: 'High confidence based on direct operator action'
+        },
+        status: 'DISPATCHED',
+        createdAt: now,
+        updatedAt: now,
+        approval: { approvedBy: { userId: operator.id, name: operator.name, email: operator.email }, approvedAt: now },
+        execution: { dispatchedAt: now, status: 'PENDING', message: `Dispatched ${actionType} action to SkyOps Agent on cluster "${incident.clusterName}"` },
+        verification: { status: 'PENDING', checkCount: 0, observedState: 'Awaiting fresh telemetry' },
+        rollbackPlan: action.rollbackPlan,
+        isExecutable: true
+      };
+      this.remediations.set(incidentId, rem);
+    } else {
+      rem.status = 'DISPATCHED';
+      rem.updatedAt = now;
+      rem.actionType = actionType;
+      rem.execution = { dispatchedAt: now, status: 'PENDING', message: `Dispatched ${actionType} action to SkyOps Agent on cluster "${incident.clusterName}"` };
+      rem.verification = { status: 'PENDING', checkCount: 0, observedState: 'Awaiting fresh telemetry' };
+    }
+
+    this.addTimelineEvent(incidentId, {
+      type: 'REMEDIATION_APPROVED',
+      actor: { type: 'USER', id: operator.id, name: operator.name },
+      description: `Manual Heal executed by ${operator.name}: ${actionType} on ${targetKind}/${targetName}. Active remediation engaged.`,
+      metadata: { actionId: action.id, actionType, before: expectedCurrentValue, proposed: proposedValue, mode: 'MANUAL_TRIGGERED' }
+    });
+
+    auditService.record({
+      orgId,
+      actorId: operator.id,
+      actorName: operator.name,
+      actorType: 'USER',
+      action: 'remediation.manual_heal',
+      resourceType: 'remediation',
+      resourceId: action.id,
+      result: 'SUCCESS',
+      details: {
+        incidentId,
+        clusterId: incident.clusterId,
+        actionId: action.id,
+        actionType,
+        mode: 'MANUAL_TRIGGERED',
+        target: action.target,
+        parameters: action.parameters
+      }
+    });
+
+    this.saveSnapshot();
+    return { action, incident, remediation: rem };
+  }
+
+  public disableIncidentAutoHealing(
+    incidentId: string,
+    orgId: string,
+    operator: { id: string; name: string }
+  ): Incident {
+    const incident = this.incidents.get(incidentId);
+    if (!incident || incident.orgId !== orgId) throw new Error('Incident not found or unauthorized');
+
+    incident.autoHealingDisabled = true;
+    incident.autoHealingOverride = 'DISABLED';
+    if (incident.remediationStatus === 'ELIGIBILITY_CHECK' || incident.remediationStatus === 'REMEDIATION_PLANNED') {
+      incident.remediationStatus = 'PAUSED';
+    }
+    incident.updatedAt = Date.now();
+
+    this.addTimelineEvent(incidentId, {
+      type: 'STATE_CHANGE',
+      actor: { type: 'USER', id: operator.id, name: operator.name },
+      description: `Auto-Healing disabled for this incident by operator ${operator.name}. Autonomous modifications suspended.`
+    });
+
+    auditService.record({
+      orgId,
+      actorId: operator.id,
+      actorName: operator.name,
+      actorType: 'USER',
+      action: 'incident.auto_healing_disabled',
+      resourceType: 'incident',
+      resourceId: incidentId,
+      result: 'SUCCESS',
+      details: { incidentId }
+    });
+
+    this.saveSnapshot();
+    return incident;
+  }
+
+  public enableIncidentAutoHealing(
+    incidentId: string,
+    orgId: string,
+    operator: { id: string; name: string }
+  ): Incident {
+    const incident = this.incidents.get(incidentId);
+    if (!incident || incident.orgId !== orgId) throw new Error('Incident not found or unauthorized');
+
+    incident.autoHealingDisabled = false;
+    incident.autoHealingOverride = 'ENABLED';
+    incident.updatedAt = Date.now();
+
+    this.addTimelineEvent(incidentId, {
+      type: 'STATE_CHANGE',
+      actor: { type: 'USER', id: operator.id, name: operator.name },
+      description: `Auto-Healing enabled for this incident by operator ${operator.name}.`
+    });
+
+    auditService.record({
+      orgId,
+      actorId: operator.id,
+      actorName: operator.name,
+      actorType: 'USER',
+      action: 'incident.auto_healing_enabled',
+      resourceType: 'incident',
+      resourceId: incidentId,
+      result: 'SUCCESS',
+      details: { incidentId }
+    });
+
+    // Check if an existing eligible proposal can now be evaluated
+    const rem = this.remediations.get(incidentId);
+    if (rem && rem.status === 'PROPOSED') {
+      try {
+        this.evaluateAutonomousRemediation(incident, rem);
+      } catch (err) {
+        console.warn('[DataStore] Autonomous remediation re-evaluation notice:', err);
+      }
+    }
+
+    this.saveSnapshot();
+    return incident;
+  }
+
+  public getIncidentActions(incidentId: string, orgId: string): RemediationAction[] {
+    const incident = this.incidents.get(incidentId);
+    if (!incident || incident.orgId !== orgId) return [];
+    return Array.from(this.remediationActions.values())
+      .filter((a) => a.incidentId === incidentId)
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  public getClusterAutoHealingPolicy(orgId: string, clusterId?: string): RemediationPolicy {
+    return this.getRemediationPolicy(orgId, clusterId);
+  }
+
+  public updateClusterAutoHealingPolicy(
+    orgId: string,
+    clusterId?: string,
+    updates: Partial<RemediationPolicy> = {},
+    userActor?: { id: string; name: string }
+  ): RemediationPolicy {
+    return this.updateRemediationPolicy(orgId, updates, clusterId, userActor);
   }
 
   public getPendingAgentActions(clusterId: string): StructuredRemediation[] {

@@ -150,11 +150,29 @@ export function normalizeResource(value: unknown, authenticatedClusterId: string
   } else if (kind === 'PersistentVolumeClaim') {
     displayStatus = asString(status.phase, displayStatus);
     health = displayStatus === 'Bound' ? 'HEALTHY' : displayStatus === 'Lost' ? 'CRITICAL' : 'WARNING';
-  } else if (kind === 'Deployment' || kind === 'StatefulSet' || kind === 'DaemonSet') {
-    const desired = asNumber(spec.replicas, asNumber(status.replicas, 1));
-    const ready = asNumber(status.readyReplicas, asNumber(status.numberReady, 0));
-    const available = asNumber(status.availableReplicas, asNumber(status.numberAvailable, ready));
-    const unavailable = asNumber(status.unavailableReplicas, asNumber(status.numberUnavailable, 0));
+  } else if (kind === 'DaemonSet') {
+    const desired = asNumber(status.desiredNumberScheduled, asNumber(target.desiredNumberScheduled, 0));
+    const ready = asNumber(status.numberReady, asNumber(target.numberReady, 0));
+    const available = asNumber(status.numberAvailable, asNumber(target.numberAvailable, ready));
+    const current = asNumber(status.currentNumberScheduled, asNumber(target.currentNumberScheduled, ready));
+    const misscheduled = asNumber(status.numberMisscheduled, 0);
+    displayStatus = `${ready}/${desired}`;
+    if (desired === 0) {
+      health = 'HEALTHY';
+    } else if (ready === 0 || misscheduled > 0) {
+      health = 'CRITICAL';
+    } else if (ready < desired) {
+      health = 'WARNING';
+    } else {
+      health = 'HEALTHY';
+    }
+  } else if (kind === 'Deployment' || kind === 'StatefulSet' || kind === 'ReplicaSet' || kind === 'Rollout') {
+    const specRep = typeof spec.replicas === 'number' ? spec.replicas : undefined;
+    const statusRep = typeof status.replicas === 'number' ? status.replicas : undefined;
+    const desired = specRep ?? statusRep ?? (typeof target.specReplicas === 'number' ? target.specReplicas : 1);
+    const ready = asNumber(status.readyReplicas, asNumber(target.readyReplicas, 0));
+    const available = asNumber(status.availableReplicas, asNumber(target.availableReplicas, ready));
+    const unavailable = asNumber(status.unavailableReplicas, asNumber(target.unavailableReplicas, 0));
     displayStatus = `${ready}/${desired}`;
     if (desired === 0) {
       health = 'HEALTHY';
@@ -224,7 +242,27 @@ export function normalizeResource(value: unknown, authenticatedClusterId: string
         name: asString(owner.name) || undefined,
         controller: owner.controller === true
       };
-    })
+    }),
+    // Canonical Workload Fields
+    specReplicas: kind === 'DaemonSet' ? undefined : (typeof spec.replicas === 'number' ? spec.replicas : typeof target.specReplicas === 'number' ? target.specReplicas : undefined),
+    readyReplicas: kind === 'DaemonSet' ? undefined : (typeof status.readyReplicas === 'number' ? status.readyReplicas : typeof target.readyReplicas === 'number' ? target.readyReplicas : undefined),
+    availableReplicas: kind === 'DaemonSet' ? undefined : (typeof status.availableReplicas === 'number' ? status.availableReplicas : typeof target.availableReplicas === 'number' ? target.availableReplicas : undefined),
+    desiredNumberScheduled: kind === 'DaemonSet' ? asNumber(status.desiredNumberScheduled, asNumber(target.desiredNumberScheduled, 0)) : undefined,
+    currentNumberScheduled: kind === 'DaemonSet' ? asNumber(status.currentNumberScheduled, asNumber(target.currentNumberScheduled, 0)) : undefined,
+    numberReady: kind === 'DaemonSet' ? asNumber(status.numberReady, asNumber(target.numberReady, 0)) : undefined,
+    numberAvailable: kind === 'DaemonSet' ? asNumber(status.numberAvailable, asNumber(target.numberAvailable, 0)) : undefined,
+    updatedNumberScheduled: kind === 'DaemonSet' ? asNumber(status.updatedNumberScheduled, asNumber(target.updatedNumberScheduled, 0)) : undefined,
+    // Canonical Pod Fields
+    restartCount: kind === 'Pod' && containers.length > 0 ? containers.reduce((acc, c) => acc + (c.restartCount || 0), 0) : undefined,
+    // Canonical Node Fields
+    cpuAllocatable: kind === 'Node' ? ((status.allocatable as any)?.cpu || asString(status.allocatableCpu) || undefined) : undefined,
+    memoryAllocatable: kind === 'Node' ? ((status.allocatable as any)?.memory || asString(status.allocatableMemory) || undefined) : undefined,
+    osImage: kind === 'Node' ? ((status.nodeInfo as any)?.osImage || asString(status.osImage) || asString(target.osImage) || undefined) : undefined,
+    architecture: kind === 'Node' ? ((status.nodeInfo as any)?.architecture || asString(status.architecture) || asString(target.architecture) || undefined) : undefined,
+    kubeletVersion: kind === 'Node' ? ((status.nodeInfo as any)?.kubeletVersion || asString(status.kubeletVersion) || asString(target.kubeletVersion) || undefined) : undefined,
+    // Canonical Service Fields
+    totalEndpoints: kind === 'Service' ? asNumber(status.totalEndpoints, asNumber((target.statusSummary as any)?.totalEndpoints, 0)) : undefined,
+    readyEndpoints: kind === 'Service' ? asNumber(status.readyEndpoints, asNumber((target.statusSummary as any)?.readyEndpoints, 0)) : undefined
   };
 
   if (kind === 'Pod') {

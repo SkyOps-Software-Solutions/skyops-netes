@@ -490,7 +490,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         isOpen={isRoleModalOpen}
         onClose={() => setIsRoleModalOpen(false)}
         title={`Enterprise Role Permissions: ${role}`}
-        size="md"
+        maxWidth="max-w-md"
       >
         <div className="space-y-4 font-mono text-xs">
           <div className="bg-zinc-900/60 p-3 rounded-lg border border-zinc-800 flex items-center justify-between">

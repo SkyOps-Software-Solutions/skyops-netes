@@ -28,12 +28,12 @@ import { PlanComparisonModal } from '../billing/PlanComparisonModal';
 const ROLE_DESCRIPTIONS: Record<Role, string> = {
   OWNER: 'Full tenant ownership, organizational configuration, billing & member administration.',
   ADMIN: 'Manage clusters, incidents, remediation, webhooks, and team members.',
+  SRE: 'Full remediation execution, auto-healing policy administration, cluster operations, and cost optimization.',
+  DEVELOPER: 'Workload remediation, incident root-cause triage, pre-deployment gates, and telemetry inspection.',
+  AUDITOR: 'Independent compliance inspection, cryptographic audit verification, and security posture review.',
   OPERATOR: 'Operate clusters, trigger remediations, triage incidents, and read telemetry.',
   ENGINEER: 'Triage incidents, execute automated remediations, and view cluster telemetry.',
-  VIEWER: 'Read-only access to clusters, incidents, and audit logs.',
-  SRE: 'Incident remediation, rollback authorization, pre-deployment gates, and reliability engineering.',
-  DEVELOPER: 'Workload deployments, environment telemetry, root-cause investigation, and pre-flight gate checks.',
-  AUDITOR: 'Cryptographic audit ledger verification, security posture compliance, and cost intelligence.'
+  VIEWER: 'Read-only access to clusters, incidents, and audit logs.'
 };
 
 export const TeamManager: React.FC = () => {

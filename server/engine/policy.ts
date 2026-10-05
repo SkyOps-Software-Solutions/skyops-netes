@@ -363,11 +363,12 @@ export class RemediationPolicyEngine {
     // Enforce confidence threshold if required
     const rawConfidence = incident.confidence || (incident.technicalDetails as any)?.confidence;
     const confidenceScore = incident.intelligence?.primaryHypothesis?.score ?? (rawConfidence === 'HIGH' ? 90 : rawConfidence === 'MEDIUM' ? 70 : rawConfidence === 'LOW' ? 40 : 85);
-    if (policy.requireHighConfidence && confidenceScore < policy.minConfidenceThreshold * 100) {
+    const threshold = policy.minConfidenceThreshold > 1 ? policy.minConfidenceThreshold : policy.minConfidenceThreshold * 100;
+    if (policy.requireHighConfidence && confidenceScore < threshold) {
       return {
         allowed: false,
         decision: 'REQUIRES_APPROVAL',
-        reason: `Root cause confidence (${confidenceScore}/100) is below autonomous threshold (${Math.round(policy.minConfidenceThreshold * 100)}/100). Operator review required.`
+        reason: `Root cause confidence (${confidenceScore}/100) is below autonomous threshold (${Math.round(threshold)}/100). Operator review required.`
       };
     }
 

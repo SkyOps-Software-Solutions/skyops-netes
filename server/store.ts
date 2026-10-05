@@ -70,14 +70,15 @@ import {
   WhatChangedItem,
   ClusterHierarchyGroup,
   ClusterHealthSummary,
-  IncidentMultiClusterSummary
+  IncidentMultiClusterSummary,
+  IncidentActionRequest
 } from '../src/types/index';
 import { ResourceRightsizingRecommendation } from '../src/types/enterprise';
 import { TelemetryStore } from './telemetry_store';
 import { AGENT_VERSION } from '../src/config/version';
 import { IncidentDetector } from './engine/detector';
 import { generateIncidentFingerprint } from './engine/fingerprint';
-import { RemediationPolicyEngine, AUTONOMOUS_ACTION_ALLOWLIST } from './engine/policy';
+import { RemediationPolicyEngine, AUTONOMOUS_ACTION_ALLOWLIST, normalizeRemediationMode } from './engine/policy';
 import {
   buildClusterObservabilityMetrics,
   buildNodeMetricsSummary,
@@ -3033,21 +3034,21 @@ export class DataStore {
   ): RemediationPolicy {
     const existing = this.getRemediationPolicy(orgId, clusterId);
     const key = clusterId ? `cluster:${clusterId}` : `org:${orgId}`;
+
+    let normalizedMode = existing.remediationMode;
+    if (updates.remediationMode) {
+      normalizedMode = normalizeRemediationMode(updates.remediationMode);
+    }
+
     const updated: RemediationPolicy = {
       ...existing,
       ...updates,
+      remediationMode: normalizedMode,
       orgId,
       clusterId: clusterId || existing.clusterId,
       updatedAt: Date.now(),
       updatedBy: userActor ? { id: userActor.id, name: userActor.name } : existing.updatedBy
     };
-
-    if (
-      updates.remediationMode &&
-      !['MANUAL_ONLY', 'APPROVAL_REQUIRED', 'CONTROLLED_AUTONOMOUS'].includes(updates.remediationMode)
-    ) {
-      throw new Error(`Invalid remediation mode: ${updates.remediationMode}`);
-    }
 
     this.policies.set(key, updated);
     this.saveSnapshot();
@@ -3400,8 +3401,9 @@ export class DataStore {
     rem: StructuredRemediation
   ): RemediationAction | null {
     if (rem.status !== 'PROPOSED') return null;
+    if (incident.autoHealingDisabled) return null;
     const policy = this.getRemediationPolicy(incident.orgId, incident.clusterId);
-    if (policy.remediationMode !== 'CONTROLLED_AUTONOMOUS') {
+    if (normalizeRemediationMode(policy.remediationMode) !== 'CONTROLLED_AUTONOMOUS') {
       return null;
     }
 

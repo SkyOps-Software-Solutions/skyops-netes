@@ -58,6 +58,14 @@ export const AUTONOMOUS_ACTION_ALLOWLIST: CanonicalRemediationActionType[] = [
   'RollbackDeployment'
 ];
 
+export function normalizeRemediationMode(mode?: string): 'MANUAL_ONLY' | 'APPROVAL_REQUIRED' | 'CONTROLLED_AUTONOMOUS' {
+  const upper = (mode || '').toUpperCase().trim();
+  if (upper === 'OFF' || upper === 'MANUAL_ONLY' || upper === 'MANUAL') return 'MANUAL_ONLY';
+  if (upper === 'APPROVAL_REQUIRED' || upper === 'APPROVAL') return 'APPROVAL_REQUIRED';
+  if (upper === 'AUTONOMOUS' || upper === 'CONTROLLED_AUTONOMOUS' || upper === 'AUTO') return 'CONTROLLED_AUTONOMOUS';
+  return 'MANUAL_ONLY';
+}
+
 export function extractResourceContainers(liveResource: KubernetesResource): Array<{
   name: string;
   image?: string;
@@ -297,30 +305,48 @@ export class RemediationPolicyEngine {
       }
     }
 
-    // 10. Remediation mode check
-    if (policy.remediationMode === 'MANUAL_ONLY') {
+    // 10. Per-incident override: if operator disabled auto-healing for this specific incident
+    if (incident.autoHealingDisabled) {
       return {
         allowed: false,
         decision: 'REQUIRES_APPROVAL',
-        reason: 'Organization policy requires explicit human operator authorization for all remediation actions.'
+        reason: 'Auto-Healing is explicitly disabled by an operator for this specific incident.'
       };
     }
 
-    if (policy.remediationMode === 'APPROVAL_REQUIRED') {
+    // 11. Remediation mode check
+    const normalizedMode = normalizeRemediationMode(policy.remediationMode);
+    if (normalizedMode === 'MANUAL_ONLY') {
       return {
         allowed: false,
         decision: 'REQUIRES_APPROVAL',
-        reason: 'Policy mode is APPROVAL_REQUIRED; human confirmation is mandatory.'
+        reason: 'Cluster auto-healing policy is OFF. Manual operator action is required.'
       };
     }
 
-    // 11. CONTROLLED_AUTONOMOUS mode checks
+    if (normalizedMode === 'APPROVAL_REQUIRED') {
+      return {
+        allowed: false,
+        decision: 'REQUIRES_APPROVAL',
+        reason: 'Cluster auto-healing policy requires operator approval before executing any changes.'
+      };
+    }
+
+    // 12. CONTROLLED_AUTONOMOUS mode checks
     // ScaleDeployment is never executed autonomously without approval
     if (!AUTONOMOUS_ACTION_ALLOWLIST.includes(actionType)) {
       return {
         allowed: false,
         decision: 'REQUIRES_APPROVAL',
         reason: `Action type "${actionType}" is not permitted for autonomous auto-healing; operator review required.`
+      };
+    }
+
+    if (policy.lowRiskOnly && action.riskLevel !== 'LOW') {
+      return {
+        allowed: false,
+        decision: 'REQUIRES_APPROVAL',
+        reason: `Cluster policy restricts autonomous execution to LOW-RISK actions only (action risk: ${action.riskLevel}).`
       };
     }
 

@@ -505,6 +505,10 @@ export interface Incident {
   lastSeenAt: number;
   resolvedAt?: number | null;
   technicalDetails: TechnicalDetails;
+  autoHealingDisabled?: boolean;
+  autoHealingOverride?: 'ENABLED' | 'DISABLED';
+  environment?: string;
+  workload?: string;
   assignee?: {
     userId: string;
     name: string;
@@ -558,7 +562,7 @@ export type RemediationActionStatus =
   | 'FAILED'
   | 'ROLLED_BACK';
 
-export type RemediationMode = 'MANUAL_ONLY' | 'APPROVAL_REQUIRED' | 'CONTROLLED_AUTONOMOUS';
+export type RemediationMode = 'OFF' | 'APPROVAL_REQUIRED' | 'AUTONOMOUS' | 'MANUAL_ONLY' | 'CONTROLLED_AUTONOMOUS';
 
 export interface RemediationPolicy {
   orgId: string;
@@ -567,6 +571,9 @@ export interface RemediationPolicy {
   allowedActionTypes: string[];
   allowedNamespaces?: string[];
   maxRiskLevel: AIRiskLevel;
+  lowRiskOnly?: boolean;
+  mediumRiskAllowed?: boolean;
+  highRiskAllowed?: boolean;
   requireHighConfidence: boolean;
   minConfidenceThreshold: number;
   maxAttemptsPerIncident: number;
@@ -574,6 +581,8 @@ export interface RemediationPolicy {
   circuitBreakerThreshold?: number;
   rateLimitPerHour?: number;
   autoRollbackEnabled?: boolean;
+  autoRollbackOnVerificationFailure?: boolean;
+  requireVerification?: boolean;
   telemetryFreshnessThresholdMs: number;
   actionExpirationMs: number;
   leaseTimeoutMs: number;
@@ -583,10 +592,28 @@ export interface RemediationPolicy {
 
 export type CanonicalRemediationActionType =
   | 'RestartPod'
+  | 'DeletePod'
   | 'RolloutRestart'
   | 'RollbackDeployment'
   | 'ReplacePodImage'
-  | 'ScaleDeployment';
+  | 'ScaleDeployment'
+  | 'PauseRollout'
+  | 'ResumeRollout';
+
+export interface IncidentActionRequest {
+  actionType: CanonicalRemediationActionType | string;
+  targetKind: string;
+  targetName: string;
+  targetNamespace: string;
+  containerName?: string;
+  parameters?: {
+    proposedImage?: string;
+    replicas?: number;
+    targetRevision?: string;
+    reason?: string;
+  };
+  idempotencyKey?: string;
+}
 
 /** Canonical Remediation Action Model */
 export interface RemediationAction {

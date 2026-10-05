@@ -56,7 +56,7 @@ export function generateKubernetesManifest(config: ManifestConfig): string {
         {
           apiGroups: [''],
           resources: ['pods'],
-          verbs: ['get', 'list', 'watch'],
+          verbs: ['get', 'list', 'watch', 'delete'],
         },
         {
           apiGroups: [''],
@@ -70,7 +70,6 @@ export function generateKubernetesManifest(config: ManifestConfig): string {
             'nodes',
             'nodes/status',
             'namespaces',
-            'services',
             'endpoints',
             'persistentvolumeclaims',
             'persistentvolumes',
@@ -78,6 +77,11 @@ export function generateKubernetesManifest(config: ManifestConfig): string {
             'events',
           ],
           verbs: ['get', 'list', 'watch'],
+        },
+        {
+          apiGroups: [''],
+          resources: ['services'],
+          verbs: ['get', 'list', 'watch', 'delete'],
         },
         {
           apiGroups: ['apps'],
@@ -88,8 +92,17 @@ export function generateKubernetesManifest(config: ManifestConfig): string {
             'statefulsets/status',
             'daemonsets',
             'daemonsets/status',
-            'replicasets',
           ],
+          verbs: ['get', 'list', 'watch', 'patch', 'update'],
+        },
+        {
+          apiGroups: ['apps'],
+          resources: ['deployments/scale'],
+          verbs: ['get', 'update', 'patch'],
+        },
+        {
+          apiGroups: ['apps'],
+          resources: ['replicasets'],
           verbs: ['get', 'list', 'watch'],
         },
         {

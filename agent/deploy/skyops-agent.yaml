@@ -27,7 +27,7 @@ rules:
   - apiGroups: [""]
     resources:
       - pods
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "delete"]
   - apiGroups: [""]
     resources:
       - pods/log
@@ -38,7 +38,6 @@ rules:
       - nodes
       - nodes/status
       - namespaces
-      - services
       - endpoints
       - persistentvolumeclaims
       - persistentvolumes
@@ -49,6 +48,10 @@ rules:
       - limitranges
       - events
     verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources:
+      - services
+    verbs: ["get", "list", "watch", "delete"]
   - apiGroups: ["apps"]
     resources:
       - deployments
@@ -57,6 +60,13 @@ rules:
       - statefulsets/status
       - daemonsets
       - daemonsets/status
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments/scale
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["apps"]
+    resources:
       - replicasets
     verbs: ["get", "list", "watch"]
   - apiGroups: ["batch"]
@@ -177,3 +187,14 @@ spec:
             capabilities:
               drop:
                 - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: spool
+              mountPath: /var/spool/skyops-agent
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: spool
+          emptyDir: {}
+

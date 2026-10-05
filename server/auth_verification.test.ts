@@ -60,7 +60,7 @@ test('Firebase Auth Verification Suite', async (t) => {
     const validExp = Math.floor(Date.now() / 1000) + 3600;
     const payload = Buffer.from(
       JSON.stringify({
-        iss: 'https://securetoken.google.com/unauthorized-attacker-project',
+        iss: 'https://securetoken.google.com/skyops-a1143',
         aud: 'unauthorized-attacker-project',
         sub: 'usr-attacker',
         exp: validExp

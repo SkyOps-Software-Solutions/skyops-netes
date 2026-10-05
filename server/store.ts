@@ -71,7 +71,8 @@ import {
   ClusterHierarchyGroup,
   ClusterHealthSummary,
   IncidentMultiClusterSummary,
-  IncidentActionRequest
+  IncidentActionRequest,
+  AvailableAction
 } from '../src/types/index';
 import { ResourceRightsizingRecommendation } from '../src/types/enterprise';
 import { TelemetryStore } from './telemetry_store';
@@ -2840,6 +2841,13 @@ export class DataStore {
             if (action) {
               action.status = isRollback ? 'ROLLED_BACK' : 'VERIFIED_RESOLVED';
               action.verifiedAt = Date.now();
+              action.verification = {
+                success: true,
+                readyReplicas: (matchingResource as any).readyReplicas ?? (matchingResource as any).status?.readyReplicas ?? matchingResource.specReplicas,
+                availableReplicas: (matchingResource as any).availableReplicas ?? (matchingResource as any).status?.availableReplicas ?? matchingResource.specReplicas,
+                desiredReplicas: matchingResource.specReplicas ?? 1,
+                updatedReplicas: (matchingResource as any).status?.updatedReplicas ?? matchingResource.specReplicas
+              };
               action.verificationResult = {
                 success: true,
                 observedState: rem.verification.observedState,
@@ -2899,6 +2907,12 @@ export class DataStore {
 
             if (action) {
               action.status = 'VERIFICATION_FAILED';
+              action.verification = {
+                success: false,
+                readyReplicas: (matchingResource as any).readyReplicas ?? (matchingResource as any).status?.readyReplicas ?? 0,
+                availableReplicas: (matchingResource as any).availableReplicas ?? (matchingResource as any).status?.availableReplicas ?? 0,
+                desiredReplicas: matchingResource.specReplicas ?? 1
+              };
               action.verificationResult = {
                 success: false,
                 observedState: rem.verification.observedState,
@@ -3137,8 +3151,9 @@ export class DataStore {
     kind: string,
     namespace: string,
     name: string,
-    container: string,
-    excludeActionId?: string
+    container?: string,
+    excludeActionId?: string,
+    incidentId?: string
   ): boolean {
     const activeStatuses: RemediationActionStatus[] = [
       'PENDING',
@@ -3151,20 +3166,92 @@ export class DataStore {
       'EXECUTED',
       'VERIFYING'
     ];
+    const isWorkload = ['deployment', 'statefulset', 'daemonset'].includes((kind || '').toLowerCase());
     for (const a of this.remediationActions.values()) {
       if (excludeActionId && a.id === excludeActionId) continue;
+      if (!activeStatuses.includes(a.status)) continue;
+
+      // Incident-level conflict check (e.g. RestartPod + RollbackDeployment on same incident)
+      if (incidentId && a.incidentId === incidentId) {
+        return true;
+      }
+
       if (
         a.clusterId === clusterId &&
         a.target.kind.toLowerCase() === kind.toLowerCase() &&
         (a.target.namespace || 'default').toLowerCase() === (namespace || 'default').toLowerCase() &&
-        a.target.name.toLowerCase() === name.toLowerCase() &&
-        (a.target.container || '').toLowerCase() === (container || '').toLowerCase() &&
-        activeStatuses.includes(a.status)
+        a.target.name.toLowerCase() === name.toLowerCase()
       ) {
-        return true;
+        // Workload-level lock: Deployments, StatefulSets, DaemonSets locked as a whole unit
+        if (isWorkload) {
+          return true;
+        }
+        if (!container || !a.target.container || a.target.container.toLowerCase() === container.toLowerCase()) {
+          return true;
+        }
       }
     }
     return false;
+  }
+
+  public isScalingFeasible(
+    clusterId: string,
+    namespace: string,
+    deploymentName: string,
+    targetReplicas: number
+  ): { feasible: boolean; reason?: string } {
+    const resources = this.resources.get(clusterId) || [];
+    const deployment = resources.find(
+      (r) =>
+        r.kind.toLowerCase() === 'deployment' &&
+        (r.namespace || 'default').toLowerCase() === (namespace || 'default').toLowerCase() &&
+        r.name.toLowerCase() === deploymentName.toLowerCase()
+    );
+    const currentReplicas = deployment?.specReplicas ?? (deployment?.statusSummary as any)?.replicas ?? 1;
+
+    // Scaling down is always resource-feasible
+    if (targetReplicas <= currentReplicas) {
+      return { feasible: true };
+    }
+
+    // Check for pending pods with scheduling failures in the cluster
+    const pendingPods = resources.filter(
+      (r) =>
+        r.kind.toLowerCase() === 'pod' &&
+        (r.status === 'Pending' || r.statusSummary?.observedState === 'Pending')
+    );
+
+    const unschedulablePod = pendingPods.find((p) => {
+      const msg = JSON.stringify(p.statusSummary || '') + JSON.stringify(p.containers || '');
+      return (
+        msg.includes('Insufficient cpu') ||
+        msg.includes('Insufficient memory') ||
+        msg.includes('FailedScheduling') ||
+        msg.includes('0/') ||
+        msg.includes('nodes are available')
+      );
+    });
+
+    if (unschedulablePod) {
+      return {
+        feasible: false,
+        reason: `SCALING_NOT_FEASIBLE: Cluster has unscheduled pending pods due to insufficient CPU/memory capacity. Cannot scale ${deploymentName} from ${currentReplicas} to ${targetReplicas} replicas until cluster resources are expanded.`
+      };
+    }
+
+    // Check node metrics if available
+    const nodeMetrics = this.getNodeMetrics(clusterId);
+    if (nodeMetrics && nodeMetrics.length > 0) {
+      const avgCpuUsage = nodeMetrics.reduce((acc, n) => acc + (n.cpuPercent || 0), 0) / nodeMetrics.length;
+      if (avgCpuUsage > 96) {
+        return {
+          feasible: false,
+          reason: `SCALING_NOT_FEASIBLE: Cluster node CPU utilization is critically exhausted (${Math.round(avgCpuUsage)}% average across all nodes). Additional replicas would cause scheduling starvation.`
+        };
+      }
+    }
+
+    return { feasible: true };
   }
 
   private createCanonicalRemediationAction(params: {
@@ -3400,6 +3487,12 @@ export class DataStore {
       fieldPath,
       expectedCurrentValue,
       proposedValue: params.proposedValue,
+      targetResourceVersion: targetRes?.resourceVersion || targetRes?.annotations?.['kubernetes.io/resourceVersion'] || undefined,
+      mutation: actionType === 'RollbackDeployment'
+        ? { success: false, previousRevision: targetRes?.annotations?.['deployment.kubernetes.io/revision'] || (targetRes?.statusSummary as any)?.revision, targetRevision: params.proposedValue }
+        : actionType === 'ScaleDeployment'
+          ? { success: false, previousReplicas: parseInt(expectedCurrentValue || '1', 10), targetReplicas: parseInt(params.proposedValue || '1', 10) }
+          : undefined,
       parameters: mergedParameters as any,
       requestedBy: params.requestedBy,
       approvingUserId: params.approver?.id,
@@ -3801,13 +3894,25 @@ export class DataStore {
       if (targetKind.toLowerCase() !== 'deployment') {
         throw new Error(`Cannot execute RollbackDeployment on resource kind "${targetKind}". Only Deployment is supported.`);
       }
+      const currentRevStr = targetRes.annotations?.['deployment.kubernetes.io/revision'] || (targetRes.statusSummary as any)?.revision;
+      const currentRev = currentRevStr ? parseInt(currentRevStr, 10) : 0;
+      if (currentRev === 1) {
+        throw new Error('NO_ROLLBACK_AVAILABLE: Deployment is currently at initial revision 1. No previous revision exists in history.');
+      }
+      if (rem.parameters?.noPreviousRevision === true) {
+        throw new Error('NO_ROLLBACK_AVAILABLE: No previous healthy ReplicaSet revision found in deployment history.');
+      }
     } else if (canonicalType === 'ScaleDeployment') {
       if (targetKind.toLowerCase() !== 'deployment') {
         throw new Error(`Cannot execute ScaleDeployment on resource kind "${targetKind}". Only Deployment is supported.`);
       }
-      const targetReplicas = overrides?.targetReplicas ?? rem.parameters?.targetReplicas;
-      if (typeof targetReplicas === 'number' && targetReplicas <= 0) {
-        throw new Error('Cannot execute ScaleDeployment: Scale-to-zero is prohibited by safety policy.');
+      const targetReplicas = overrides?.targetReplicas ?? (rem.parameters?.targetReplicas as number) ?? 2;
+      if (typeof targetReplicas !== 'number' || Number.isNaN(targetReplicas) || targetReplicas < 1 || targetReplicas > 20) {
+        throw new Error(`Cannot execute ScaleDeployment: target replicas must be an integer between 1 and 20 (got ${targetReplicas}).`);
+      }
+      const feasibility = this.isScalingFeasible(incident.clusterId, targetNamespace, targetName, targetReplicas);
+      if (!feasibility.feasible) {
+        throw new Error(feasibility.reason || 'SCALING_NOT_FEASIBLE: Cluster has insufficient CPU/memory capacity to schedule additional replicas.');
       }
     } else if (canonicalType === 'ReplacePodImage') {
       if (targetKind.toLowerCase() === 'pod') {
@@ -3887,6 +3992,7 @@ export class DataStore {
         actionType: canonicalType,
         type: (canonicalType === 'ReplacePodImage' ? 'ReplacePodImage' : canonicalType) as any,
         target: { kind: targetKind, namespace: targetNamespace, name: targetName, container: containerName, uid: targetRes.uid },
+        targetResourceVersion: rem.targetResource?.resourceVersion || (rem.parameters as any)?.resourceVersion,
         fieldPath: '',
         expectedCurrentValue,
         proposedValue,
@@ -3908,6 +4014,29 @@ export class DataStore {
 
     if (!reval.valid) {
       throw new Error(reval.reason || 'Precondition check failed: live cluster state has shifted.');
+    }
+
+    // Workload and incident lock check: prevent simultaneous conflicting remediations
+    const hasActiveLock = this.hasActiveTargetRemediation(
+      incident.clusterId,
+      targetKind,
+      targetNamespace,
+      targetName,
+      containerName,
+      undefined,
+      incident.id
+    );
+    if (hasActiveLock) {
+      throw new Error(`Target ${targetKind} "${targetNamespace}/${targetName}" already has an active remediation in progress. Simultaneous mutations are prohibited.`);
+    }
+
+    // Stale target verification (Section 19)
+    if (rem.targetResource?.uid && targetRes.uid && rem.targetResource.uid !== targetRes.uid) {
+      throw new Error(`STALE_TARGET: Target resource UID has changed (expected ${rem.targetResource.uid}, live ${targetRes.uid}). Workload was recreated after incident proposal.`);
+    }
+    const proposedResourceVersion = rem.targetResource?.resourceVersion || (rem.parameters as any)?.resourceVersion;
+    if (proposedResourceVersion && targetRes.resourceVersion && proposedResourceVersion !== targetRes.resourceVersion) {
+      throw new Error(`STALE_TARGET: ResourceVersion changed (expected ${proposedResourceVersion}, live ${targetRes.resourceVersion}). Workload was modified after incident proposal.`);
     }
 
     const action = this.createCanonicalRemediationAction({
@@ -4156,16 +4285,124 @@ export class DataStore {
   }
 
   // --- Manual Heal & Incident Action Execution ---
-  public executeManualHeal(
+  public getAvailableRemediationActions(incidentId: string, orgId: string): AvailableAction[] {
+    const incident = this.getIncident(incidentId, orgId);
+    if (!incident) return [];
+
+    const clusterRes = this.resources.get(incident.clusterId) || [];
+    const targetKind = incident.resourceKind || 'Pod';
+    const targetNamespace = incident.namespace || 'default';
+    const targetName = incident.resourceName;
+
+    const targetRes = clusterRes.find(
+      (r) =>
+        r.kind.toLowerCase() === targetKind.toLowerCase() &&
+        (r.namespace || 'default').toLowerCase() === targetNamespace.toLowerCase() &&
+        r.name.toLowerCase() === targetName.toLowerCase()
+    );
+
+    const isDeployment =
+      targetKind.toLowerCase() === 'deployment' ||
+      Boolean(targetRes?.ownerReferences?.some((o) => o.kind.toLowerCase() === 'deployment'));
+    const deploymentName =
+      targetKind.toLowerCase() === 'deployment'
+        ? targetName
+        : targetRes?.ownerReferences?.find((o) => o.kind.toLowerCase() === 'deployment')?.name || targetName;
+
+    const policy = this.getRemediationPolicy(orgId, incident.clusterId);
+    const policyMode = normalizeRemediationMode(policy.remediationMode);
+    const actions: AvailableAction[] = [];
+
+    // 1. Restart Pod (Always available for pods or deployments)
+    actions.push({
+      type: 'RestartPod',
+      allowed: true,
+      risk: 'LOW',
+      requiresApproval: policyMode !== 'CONTROLLED_AUTONOMOUS',
+      reason: 'Safely deletes and recreates the failing pod container.',
+      targetKind: targetKind.toLowerCase() === 'pod' ? 'Pod' : 'Deployment',
+      targetName,
+      targetNamespace
+    });
+
+    // 2. Rollout Restart (Workload level)
+    if (isDeployment) {
+      actions.push({
+        type: 'RolloutRestart',
+        allowed: true,
+        risk: 'LOW',
+        requiresApproval: policyMode !== 'CONTROLLED_AUTONOMOUS',
+        reason: 'Performs a rolling restart of all pods managed by the Deployment.',
+        targetKind: 'Deployment',
+        targetName: deploymentName,
+        targetNamespace
+      });
+    }
+
+    // 3. Rollback Deployment (Workload level, requires history)
+    if (isDeployment) {
+      const currentRevStr =
+        targetRes?.annotations?.['deployment.kubernetes.io/revision'] ||
+        (targetRes?.statusSummary as any)?.revision;
+      const currentRev = currentRevStr ? parseInt(currentRevStr, 10) : 2;
+      const hasPreviousRevision = currentRev > 1;
+
+      actions.push({
+        type: 'RollbackDeployment',
+        allowed: hasPreviousRevision,
+        risk: 'MEDIUM',
+        requiresApproval: true,
+        reason: hasPreviousRevision
+          ? `Rolls back deployment to previous revision (${currentRev - 1}).`
+          : 'NO_ROLLBACK_AVAILABLE: Deployment is currently at revision 1. No previous revision exists in history.',
+        targetKind: 'Deployment',
+        targetName: deploymentName,
+        targetNamespace,
+        parameters: {
+          currentRevision: currentRev,
+          targetRevision: currentRev > 1 ? String(currentRev - 1) : undefined
+        }
+      });
+    }
+
+    // 4. Scale Deployment (Workload level, resource-aware)
+    if (isDeployment) {
+      const currentReplicas = targetRes?.specReplicas ?? (targetRes?.statusSummary as any)?.replicas ?? 2;
+      const recommendedReplicas = Math.min(20, Math.max(1, currentReplicas + 1));
+      const feasibility = this.isScalingFeasible(incident.clusterId, targetNamespace, deploymentName, recommendedReplicas);
+
+      actions.push({
+        type: 'ScaleDeployment',
+        allowed: feasibility.feasible,
+        risk: 'MEDIUM',
+        requiresApproval: true,
+        reason: feasibility.feasible
+          ? `Scales deployment from ${currentReplicas} to ${recommendedReplicas} replicas.`
+          : feasibility.reason || 'SCALING_NOT_FEASIBLE',
+        targetKind: 'Deployment',
+        targetName: deploymentName,
+        targetNamespace,
+        parameters: {
+          currentReplicas,
+          targetReplicas: recommendedReplicas
+        }
+      });
+    }
+
+    return actions;
+  }
+
+  public triggerManualHeal(
     incidentId: string,
     orgId: string,
     operator: { id: string; name: string; email?: string },
     options?: {
-      actionType?: string;
+      actionType?: CanonicalRemediationActionType;
+      reason?: string;
       proposedImage?: string;
       targetRevision?: string;
       replicas?: number;
-      reason?: string;
+      targetReplicas?: number;
       idempotencyKey?: string;
     }
   ): { action: RemediationAction; incident: Incident; remediation: StructuredRemediation } {
@@ -4196,13 +4433,15 @@ export class DataStore {
       throw new Error(`Target ${targetKind} "${targetNamespace}/${targetName}" not found in live cluster telemetry.`);
     }
 
-    // Check for active conflicting action lock
+    // Check for active conflicting action lock across workload and incident
     const hasActiveLock = this.hasActiveTargetRemediation(
       incident.clusterId,
       targetKind,
       targetNamespace,
       targetName,
-      containerName
+      containerName,
+      undefined,
+      incident.id
     );
     if (hasActiveLock) {
       throw new Error(`A remediation action is already actively executing for ${targetKind}/${targetName}. Duplicate concurrent execution is prohibited.`);
@@ -4212,12 +4451,12 @@ export class DataStore {
     let actionType: CanonicalRemediationActionType = 'RestartPod';
     if (options?.actionType) {
       const at = options.actionType.trim();
-      if (at === 'RollbackDeployment') actionType = 'RollbackDeployment';
-      else if (at === 'RolloutRestart') actionType = 'RolloutRestart';
-      else if (at === 'ReplacePodImage') actionType = 'ReplacePodImage';
-      else if (at === 'ScaleDeployment') actionType = 'ScaleDeployment';
+      if (at === 'RollbackDeployment' || at === 'ROLLBACK_DEPLOYMENT') actionType = 'RollbackDeployment';
+      else if (at === 'RolloutRestart' || at === 'ROLLOUT_RESTART' || at === 'ROLLOUT_RESTART_WORKLOAD') actionType = 'RolloutRestart';
+      else if (at === 'ReplacePodImage' || at === 'UPDATE_CONTAINER_IMAGE') actionType = 'ReplacePodImage';
+      else if (at === 'ScaleDeployment' || at === 'SCALE_DEPLOYMENT' || at === 'SCALE_REPLICAS') actionType = 'ScaleDeployment';
       else if (at === 'DeletePod') actionType = 'DeletePod';
-      else if (at === 'RestartPod') actionType = 'RestartPod';
+      else if (at === 'RestartPod' || at === 'RESTART_POD') actionType = 'RestartPod';
       else if (at === 'PauseRollout') actionType = 'PauseRollout';
       else if (at === 'ResumeRollout') actionType = 'ResumeRollout';
     } else if (incident.incidentType === 'ImagePullBackOff') {
@@ -4238,18 +4477,38 @@ export class DataStore {
     let proposedValue = '';
     let expectedCurrentValue = '';
     if (actionType === 'RollbackDeployment') {
-      const prevRev = options?.targetRevision || (incident.technicalDetails as any)?.previousRevision || 'v41';
-      const currRev = (incident.technicalDetails as any)?.currentRevision || 'v42';
-      proposedValue = prevRev;
-      expectedCurrentValue = currRev;
+      const currentRevStr = targetRes.annotations?.['deployment.kubernetes.io/revision'] || (targetRes.statusSummary as any)?.revision;
+      const currentRev = currentRevStr ? parseInt(currentRevStr, 10) : 0;
+      if (currentRev === 1) {
+        throw new Error('NO_ROLLBACK_AVAILABLE: Deployment is currently at initial revision 1. No previous revision exists in history.');
+      }
+      if (options?.targetRevision) {
+        proposedValue = options.targetRevision;
+      } else if (currentRev > 1) {
+        proposedValue = String(currentRev - 1);
+      } else {
+        throw new Error('NO_ROLLBACK_AVAILABLE: No previous healthy revision found in history.');
+      }
+      expectedCurrentValue = String(currentRev || '1');
     } else if (actionType === 'ReplacePodImage') {
       const propImg = options?.proposedImage || (incident.technicalDetails as any)?.previousImage || (incident.technicalDetails as any)?.image;
       if (!propImg) throw new Error('No target image provided for image replacement');
       proposedValue = propImg;
       expectedCurrentValue = (incident.technicalDetails as any)?.image || 'failing-image';
     } else if (actionType === 'ScaleDeployment') {
-      proposedValue = String(options?.replicas || 2);
+      const targetRep = options?.replicas ?? options?.targetReplicas ?? 2;
+      if (typeof targetRep !== 'number' || Number.isNaN(targetRep) || targetRep < 1 || targetRep > 20) {
+        throw new Error(`Cannot execute ScaleDeployment: target replicas must be an integer between 1 and 20 (got ${targetRep}).`);
+      }
+      const feasibility = this.isScalingFeasible(incident.clusterId, targetNamespace, targetName, targetRep);
+      if (!feasibility.feasible) {
+        throw new Error(feasibility.reason || 'SCALING_NOT_FEASIBLE');
+      }
+      proposedValue = String(targetRep);
       expectedCurrentValue = String((targetRes.specSummary as any)?.replicas ?? targetRes.specReplicas ?? 1);
+    } else if (actionType === 'RolloutRestart') {
+      proposedValue = new Date().toISOString();
+      expectedCurrentValue = targetRes.annotations?.['kubectl.kubernetes.io/restartedAt'] || '';
     } else if (actionType === 'DeletePod') {
       proposedValue = 'DELETED';
       expectedCurrentValue = targetRes.uid || 'active';
@@ -4373,15 +4632,25 @@ export class DataStore {
 
     incident.autoHealingDisabled = true;
     incident.autoHealingOverride = 'DISABLED';
-    if (incident.remediationStatus === 'ELIGIBILITY_CHECK' || incident.remediationStatus === 'REMEDIATION_PLANNED') {
-      incident.remediationStatus = 'PAUSED';
-    }
+    incident.remediationStatus = 'AUTO_HEAL_PAUSED';
     incident.updatedAt = Date.now();
+
+    // Cancel any queued/pending automatic actions for this incident without unsafely killing executing ones
+    for (const act of this.remediationActions.values()) {
+      if (act.incidentId === incidentId && (act.status === 'PENDING' || act.status === 'QUEUED')) {
+        act.status = 'CANCELLED';
+        this.addTimelineEvent(incidentId, {
+          type: 'REMEDIATION_CANCELLED',
+          actor: { type: 'USER', id: operator.id, name: operator.name },
+          description: `Queued remediation action ${act.id} cancelled due to Auto-Healing pause.`
+        });
+      }
+    }
 
     this.addTimelineEvent(incidentId, {
       type: 'STATE_CHANGE',
       actor: { type: 'USER', id: operator.id, name: operator.name },
-      description: `Auto-Healing disabled for this incident by operator ${operator.name}. Autonomous modifications suspended.`
+      description: `Auto-Healing paused for this incident by operator ${operator.name}. Autonomous modifications suspended.`
     });
 
     auditService.record({
@@ -7366,26 +7635,119 @@ export class DataStore {
   public recordRemediationResult(
     clusterId: string,
     actionId: string,
-    result: { success: boolean; message: string }
+    result: { success: boolean; message: string; state?: string; [key: string]: unknown }
   ): RemediationAction | null {
     const action = this.remediationActions.get(actionId);
     if (!action || action.clusterId !== clusterId) return null;
 
-    // Idempotent reporting: if already reported, return existing action
-    if (action.status === 'SUCCEEDED' || action.status === 'FAILED' || action.status === 'VERIFIED_RESOLVED') {
+    // Idempotent reporting: if already reported in terminal state, return existing action
+    if (action.status === 'SUCCEEDED' || action.status === 'FAILED' || action.status === 'VERIFIED_RESOLVED' || action.status === 'ROLLED_BACK') {
       return action;
     }
 
-    if (action.status !== 'DELIVERED' && action.status !== 'PENDING' && action.status !== 'QUEUED') {
-      return null;
+    const now = Date.now();
+    const stateStr = (result.state || '').toUpperCase().trim();
+
+    // 1. In-flight states: RUNNING / EXECUTING
+    if (stateStr === 'RUNNING' || stateStr === 'EXECUTING') {
+      action.status = 'EXECUTING';
+      action.executingAt = now;
+      action.executionResult = result as any;
+      const incident = this.incidents.get(action.incidentId);
+      if (incident) {
+        incident.remediationStatus = 'EXECUTING';
+        incident.updatedAt = now;
+      }
+      const rem = this.remediations.get(action.incidentId);
+      if (rem) {
+        rem.status = 'EXECUTING';
+        rem.updatedAt = now;
+        rem.execution = {
+          dispatchedAt: action.approvedAt,
+          status: 'PENDING',
+          message: result.message
+        };
+      }
+      this.saveSnapshot();
+      return action;
     }
 
-    const now = Date.now();
-    action.status = result.success ? 'SUCCEEDED' : 'FAILED';
-    action.completedAt = now;
-    action.executionResult = result;
+    // 2. In-flight state: VERIFYING
+    if (stateStr === 'VERIFYING') {
+      action.status = 'VERIFYING';
+      action.executionResult = result as any;
+      const incident = this.incidents.get(action.incidentId);
+      if (incident) {
+        incident.remediationStatus = 'VERIFYING';
+        incident.updatedAt = now;
+      }
+      const rem = this.remediations.get(action.incidentId);
+      if (rem) {
+        rem.status = 'VERIFYING';
+        rem.updatedAt = now;
+        rem.verification = {
+          status: 'PENDING',
+          observedState: result.message
+        };
+      }
+      this.saveSnapshot();
+      return action;
+    }
 
-    if (!result.success) {
+    // 3. Rollback states
+    if (stateStr === 'ROLLING_BACK') {
+      action.status = 'ROLLING_BACK';
+      action.executionResult = result as any;
+      const rem = this.remediations.get(action.incidentId);
+      if (rem) {
+        rem.status = 'ROLLING_BACK';
+        rem.updatedAt = now;
+      }
+      this.saveSnapshot();
+      return action;
+    }
+
+    if (stateStr === 'ROLLED_BACK') {
+      action.status = 'ROLLED_BACK';
+      action.completedAt = now;
+      action.executionResult = result as any;
+      const rem = this.remediations.get(action.incidentId);
+      if (rem) {
+        rem.status = 'ROLLED_BACK';
+        rem.updatedAt = now;
+      }
+      this.addTimelineEvent(action.incidentId, {
+        type: 'REMEDIATION_ROLLED_BACK',
+        actor: { type: 'AGENT', name: 'SkyOps Agent' },
+        description: `Remediation rolled back: ${result.message}`
+      });
+      this.saveSnapshot();
+      return action;
+    }
+
+    // 4. Terminal states: SUCCEEDED or FAILED
+    const isSuccess = stateStr === 'SUCCEEDED' || (result.success === true && !stateStr);
+    action.status = isSuccess ? 'SUCCEEDED' : 'FAILED';
+    action.completedAt = now;
+    action.executionResult = result as any;
+
+    if (result.mutation) {
+      action.mutation = result.mutation as any;
+    } else {
+      action.mutation = {
+        success: isSuccess,
+        previousRevision: (result.previousRevision as any) ?? (action.parameters as any)?.currentRevision,
+        targetRevision: (result.targetRevision as any) ?? (action.parameters as any)?.previousRevision,
+        previousReplicas: (result.previousReplicas as any) ?? (action.parameters as any)?.previousReplicas,
+        targetReplicas: (result.targetReplicas as any) ?? (action.parameters as any)?.targetReplicas
+      };
+    }
+
+    if (result.verification) {
+      action.verification = result.verification as any;
+    }
+
+    if (!isSuccess) {
       const failures = this.recordIncidentFailure(action.incidentId);
       const policy = this.getRemediationPolicy(action.orgId, action.clusterId);
       if (failures >= policy.maxAttemptsPerIncident) {
@@ -7404,7 +7766,7 @@ export class DataStore {
       this.addTimelineEvent(incident.id, {
         type: 'REMEDIATION_EXECUTED',
         actor: { type: 'AGENT', name: 'SkyOps Agent' },
-        description: result.success
+        description: isSuccess
           ? 'Agent executed approved remediation; awaiting fresh telemetry verification'
           : `Agent rejected or failed remediation: ${result.message}`,
         metadata: { actionId, ...result }
@@ -7415,7 +7777,7 @@ export class DataStore {
     const rem = this.remediations.get(action.incidentId);
     if (rem) {
       rem.updatedAt = now;
-      if (result.success) {
+      if (isSuccess) {
         rem.status = 'EXECUTED';
         rem.execution = {
           dispatchedAt: action.approvedAt,

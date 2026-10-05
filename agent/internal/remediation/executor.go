@@ -431,13 +431,15 @@ func (e *Executor) Verify(ctx context.Context, action *transport.RemediationActi
 			case "ReplacePodImage":
 				if action.Target.Kind == "Deployment" {
 					dep, err := e.client.AppsV1().Deployments(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
-					if err == nil {
+					if err == nil && dep.Spec.Replicas != nil {
 						for _, c := range dep.Spec.Template.Spec.Containers {
 							if c.Name == action.Target.Container && c.Image == action.ProposedValue {
-								// Check rollout progress
+								// Check rollout progress across updated, available, and ready replicas
 								if dep.Status.UpdatedReplicas == *dep.Spec.Replicas &&
 									dep.Status.AvailableReplicas == *dep.Spec.Replicas &&
-									dep.Status.UnavailableReplicas == 0 {
+									dep.Status.ReadyReplicas == *dep.Spec.Replicas &&
+									dep.Status.UnavailableReplicas == 0 &&
+									dep.Status.ObservedGeneration >= dep.Generation {
 									return nil // Verified
 								}
 							}
@@ -475,7 +477,7 @@ func (e *Executor) Verify(ctx context.Context, action *transport.RemediationActi
 				if action.Target.Kind == "Pod" {
 					pod, err := e.client.CoreV1().Pods(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
 					if err == nil {
-						// Verify new pod is Running and Ready
+						// Verify target pod is Running and all containers are Ready
 						if pod.Status.Phase == corev1.PodRunning {
 							readyCount := 0
 							for _, cs := range pod.Status.ContainerStatuses {
@@ -487,13 +489,34 @@ func (e *Executor) Verify(ctx context.Context, action *transport.RemediationActi
 								return nil // Verified
 							}
 						}
+					} else {
+						// Pod was deleted; verify replacement pod from controller exists and is Running & Ready
+						podList, listErr := e.client.CoreV1().Pods(action.Target.Namespace).List(ctx, metav1.ListOptions{})
+						if listErr == nil {
+							for i := range podList.Items {
+								p := &podList.Items[i]
+								if string(p.UID) != action.Target.UID && p.Status.Phase == corev1.PodRunning {
+									readyCount := 0
+									for _, cs := range p.Status.ContainerStatuses {
+										if cs.Ready {
+											readyCount++
+										}
+									}
+									if readyCount == len(p.Spec.Containers) && len(p.Spec.Containers) > 0 {
+										return nil // Replacement pod verified Running and Ready
+									}
+								}
+							}
+						}
 					}
 				} else if action.Target.Kind == "Deployment" {
 					dep, err := e.client.AppsV1().Deployments(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
 					if err == nil && dep.Spec.Replicas != nil {
 						if dep.Status.UpdatedReplicas == *dep.Spec.Replicas &&
 							dep.Status.AvailableReplicas == *dep.Spec.Replicas &&
-							dep.Status.UnavailableReplicas == 0 {
+							dep.Status.ReadyReplicas == *dep.Spec.Replicas &&
+							dep.Status.UnavailableReplicas == 0 &&
+							dep.Status.ObservedGeneration >= dep.Generation {
 							return nil
 						}
 					}
@@ -506,7 +529,9 @@ func (e *Executor) Verify(ctx context.Context, action *transport.RemediationActi
 					if err == nil && dep.Spec.Replicas != nil {
 						if dep.Status.UpdatedReplicas == *dep.Spec.Replicas &&
 							dep.Status.AvailableReplicas == *dep.Spec.Replicas &&
-							dep.Status.UnavailableReplicas == 0 {
+							dep.Status.ReadyReplicas == *dep.Spec.Replicas &&
+							dep.Status.UnavailableReplicas == 0 &&
+							dep.Status.ObservedGeneration >= dep.Generation {
 							return nil // Verified
 						}
 					}
@@ -532,7 +557,9 @@ func (e *Executor) Verify(ctx context.Context, action *transport.RemediationActi
 				if err == nil && dep.Spec.Replicas != nil {
 					if dep.Status.UpdatedReplicas == *dep.Spec.Replicas &&
 						dep.Status.AvailableReplicas == *dep.Spec.Replicas &&
-						dep.Status.UnavailableReplicas == 0 {
+						dep.Status.ReadyReplicas == *dep.Spec.Replicas &&
+						dep.Status.UnavailableReplicas == 0 &&
+						dep.Status.ObservedGeneration >= dep.Generation {
 						return nil // Verified
 					}
 				}
@@ -541,7 +568,11 @@ func (e *Executor) Verify(ctx context.Context, action *transport.RemediationActi
 				dep, err := e.client.AppsV1().Deployments(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
 				if err == nil && dep.Spec.Replicas != nil {
 					target, _ := strconv.Atoi(action.ProposedValue)
-					if int(*dep.Spec.Replicas) == target && int(dep.Status.AvailableReplicas) == target {
+					if int(*dep.Spec.Replicas) == target &&
+						int(dep.Status.UpdatedReplicas) == target &&
+						int(dep.Status.AvailableReplicas) == target &&
+						int(dep.Status.ReadyReplicas) == target &&
+						dep.Status.UnavailableReplicas == 0 {
 						return nil // Verified
 					}
 				}

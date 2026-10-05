@@ -18,7 +18,10 @@ import {
   Activity,
   ChevronDown,
   ChevronUp,
-  Sparkles
+  Sparkles,
+  Layers,
+  Sliders,
+  History
 } from 'lucide-react';
 import {
   Incident,
@@ -26,7 +29,8 @@ import {
   SkyOpsAIAnalysis,
   RemediationPolicy,
   RemediationMode,
-  CanonicalRemediationActionType
+  CanonicalRemediationActionType,
+  AvailableAction
 } from '../../types/index';
 import { api } from '../../api/client';
 import { Button } from '../common/UI';
@@ -64,6 +68,13 @@ export const IncidentRemediationCard: React.FC<IncidentRemediationCardProps> = (
   const [policy, setPolicy] = useState<RemediationPolicy | null>(null);
   const [loadingPolicy, setLoadingPolicy] = useState(false);
   const [updatingPolicy, setUpdatingPolicy] = useState(false);
+
+  // Available Workload Actions state
+  const [availableActions, setAvailableActions] = useState<AvailableAction[]>([]);
+  const [loadingAvailableActions, setLoadingAvailableActions] = useState(false);
+  const [showAvailableActions, setShowAvailableActions] = useState(false);
+  const [executingActionType, setExecutingActionType] = useState<string | null>(null);
+  const [scaleTargetReplicas, setScaleTargetReplicas] = useState<number>(3);
 
   // Synchronize incoming props
   useEffect(() => {
@@ -275,6 +286,63 @@ export const IncidentRemediationCard: React.FC<IncidentRemediationCardProps> = (
       });
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // Load available alternative actions for this incident/workload
+  useEffect(() => {
+    let isMounted = true;
+    const fetchAvailableActions = async () => {
+      try {
+        setLoadingAvailableActions(true);
+        const res = await api.getAvailableRemediationActions(incident.id);
+        if (isMounted && res.availableActions) {
+          setAvailableActions(res.availableActions);
+          const scaleAction = res.availableActions.find((a) => a.type === 'ScaleDeployment');
+          if (scaleAction?.parameters?.targetReplicas) {
+            setScaleTargetReplicas(Number(scaleAction.parameters.targetReplicas));
+          }
+        }
+      } catch (err) {
+        console.warn('[IncidentRemediationCard] Could not load available actions:', err);
+      } finally {
+        if (isMounted) setLoadingAvailableActions(false);
+      }
+    };
+    if (incident.id) {
+      fetchAvailableActions();
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [incident.id, incident.status]);
+
+  const handleExecuteSpecificAction = async (act: AvailableAction) => {
+    if (!canEdit) return;
+    try {
+      setExecutingActionType(act.type);
+      setActionMessage(null);
+      const res = await api.executeIncidentAction(incident.id, {
+        actionType: act.type,
+        targetReplicas: act.type === 'ScaleDeployment' ? scaleTargetReplicas : undefined,
+        replicas: act.type === 'ScaleDeployment' ? scaleTargetReplicas : undefined,
+        targetRevision: act.type === 'RollbackDeployment' ? (act.parameters?.targetRevision as string) : undefined
+      });
+      setRemediation(res.remediation);
+      setActionMessage({
+        type: 'success',
+        text: `Action "${getActionName(act.type)}" dispatched to SkyOps Agent on cluster "${res.remediation.clusterName || incident.clusterName}".`
+      });
+      if (onRemediationUpdated) onRemediationUpdated(res.remediation);
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      console.error('Failed to execute action:', err);
+      setActionMessage({
+        type: 'error',
+        text: err?.message || `Failed to execute ${act.type}`
+      });
+    } finally {
+      setExecutingActionType(null);
     }
   };
 
@@ -764,6 +832,116 @@ export const IncidentRemediationCard: React.FC<IncidentRemediationCardProps> = (
                 'Inspect the resource spec and events via kubectl to verify workload configuration.'}
             </p>
           </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 4.5 AVAILABLE WORKLOAD REMEDIATION ACTIONS (Phase 2 Workload Actions) */}
+      {/* ========================================================================= */}
+      {availableActions.length > 0 && !isHealed && (
+        <div className="p-4 rounded-xl bg-zinc-950/90 border border-zinc-800 space-y-3">
+          <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5">
+            <div className="flex items-center gap-2">
+              <Layers className="w-4 h-4 text-sky-400" />
+              <span className="text-xs font-mono font-bold text-zinc-100 uppercase tracking-wide">
+                Available Safe Actions ({availableActions.length})
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowAvailableActions(!showAvailableActions)}
+              className="text-xs font-mono text-zinc-400 hover:text-zinc-200 flex items-center gap-1 cursor-pointer"
+            >
+              <span>{showAvailableActions ? 'Hide options' : 'View all actions'}</span>
+              {showAvailableActions ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+
+          {showAvailableActions && (
+            <div className="space-y-3 pt-1">
+              {availableActions.map((act) => {
+                const isCurrentAction = remediation?.actionType === act.type;
+                const isExecutingThis = executingActionType === act.type;
+
+                return (
+                  <div
+                    key={`${act.type}-${act.targetName}`}
+                    className={`p-3 rounded-lg border text-xs font-mono space-y-2.5 transition-colors ${
+                      isCurrentAction
+                        ? 'bg-sky-950/20 border-sky-800/60'
+                        : 'bg-zinc-900/60 border-zinc-800/80'
+                    }`}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {act.type === 'RolloutRestart' ? (
+                          <RefreshCw className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                        ) : act.type === 'RollbackDeployment' ? (
+                          <History className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        ) : act.type === 'ScaleDeployment' ? (
+                          <Sliders className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                        ) : (
+                          <Zap className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        )}
+                        <strong className="text-zinc-100 font-bold">{getActionName(act.type)}</strong>
+                        <span className="text-zinc-600">·</span>
+                        <span className="text-zinc-400">
+                          {act.targetKind}/{act.targetName} ({act.targetNamespace})
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                          act.risk === 'LOW'
+                            ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                            : act.risk === 'MEDIUM'
+                            ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                            : 'bg-rose-950 text-rose-300 border border-rose-800'
+                        }`}>
+                          {act.risk} RISK
+                        </span>
+                      </div>
+
+                      {/* Execution Button */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {act.type === 'ScaleDeployment' && act.allowed && (
+                          <div className="flex items-center gap-1.5 mr-2">
+                            <span className="text-[11px] text-zinc-400">Target replicas:</span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={20}
+                              value={scaleTargetReplicas}
+                              onChange={(e) => setScaleTargetReplicas(Math.max(1, Math.min(20, parseInt(e.target.value, 10) || 1)))}
+                              className="w-14 px-2 py-0.5 bg-zinc-950 border border-zinc-700 rounded text-center text-xs text-zinc-100 font-mono"
+                            />
+                          </div>
+                        )}
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={!act.allowed || isExecutingThis || actionLoading || !canEdit}
+                          onClick={() => handleExecuteSpecificAction(act)}
+                          icon={
+                            isExecutingThis ? (
+                              <RefreshCw className="w-3 h-3 animate-spin text-sky-400" />
+                            ) : (
+                              <Play className="w-3 h-3 text-sky-400" />
+                            )
+                          }
+                          className="text-xs font-mono border-zinc-700 hover:border-sky-500 hover:bg-sky-950/30"
+                        >
+                          {isExecutingThis ? 'Dispatching...' : act.allowed ? `Execute ${getActionName(act.type)}` : 'Unavailable'}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <p className="text-zinc-400 text-[11px] leading-relaxed font-sans">
+                      {act.reason}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

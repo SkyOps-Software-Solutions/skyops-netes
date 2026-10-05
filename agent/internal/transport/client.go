@@ -160,12 +160,26 @@ type RemediationAction struct {
 	GroundingEvidence    []interface{}          `json:"groundingEvidence,omitempty"`
 }
 
-// CanonicalType returns the resolved action type (supporting both Type and ActionType fields)
+// CanonicalType returns the resolved action type (supporting both Type and ActionType fields and aliases)
 func (a *RemediationAction) CanonicalType() string {
-	if a.ActionType != "" {
-		return a.ActionType
+	raw := a.ActionType
+	if raw == "" {
+		raw = a.Type
 	}
-	return a.Type
+	switch raw {
+	case "ROLLOUT_RESTART_WORKLOAD", "ROLLOUT_RESTART", "RolloutRestart":
+		return "RolloutRestart"
+	case "ROLLBACK_DEPLOYMENT", "RollbackDeployment":
+		return "RollbackDeployment"
+	case "SCALE_DEPLOYMENT", "SCALE_REPLICAS", "ScaleDeployment":
+		return "ScaleDeployment"
+	case "RESTART_POD", "RestartPod":
+		return "RestartPod"
+	case "UPDATE_CONTAINER_IMAGE", "ReplacePodImage":
+		return "ReplacePodImage"
+	default:
+		return raw
+	}
 }
 
 // SendHeartbeat sends a periodic heartbeat with exponential retry backoff
@@ -331,12 +345,11 @@ func (c *Client) postWithRetry(ctx context.Context, url string, payload interfac
 				}
 			}
 
-			c.circuitBreaker.RecordFailure()
-			if c.metrics != nil {
-				c.metrics.Counter("skyops_agent_upload_failures_total").Inc(map[string]string{"type": opType, "code": strconv.Itoa(statusCode)})
-			}
-
 			if attempt == c.cfg.MaxRetries {
+				c.circuitBreaker.RecordFailure()
+				if c.metrics != nil {
+					c.metrics.Counter("skyops_agent_upload_failures_total").Inc(map[string]string{"type": opType, "code": strconv.Itoa(statusCode)})
+				}
 				break
 			}
 
@@ -351,13 +364,12 @@ func (c *Client) postWithRetry(ctx context.Context, url string, payload interfac
 			case <-time.After(backoff):
 			}
 		} else {
-			c.circuitBreaker.RecordFailure()
 			lastErr = err
-			if c.metrics != nil {
-				c.metrics.Counter("skyops_agent_upload_failures_total").Inc(map[string]string{"type": opType, "code": "network_error"})
-			}
-
 			if attempt == c.cfg.MaxRetries {
+				c.circuitBreaker.RecordFailure()
+				if c.metrics != nil {
+					c.metrics.Counter("skyops_agent_upload_failures_total").Inc(map[string]string{"type": opType, "code": "network_error"})
+				}
 				break
 			}
 

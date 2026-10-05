@@ -2048,6 +2048,82 @@ app.post(
   }
 );
 
+// --- Available Remediation Actions & Direct Execution Endpoints ---
+app.get('/api/v1/incidents/:id/available-actions', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const actions = store.getAvailableRemediationActions(req.params.id, req.orgId!);
+  res.json({ availableActions: actions });
+});
+
+const ExecuteActionSchema = z.object({
+  actionType: z.string(),
+  parameters: z.record(z.string(), z.unknown()).optional(),
+  proposedImage: z.string().optional(),
+  targetRevision: z.string().optional(),
+  replicas: z.number().optional(),
+  targetReplicas: z.number().optional(),
+  reason: z.string().optional()
+});
+
+app.post(
+  '/api/v1/incidents/:id/actions/execute',
+  requireUserAuth,
+  requireOrgMembership,
+  requirePermission('incident.heal'),
+  (req: AuthenticatedUserRequest, res) => {
+    const entitlement = entitlementService.canExecuteRemediation(req.orgId!);
+    if (!entitlement.allowed) {
+      return res.status(402).json(entitlement.error);
+    }
+
+    const parsed = ExecuteActionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid action payload' });
+    }
+
+    try {
+      const result = store.triggerManualHeal(
+        req.params.id,
+        req.orgId!,
+        { id: req.user!.id, name: req.user!.name, email: req.user!.email },
+        {
+          actionType: parsed.data.actionType as any,
+          proposedImage: parsed.data.proposedImage || (parsed.data.parameters?.proposedImage as string),
+          targetRevision: parsed.data.targetRevision || (parsed.data.parameters?.targetRevision as string),
+          replicas: parsed.data.replicas || parsed.data.targetReplicas || (parsed.data.parameters?.targetReplicas as number),
+          targetReplicas: parsed.data.targetReplicas || parsed.data.replicas || (parsed.data.parameters?.targetReplicas as number),
+          reason: parsed.data.reason || (parsed.data.parameters?.reason as string)
+        }
+      );
+
+      auditService.record({
+        orgId: req.orgId!,
+        actorId: req.user!.id,
+        actorName: req.user!.name,
+        actorType: 'HUMAN',
+        action: 'remediation.executed',
+        resourceType: 'REMEDIATION',
+        resourceId: result.remediation.id,
+        result: 'SUCCESS',
+        details: {
+          incidentId: req.params.id,
+          clusterId: result.remediation.clusterId,
+          actionType: result.action.actionType,
+          target: result.action.target
+        }
+      });
+
+      res.json({
+        success: true,
+        message: `Action ${result.action.actionType} dispatched to agent for execution on cluster "${result.remediation.clusterName}"`,
+        ...result
+      });
+    } catch (err: any) {
+      console.error(`[SkyOps API] Action execution error for ${req.params.id}:`, err);
+      res.status(400).json({ error: err?.message || 'Failed to execute action' });
+    }
+  }
+);
+
 // --- Remediation Policy & Audit Endpoints ---
 const UpdateRemediationPolicySchema = z.object({
   clusterId: z.string().optional(),

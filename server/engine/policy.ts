@@ -47,7 +47,17 @@ export const ALLOWED_TRANSITIONS: Record<RemediationActionStatus, RemediationAct
   STALE: [],
   PENDING: ['DELIVERED', 'QUEUED', 'DISPATCHED', 'CANCELLED', 'EXPIRED'],
   SUCCEEDED: ['VERIFYING', 'VERIFIED', 'VERIFIED_RESOLVED', 'VERIFICATION_FAILED', 'ROLLING_BACK', 'ROLLED_BACK'],
-  FAILED: []
+  FAILED: [],
+  ACTION_REJECTED: [],
+  ACTION_EXPIRED: [],
+  TARGET_NOT_FOUND: [],
+  STALE_TARGET: [],
+  POLICY_DENIED: [],
+  RBAC_DENIED: [],
+  VERIFICATION_TIMEOUT: [],
+  NO_ROLLBACK_AVAILABLE: [],
+  SCALING_NOT_FEASIBLE: [],
+  AGENT_UNAVAILABLE: []
 };
 
 // Actions that can be executed autonomously under CONTROLLED_AUTONOMOUS mode
@@ -389,7 +399,7 @@ export class RemediationPolicyEngine {
     liveResource: KubernetesResource | null,
     telemetryAgeMs: number,
     policy: RemediationPolicy
-  ): { valid: boolean; reason?: string; errorCategory?: 'TARGET_NOT_FOUND' | 'PRECONDITION_FAILED' | 'CONTROLLER_OWNED' | 'STALE' | 'EXPIRED' } {
+  ): { valid: boolean; reason?: string; errorCategory?: 'TARGET_NOT_FOUND' | 'PRECONDITION_FAILED' | 'CONTROLLER_OWNED' | 'STALE' | 'EXPIRED' | 'STALE_TARGET' | 'NO_ROLLBACK_AVAILABLE' | 'SCALING_NOT_FEASIBLE' } {
     const now = Date.now();
     const actionType = (action.actionType || action.type) as CanonicalRemediationActionType;
 
@@ -458,6 +468,24 @@ export class RemediationPolicyEngine {
       }
     }
 
+    // Target UID validation (recreated resource check)
+    if (action.target.uid && liveResource.uid && action.target.uid !== liveResource.uid) {
+      return {
+        valid: false,
+        reason: `STALE_TARGET: Target resource UID has changed (expected ${action.target.uid}, live ${liveResource.uid}). Workload was recreated after incident detection.`,
+        errorCategory: 'STALE_TARGET'
+      };
+    }
+
+    // ResourceVersion protection (Section 19: stale target check)
+    if (action.targetResourceVersion && liveResource.resourceVersion && action.targetResourceVersion !== liveResource.resourceVersion) {
+      return {
+        valid: false,
+        reason: `STALE_TARGET: ResourceVersion changed from ${action.targetResourceVersion} to ${liveResource.resourceVersion}. Workload was modified after incident detection.`,
+        errorCategory: 'STALE_TARGET'
+      };
+    }
+
     // Workload kind validations
     if (actionType === 'RestartPod') {
       if (action.target.kind.toLowerCase() !== 'pod' && action.target.kind.toLowerCase() !== 'deployment') {
@@ -481,6 +509,24 @@ export class RemediationPolicyEngine {
         return {
           valid: false,
           reason: `RollbackDeployment target kind must be Deployment (got ${action.target.kind})`,
+          errorCategory: 'PRECONDITION_FAILED'
+        };
+      }
+      const currentRevStr = liveResource.annotations?.['deployment.kubernetes.io/revision'] || (liveResource.statusSummary as any)?.revision;
+      const currentRev = currentRevStr ? parseInt(currentRevStr, 10) : 0;
+      if (currentRev === 1) {
+        return {
+          valid: false,
+          reason: 'NO_ROLLBACK_AVAILABLE: Deployment is currently at revision 1. No previous revision exists in history.',
+          errorCategory: 'NO_ROLLBACK_AVAILABLE'
+        };
+      }
+    } else if (actionType === 'ScaleDeployment') {
+      const targetReplicas = parseInt(action.proposedValue || '1', 10);
+      if (Number.isNaN(targetReplicas) || targetReplicas < 1 || targetReplicas > 20) {
+        return {
+          valid: false,
+          reason: `Cannot scale deployment: Target replicas must be between 1 and 20 (got ${targetReplicas}).`,
           errorCategory: 'PRECONDITION_FAILED'
         };
       }
@@ -598,7 +644,16 @@ export class RemediationPolicyEngine {
         };
       }
 
-      if ((isPod && isRunning && containers.every((c) => c.ready)) || (!isPod && isHealthy)) {
+      // If action targeted a specific pod UID, ensure the live resource is the new replacement pod or healthy controller
+      if (isPod && action.target.uid && liveResource.uid === action.target.uid && liveResource.status !== 'Running') {
+        return {
+          status: 'VERIFYING',
+          observedState: 'Awaiting termination of old pod and scheduling of replacement pod',
+          evidence: [`Old pod UID ${action.target.uid} still present in cluster telemetry`]
+        };
+      }
+
+      if ((isPod && isRunning && containers.length > 0 && containers.every((c) => c.ready)) || (!isPod && isHealthy)) {
         return {
           status: 'VERIFIED',
           observedState: `Workload ${liveResource.name} is Running & Ready after pod recreation`,
@@ -622,6 +677,7 @@ export class RemediationPolicyEngine {
       const specReplicas = liveResource.specReplicas ?? (liveResource as any).spec?.replicas ?? 1;
       const readyReplicas = liveResource.readyReplicas ?? (liveResource as any).status?.readyReplicas ?? 0;
       const availableReplicas = liveResource.availableReplicas ?? (liveResource as any).status?.availableReplicas ?? readyReplicas;
+      const updatedReplicas = (liveResource as any).status?.updatedReplicas ?? readyReplicas;
       const unavailableReplicas = (liveResource as any).status?.unavailableReplicas ?? 0;
 
       // Check for roll-out failure conditions in containers
@@ -646,7 +702,7 @@ export class RemediationPolicyEngine {
         };
       }
 
-      if (readyReplicas >= specReplicas && availableReplicas >= specReplicas && unavailableReplicas === 0) {
+      if (readyReplicas >= specReplicas && availableReplicas >= specReplicas && updatedReplicas >= specReplicas && unavailableReplicas === 0) {
         return {
           status: 'VERIFIED',
           observedState: `Rollout complete: ${readyReplicas}/${specReplicas} replicas available with 0 unavailable`,
@@ -668,18 +724,33 @@ export class RemediationPolicyEngine {
     // 3. ScaleDeployment
     if (actionType === 'ScaleDeployment') {
       const targetReplicas = parseInt(action.proposedValue || '1', 10);
-      const availableReplicas = liveResource.availableReplicas ?? liveResource.readyReplicas ?? (liveResource as any).status?.availableReplicas ?? 0;
-      if (availableReplicas === targetReplicas) {
+      const specReplicas = liveResource.specReplicas ?? (liveResource as any).spec?.replicas ?? targetReplicas;
+      const readyReplicas = liveResource.readyReplicas ?? (liveResource as any).status?.readyReplicas ?? 0;
+      const availableReplicas = liveResource.availableReplicas ?? (liveResource as any).status?.availableReplicas ?? readyReplicas;
+      const updatedReplicas = (liveResource as any).status?.updatedReplicas ?? readyReplicas;
+      const unavailableReplicas = (liveResource as any).status?.unavailableReplicas ?? 0;
+
+      if (
+        specReplicas === targetReplicas &&
+        updatedReplicas === targetReplicas &&
+        readyReplicas === targetReplicas &&
+        availableReplicas === targetReplicas &&
+        unavailableReplicas === 0
+      ) {
         return {
           status: 'VERIFIED',
-          observedState: `Deployment scaled successfully to ${availableReplicas} available replicas`,
-          evidence: [`Available replicas matches target (${availableReplicas})`]
+          observedState: `Deployment scaled successfully to ${availableReplicas} available replicas (desired=${specReplicas}, ready=${readyReplicas})`,
+          evidence: [
+            `Target replicas matches desired count (${targetReplicas})`,
+            `Updated replicas (${updatedReplicas}) and ready replicas (${readyReplicas}) match target`,
+            'Zero unavailable replicas reported in fresh telemetry'
+          ]
         };
       }
       return {
         status: 'VERIFYING',
-        observedState: `Scaling deployment: ${availableReplicas}/${targetReplicas} replicas available`,
-        evidence: [`Current available: ${availableReplicas}, Target: ${targetReplicas}`]
+        observedState: `Scaling deployment: ${availableReplicas}/${targetReplicas} replicas available (ready: ${readyReplicas}, updated: ${updatedReplicas})`,
+        evidence: [`Current available: ${availableReplicas}, ready: ${readyReplicas}, target: ${targetReplicas}`]
       };
     }
 
@@ -730,7 +801,34 @@ export class RemediationPolicyEngine {
       };
     }
 
-    // Positive Verification: Container is running and ready, Pod is healthy
+    // Deployment-specific rollout health check
+    if (liveResource.kind.toLowerCase() === 'deployment') {
+      const specReplicas = liveResource.specReplicas ?? (liveResource as any).spec?.replicas ?? 1;
+      const readyReplicas = liveResource.readyReplicas ?? (liveResource as any).status?.readyReplicas ?? 0;
+      const availableReplicas = liveResource.availableReplicas ?? (liveResource as any).status?.availableReplicas ?? readyReplicas;
+      const updatedReplicas = (liveResource as any).status?.updatedReplicas ?? readyReplicas;
+      const unavailableReplicas = (liveResource as any).status?.unavailableReplicas ?? 0;
+
+      if (readyReplicas >= specReplicas && availableReplicas >= specReplicas && updatedReplicas >= specReplicas && unavailableReplicas === 0) {
+        return {
+          status: 'VERIFIED',
+          observedState: `Deployment rollout verified: container "${container.name}" running verified image "${container.image}" with ${availableReplicas}/${specReplicas} replicas ready`,
+          evidence: [
+            `Container image verified as "${action.proposedValue}"`,
+            `Rollout completed: updated=${updatedReplicas}, ready=${readyReplicas}, available=${availableReplicas}`,
+            'Zero unavailable replicas in fresh telemetry'
+          ]
+        };
+      }
+
+      return {
+        status: 'VERIFYING',
+        observedState: `Deployment image updated to "${action.proposedValue}"; rollout in progress (${availableReplicas}/${specReplicas} ready)...`,
+        evidence: [`Updated replicas: ${updatedReplicas}/${specReplicas}, available: ${availableReplicas}/${specReplicas}`]
+      };
+    }
+
+    // Positive Verification for Pod: Container is running and ready, Pod is healthy
     const isRunning = container.state === 'running' || liveResource.status === 'Running';
     const isReady = container.ready === true;
 

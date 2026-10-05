@@ -18,6 +18,8 @@ import {
   SkyOpsAIAnalysis,
   StructuredRemediation,
   RemediationPolicy,
+  RemediationAction,
+  AvailableAction,
   SupportTicket,
   TicketCategory,
   TicketSeverity,
@@ -795,6 +797,31 @@ class ApiClient {
       method: 'PUT',
       body: JSON.stringify({ ...updates, clusterId })
     });
+  }
+
+  async getAvailableRemediationActions(incidentId: string): Promise<{ availableActions: AvailableAction[] }> {
+    return this.request<{ availableActions: AvailableAction[] }>(`/api/v1/incidents/${incidentId}/available-actions`);
+  }
+
+  async executeIncidentAction(
+    incidentId: string,
+    payload: {
+      actionType: string;
+      parameters?: Record<string, unknown>;
+      proposedImage?: string;
+      targetRevision?: string;
+      replicas?: number;
+      targetReplicas?: number;
+      reason?: string;
+    }
+  ): Promise<{ success: boolean; message: string; action: RemediationAction; incident: Incident; remediation: StructuredRemediation }> {
+    return this.request<{ success: boolean; message: string; action: RemediationAction; incident: Incident; remediation: StructuredRemediation }>(
+      `/api/v1/incidents/${incidentId}/actions/execute`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
   }
 
   async getRemediationAuditTrail(incidentId: string): Promise<any> {

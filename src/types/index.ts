@@ -515,7 +515,8 @@ export type IncidentRemediationStatus =
   | 'VERIFYING'
   | 'VERIFIED'
   | 'FAILED'
-  | 'PAUSED';
+  | 'PAUSED'
+  | 'AUTO_HEAL_PAUSED';
 
 export interface Incident {
   id: string; // e.g. "SKY-0001"
@@ -608,7 +609,17 @@ export type RemediationActionStatus =
   | 'DISPATCHED'
   | 'SUCCEEDED'
   | 'FAILED'
-  | 'ROLLED_BACK';
+  | 'ROLLED_BACK'
+  | 'ACTION_REJECTED'
+  | 'ACTION_EXPIRED'
+  | 'TARGET_NOT_FOUND'
+  | 'STALE_TARGET'
+  | 'POLICY_DENIED'
+  | 'RBAC_DENIED'
+  | 'VERIFICATION_TIMEOUT'
+  | 'NO_ROLLBACK_AVAILABLE'
+  | 'SCALING_NOT_FEASIBLE'
+  | 'AGENT_UNAVAILABLE';
 
 export type RemediationMode = 'OFF' | 'APPROVAL_REQUIRED' | 'AUTONOMOUS' | 'MANUAL_ONLY' | 'CONTROLLED_AUTONOMOUS';
 
@@ -646,7 +657,21 @@ export type CanonicalRemediationActionType =
   | 'ReplacePodImage'
   | 'ScaleDeployment'
   | 'PauseRollout'
-  | 'ResumeRollout';
+  | 'ResumeRollout'
+  | 'DeleteWorkload'
+  | 'DeleteService';
+
+export interface AvailableAction {
+  type: CanonicalRemediationActionType | string;
+  allowed: boolean;
+  risk: AIRiskLevel;
+  requiresApproval: boolean;
+  reason: string;
+  targetKind: string;
+  targetName: string;
+  targetNamespace: string;
+  parameters?: Record<string, unknown>;
+}
 
 export interface IncidentActionRequest {
   actionType: CanonicalRemediationActionType | string;
@@ -737,6 +762,23 @@ export interface RemediationAction {
   executingAt?: number;
   completedAt?: number;
   verifiedAt?: number;
+  targetResourceVersion?: string;
+  mutation?: {
+    success: boolean;
+    previousRevision?: number | string;
+    targetRevision?: number | string;
+    previousReplicas?: number;
+    targetReplicas?: number;
+    [key: string]: unknown;
+  };
+  verification?: {
+    success: boolean;
+    readyReplicas?: number;
+    availableReplicas?: number;
+    desiredReplicas?: number;
+    updatedReplicas?: number;
+    [key: string]: unknown;
+  };
   executionResult?: {
     success: boolean;
     message: string;
@@ -896,6 +938,7 @@ export interface KubernetesResource {
   containers?: ContainerDiagnostic[];
   events?: K8sEvent[];
   uid?: string;
+  resourceVersion?: string;
   apiVersion?: string;
   nodeName?: string;
   labels?: Record<string, string>;
@@ -1360,6 +1403,7 @@ export type RemediationStatus =
   | 'VERIFIED_RESOLVED'
   | 'VERIFICATION_FAILED'
   | 'FAILED'
+  | 'ROLLING_BACK'
   | 'ROLLED_BACK';
 
 export interface RemediationApproval {
@@ -1403,6 +1447,7 @@ export interface AIAffectedResource {
   namespace: string;
   name: string;
   uid?: string;
+  resourceVersion?: string;
 }
 
 export interface AIChangePreview {

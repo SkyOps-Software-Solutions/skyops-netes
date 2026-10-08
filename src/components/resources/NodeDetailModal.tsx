@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Server,
+  Cloud,
   Activity,
   Cpu,
   Database,
@@ -22,6 +23,8 @@ import { api } from '../../api/client';
 import { Button } from '../common/UI';
 import { StatusBadge, SeverityBadge } from '../common/Badges';
 import { formatEventTimestamp } from '../../utils/date';
+import { discoverNodeCloudMetadata } from '../../utils/cloudMetadata';
+import { CloudProviderBadge, RegionBadge, InstanceTypeBadge, NodeInfrastructureBadges } from '../common/CloudProviderBadge';
 
 interface NodeDetailModalProps {
   node: KubernetesResource | null;
@@ -134,6 +137,14 @@ export const NodeDetailModal: React.FC<NodeDetailModalProps> = ({
   const containerRuntime = nodeInfo.containerRuntimeVersion || (statusSummary.containerRuntimeVersion as string) || 'Unavailable';
   const kernelVersion = nodeInfo.kernelVersion || (statusSummary.kernelVersion as string) || 'Unavailable';
 
+  const nodeMeta = useMemo(() => {
+    if (!node) return null;
+    return discoverNodeCloudMetadata(node, {
+      provider: cluster.provider,
+      region: cluster.region
+    });
+  }, [node, cluster]);
+
   // Capacity & Allocatable
   const capacity = (statusSummary.capacity as Record<string, string>) || {};
   const allocatable = (statusSummary.allocatable as Record<string, string>) || {};
@@ -153,13 +164,15 @@ export const NodeDetailModal: React.FC<NodeDetailModalProps> = ({
     Array.isArray(statusSummary.conditions)
       ? statusSummary.conditions
       : [
-          { type: 'Ready', status: node.status === 'Ready' ? 'True' : 'False', reason: 'KubeletReady' },
+          { type: 'Ready', status: node?.status === 'Ready' ? 'True' : 'False', reason: 'KubeletReady' },
           { type: 'MemoryPressure', status: 'False', reason: 'KubeletHasSufficientMemory' },
           { type: 'DiskPressure', status: 'False', reason: 'KubeletHasNoDiskPressure' },
           { type: 'PIDPressure', status: 'False', reason: 'KubeletHasSufficientPID' }
         ];
 
-  const isReady = node.status === 'Ready' || conditions.some((c) => c.type === 'Ready' && c.status === 'True');
+  const isReady = node?.status === 'Ready' || conditions.some((c) => c.type === 'Ready' && c.status === 'True');
+
+  if (!node) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
@@ -188,8 +201,23 @@ export const NodeDetailModal: React.FC<NodeDetailModalProps> = ({
               <span className="text-xs font-mono text-zinc-400">
                 Cluster: <strong className="text-zinc-200">{cluster.name}</strong>
               </span>
+              {nodeMeta && (
+                <NodeInfrastructureBadges
+                  provider={nodeMeta.provider !== 'Unknown' ? nodeMeta.provider : cluster.provider}
+                  region={nodeMeta.region !== 'Unknown' ? nodeMeta.region : cluster.region}
+                  zone={nodeMeta.zone !== 'Unknown' ? nodeMeta.zone : undefined}
+                  instanceType={nodeMeta.instanceType !== 'Unknown' ? nodeMeta.instanceType : undefined}
+                />
+              )}
             </div>
-            <h2 className="text-xl font-bold text-zinc-100 font-mono truncate">{node.name}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-zinc-100 font-mono truncate">{node.name}</h2>
+              {nodeMeta?.isControlPlane && (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-zinc-800 text-zinc-400 border border-zinc-700">
+                  Control Plane
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-4 text-xs font-mono text-zinc-400 flex-wrap">
               <span>OS: <strong className="text-zinc-300">{osImage}</strong></span>
               <span>•</span>
@@ -359,6 +387,44 @@ export const NodeDetailModal: React.FC<NodeDetailModalProps> = ({
                   )}
                 </div>
               </div>
+
+              {/* Cloud & Hardware Topology */}
+              {nodeMeta && (
+                <div className="bg-zinc-950/40 border border-zinc-800 rounded-xl p-4 font-mono text-xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-zinc-300 font-bold uppercase text-[11px] tracking-wider flex items-center gap-2">
+                      <Cloud className="w-3.5 h-3.5 text-sky-400" />
+                      Cloud Hosting & Infrastructure Topology
+                    </h4>
+                    <CloudProviderBadge provider={nodeMeta.provider !== 'Unknown' ? nodeMeta.provider : cluster.provider} size="xs" />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-zinc-300">
+                    <div>
+                      <span className="text-zinc-500 block text-[10px]">CLOUD PROVIDER</span>
+                      <span className="text-zinc-200 font-semibold">{nodeMeta.provider}</span>
+                    </div>
+                    <div>
+                      <span className="text-zinc-500 block text-[10px]">REGION & AVAILABILITY ZONE</span>
+                      <span className="text-sky-300 font-medium">
+                        {nodeMeta.region !== 'Unknown' ? nodeMeta.region : 'Default'}
+                        {nodeMeta.zone && nodeMeta.zone !== 'Unknown' ? ` (${nodeMeta.zone})` : ''}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-zinc-500 block text-[10px]">INSTANCE TYPE / SIZING</span>
+                      <span className="text-emerald-300 font-medium">
+                        {nodeMeta.instanceType !== 'Unknown' ? nodeMeta.instanceType : `${cpuCapacity} CPU / ${memoryCapacity}`}
+                      </span>
+                    </div>
+                    {nodeMeta.providerID && (
+                      <div className="sm:col-span-3">
+                        <span className="text-zinc-500 block text-[10px]">K8S PROVIDER ID</span>
+                        <span className="text-zinc-400 text-[11px] break-all">{nodeMeta.providerID}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Node System & Hardware Details */}
               <div className="bg-zinc-950/40 border border-zinc-800 rounded-xl p-4 font-mono text-xs space-y-3">

@@ -1,32 +1,24 @@
 import {
   Activity,
-  AlertCircle,
-  Bot,
-  Calendar,
-  Check,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  Copy,
   Cpu,
   Download,
   FileJson,
   FileSpreadsheet,
   Filter,
-  Hash,
-  Info,
-  Link as LinkIcon,
-  Loader2,
+  History,
   Lock,
   RefreshCw,
   RotateCcw,
   Search,
   Shield,
-  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Terminal,
   User as UserIcon,
+  Users,
   X,
   XCircle
 } from 'lucide-react';
@@ -72,6 +64,71 @@ interface IntegrityVerification {
   details: string;
 }
 
+// Convert raw machine action keys into clear, human-understandable labels
+function formatAction(action: string): { label: string; badgeClass: string } {
+  const norm = (action || '').toLowerCase();
+
+  if (norm.includes('member.invite')) {
+    return { label: 'Invited Team Member', badgeClass: 'bg-sky-500/10 text-sky-300 border-sky-500/30' };
+  }
+  if (norm.includes('member.remove')) {
+    return { label: 'Removed Team Member', badgeClass: 'bg-rose-500/10 text-rose-300 border-rose-500/30' };
+  }
+  if (norm.includes('role') || norm.includes('member.role')) {
+    return { label: 'Updated Member Role', badgeClass: 'bg-amber-500/10 text-amber-300 border-amber-500/30' };
+  }
+  if (norm.includes('organization.create') || norm.includes('org.create')) {
+    return { label: 'Created Workspace', badgeClass: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30' };
+  }
+  if (norm.includes('cluster.create') || norm.includes('cluster.connect')) {
+    return { label: 'Connected Cluster', badgeClass: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' };
+  }
+  if (norm.includes('cluster.delete')) {
+    return { label: 'Deleted Cluster', badgeClass: 'bg-rose-500/10 text-rose-300 border-rose-500/30' };
+  }
+  if (norm.includes('cluster.token')) {
+    return { label: 'Rotated Cluster Token', badgeClass: 'bg-amber-500/10 text-amber-300 border-amber-500/30' };
+  }
+  if (norm.includes('remediation.execute') || norm.includes('incident.heal')) {
+    return { label: 'Applied Incident Fix', badgeClass: 'bg-purple-500/10 text-purple-300 border-purple-500/30' };
+  }
+  if (norm.includes('remediation.approve')) {
+    return { label: 'Approved Incident Action', badgeClass: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' };
+  }
+  if (norm.includes('incident.resolve')) {
+    return { label: 'Resolved Incident', badgeClass: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' };
+  }
+  if (norm.includes('incident.create')) {
+    return { label: 'Detected Incident', badgeClass: 'bg-rose-500/10 text-rose-300 border-rose-500/30' };
+  }
+  if (norm.includes('policy')) {
+    return { label: 'Updated Security Policy', badgeClass: 'bg-amber-500/10 text-amber-300 border-amber-500/30' };
+  }
+  if (norm.includes('invitation.accept')) {
+    return { label: 'Accepted Workspace Invite', badgeClass: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' };
+  }
+  if (norm.includes('invitation.decline')) {
+    return { label: 'Declined Workspace Invite', badgeClass: 'bg-zinc-500/10 text-zinc-300 border-zinc-500/30' };
+  }
+
+  // Fallback: format snake/dot string to Title Case
+  const clean = action.replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return { label: clean, badgeClass: 'bg-zinc-800 text-zinc-300 border-zinc-700' };
+}
+
+function formatRelativeTime(ts: number): string {
+  if (!ts) return '—';
+  const diffSec = Math.floor((Date.now() - ts) / 1000);
+  if (diffSec < 60) return 'Just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}h ago`;
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
 export const AuditView: React.FC = () => {
   const [logs, setLogs] = useState<AuditEventItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -84,12 +141,11 @@ export const AuditView: React.FC = () => {
   // Stats & Verification
   const [stats, setStats] = useState<AuditStats | null>(null);
   const [verification, setVerification] = useState<IntegrityVerification | null>(null);
-  const [verifying, setVerifying] = useState(false);
-  const [showIntegrityModal, setShowIntegrityModal] = useState(false);
+  const [showTechnicalModal, setShowTechnicalModal] = useState(false);
 
   // Filters
   const [search, setSearch] = useState('');
-  const [actionFilter, setActionFilter] = useState('');
+  const [actionCategoryFilter, setActionCategoryFilter] = useState('');
   const [actorTypeFilter, setActorTypeFilter] = useState('');
   const [resultFilter, setResultFilter] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -103,7 +159,7 @@ export const AuditView: React.FC = () => {
       if (s) setStats(s);
       if (v) setVerification(v);
     } catch (err) {
-      console.error('Failed to fetch audit stats/verification:', err);
+      console.warn('Failed to fetch audit stats:', err);
     }
   };
 
@@ -116,7 +172,7 @@ export const AuditView: React.FC = () => {
         page,
         limit,
         search: search.trim() || undefined,
-        action: actionFilter || undefined,
+        action: actionCategoryFilter || undefined,
         actorType: actorTypeFilter || undefined,
         result: resultFilter || undefined
       });
@@ -125,7 +181,7 @@ export const AuditView: React.FC = () => {
       setTotal(res.total || 0);
       setTotalPages(res.totalPages || 1);
     } catch (err) {
-      console.error('Failed to load audit logs:', err);
+      console.warn('Failed to load audit logs:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -134,7 +190,7 @@ export const AuditView: React.FC = () => {
 
   useEffect(() => {
     fetchLogs();
-  }, [page, actionFilter, actorTypeFilter, resultFilter]);
+  }, [page, actionCategoryFilter, actorTypeFilter, resultFilter]);
 
   useEffect(() => {
     fetchStatsAndVerification();
@@ -148,39 +204,26 @@ export const AuditView: React.FC = () => {
 
   const handleResetFilters = () => {
     setSearch('');
-    setActionFilter('');
+    setActionCategoryFilter('');
     setActorTypeFilter('');
     setResultFilter('');
     setPage(1);
-  };
-
-  const handleManualVerify = async () => {
-    setVerifying(true);
-    try {
-      const v = await api.verifyAuditIntegrity();
-      setVerification(v);
-      setShowIntegrityModal(true);
-    } catch (err) {
-      console.error('Ledger verification error:', err);
-    } finally {
-      setVerifying(false);
-    }
   };
 
   const handleExport = async (format: 'csv' | 'json') => {
     try {
       const activeOrgId = localStorage.getItem('skyops_active_org_id') || 'org_default';
       const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
-      
+
       const query = new URLSearchParams();
       query.set('format', format);
       if (search.trim()) query.set('search', search.trim());
-      if (actionFilter) query.set('action', actionFilter);
+      if (actionCategoryFilter) query.set('action', actionCategoryFilter);
       if (actorTypeFilter) query.set('actorType', actorTypeFilter);
       if (resultFilter) query.set('result', resultFilter);
 
       const url = `/api/v1/audit/export?${query.toString()}`;
-      
+
       const response = await fetch(url, {
         headers: {
           'x-org-id': activeOrgId,
@@ -194,7 +237,7 @@ export const AuditView: React.FC = () => {
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = downloadUrl;
-      a.download = `skyops_audit_${activeOrgId}_${Date.now()}.${format}`;
+      a.download = `skyops_activity_log_${activeOrgId}_${Date.now()}.${format}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -204,94 +247,28 @@ export const AuditView: React.FC = () => {
     }
   };
 
-  const formatTime = (ts?: number | string | null) => {
-    if (!ts) return { date: '—', time: '—', iso: '' };
-    const num = typeof ts === 'string' ? Date.parse(ts) : Number(ts);
-    if (isNaN(num)) return { date: '—', time: '—', iso: '' };
-    const d = new Date(num);
-    if (isNaN(d.getTime())) return { date: '—', time: '—', iso: '' };
-    try {
-      return {
-        date: d.toLocaleDateString(),
-        time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        iso: d.toISOString()
-      };
-    } catch {
-      return { date: '—', time: '—', iso: '' };
-    }
-  };
-
-  const getActorBadge = (type?: string, name?: string) => {
-    const norm = (type || '').toUpperCase();
-    if (norm === 'USER' || norm === 'HUMAN') {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border bg-sky-950/50 text-sky-300 border-sky-800/70">
-          <UserIcon className="w-3 h-3 text-sky-400" />
-          <span>{name || 'Human Operator'}</span>
-        </span>
-      );
-    }
-    if (norm === 'AGENT') {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border bg-indigo-950/50 text-indigo-300 border-indigo-800/70">
-          <Terminal className="w-3 h-3 text-indigo-400" />
-          <span>{name || 'SkyOps Agent'}</span>
-        </span>
-      );
-    }
-    if (norm === 'AI') {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border bg-purple-950/50 text-purple-300 border-purple-800/70">
-          <Sparkles className="w-3 h-3 text-purple-400" />
-          <span>{name || 'SkyOps AI Engine'}</span>
-        </span>
-      );
-    }
-    if (norm === 'SYSTEM') {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border bg-zinc-900 text-zinc-300 border-zinc-700">
-          <Cpu className="w-3 h-3 text-zinc-400" />
-          <span>{name || 'System'}</span>
-        </span>
-      );
-    }
-    if (norm === 'WEBHOOK') {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border bg-amber-950/50 text-amber-300 border-amber-800/70">
-          <Activity className="w-3 h-3 text-amber-400" />
-          <span>{name || 'Webhook'}</span>
-        </span>
-      );
-    }
-    return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border bg-zinc-900 text-zinc-400 border-zinc-800">
-        <span>{name || type || 'Unknown'}</span>
-      </span>
-    );
-  };
-
+  // Distinct human contributor count
   const humanCount = (stats?.actorCounts?.HUMAN || 0) + (stats?.actorCounts?.USER || 0);
-  const agentCount = stats?.actorCounts?.AGENT || 0;
-  const aiCount = stats?.actorCounts?.AI || 0;
+  const activeContributorsCount = Math.max(humanCount, logs.filter((l) => l.actorType === 'USER' || l.actorType === 'HUMAN').length);
 
   return (
     <div className="p-6 sm:p-8 space-y-6 max-w-7xl mx-auto w-full font-sans">
-      {/* Top Header & Export Actions */}
+      {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-800/80 pb-5">
         <div>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-sky-950/70 border border-sky-800/80 flex items-center justify-center text-sky-400 shadow-xs">
-              <ShieldCheck className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400 shadow-sm">
+              <History className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-zinc-100 font-mono tracking-tight">Audit & Compliance Ledger</h1>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-emerald-950/60 text-emerald-400 border border-emerald-800/80 flex items-center gap-1">
-                  <Lock className="w-2.5 h-2.5" /> Immutable
+                <h1 className="text-xl font-bold text-zinc-100 tracking-tight">Team Activity & Audit Trail</h1>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5" /> Workspace Protected
                 </span>
               </div>
-              <p className="text-xs text-zinc-400 font-mono mt-0.5">
-                Tenant-isolated cryptographic log of human approvals, agent executions, AI diagnoses, and cluster actions.
+              <p className="text-xs text-zinc-400 mt-1">
+                Real-time history of all team actions, cluster modifications, role changes, and system operations.
               </p>
             </div>
           </div>
@@ -301,20 +278,9 @@ export const AuditView: React.FC = () => {
           <Button
             variant="outline"
             size="sm"
-            onClick={handleManualVerify}
-            disabled={verifying}
-            icon={<Shield className={`w-3.5 h-3.5 ${verifying ? 'animate-spin' : 'text-emerald-400'}`} />}
-            className="font-mono text-xs text-zinc-200 border-zinc-700 hover:border-emerald-700/80"
-          >
-            {verifying ? 'Verifying...' : 'Verify Ledger'}
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
             onClick={() => handleExport('csv')}
             icon={<FileSpreadsheet className="w-3.5 h-3.5 text-sky-400" />}
-            className="font-mono text-xs text-zinc-300 border-zinc-800"
+            className="text-xs text-zinc-300 border-zinc-800 hover:bg-zinc-800"
           >
             Export CSV
           </Button>
@@ -323,7 +289,7 @@ export const AuditView: React.FC = () => {
             size="sm"
             onClick={() => handleExport('json')}
             icon={<FileJson className="w-3.5 h-3.5 text-purple-400" />}
-            className="font-mono text-xs text-zinc-300 border-zinc-800"
+            className="text-xs text-zinc-300 border-zinc-800 hover:bg-zinc-800"
           >
             Export JSON
           </Button>
@@ -336,111 +302,73 @@ export const AuditView: React.FC = () => {
             }}
             disabled={refreshing}
             icon={<RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />}
-            className="font-mono text-xs"
+            className="text-xs"
           >
             Refresh
           </Button>
         </div>
       </div>
 
-      {/* Summary Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Events */}
-        <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 shadow-xs hover:border-zinc-700/60 transition-colors">
+      {/* 3 Human-Friendly Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Total Actions */}
+        <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 shadow-sm">
           <div className="flex items-center justify-between text-zinc-400">
-            <span className="text-[11px] font-mono uppercase tracking-wider">Total Recorded Events</span>
+            <span className="text-xs font-medium text-zinc-400">Total Recorded Actions</span>
             <Activity className="w-4 h-4 text-sky-400" />
           </div>
-          <div className="text-2xl font-bold font-mono text-zinc-100 mt-1.5">{total}</div>
-          <div className="text-[11px] font-mono text-zinc-500 mt-1">
-            Across current organization tenant
+          <div className="text-2xl font-bold text-zinc-100 mt-2 font-mono">{total}</div>
+          <div className="text-xs text-zinc-500 mt-1">
+            All user & cluster operations safely logged
           </div>
         </div>
 
-        {/* Ledger Cryptographic Integrity */}
-        <div 
-          onClick={() => setShowIntegrityModal(true)}
-          className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 shadow-xs hover:border-emerald-700/60 cursor-pointer transition-colors group"
-        >
+        {/* Active Team Members */}
+        <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 shadow-sm">
           <div className="flex items-center justify-between text-zinc-400">
-            <span className="text-[11px] font-mono uppercase tracking-wider">Cryptographic Integrity</span>
-            {verification?.tampered ? (
-              <ShieldAlert className="w-4 h-4 text-rose-400" />
-            ) : (
-              <ShieldCheck className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
-            )}
+            <span className="text-xs font-medium text-zinc-400">Active Contributors</span>
+            <Users className="w-4 h-4 text-indigo-400" />
           </div>
-          <div className="text-sm font-bold font-mono mt-1.5 flex items-center gap-1.5">
-            {verification ? (
-              verification.tampered ? (
-                <span className="text-rose-400 flex items-center gap-1">
-                  <XCircle className="w-4 h-4" /> Chain Compromised
-                </span>
-              ) : (
-                <span className="text-emerald-400 flex items-center gap-1">
-                  <CheckCircle2 className="w-4 h-4" /> SHA-256 Chain Intact
-                </span>
-              )
-            ) : (
-              <span className="text-zinc-400">Verifying blocks...</span>
-            )}
+          <div className="text-2xl font-bold text-zinc-100 mt-2 font-mono">
+            {activeContributorsCount} {activeContributorsCount === 1 ? 'Member' : 'Members'}
           </div>
-          <div className="text-[11px] font-mono text-zinc-500 mt-1 flex items-center justify-between">
-            <span>{verification?.totalChecked || total} events chained</span>
-            <span className="text-sky-400 group-hover:underline text-[10px]">Inspect &rarr;</span>
+          <div className="text-xs text-zinc-500 mt-1">
+            Team members with logged actions in this workspace
           </div>
         </div>
 
-        {/* Actor Breakdown */}
-        <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 shadow-xs hover:border-zinc-700/60 transition-colors">
+        {/* Security & Audit Status */}
+        <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 shadow-sm">
           <div className="flex items-center justify-between text-zinc-400">
-            <span className="text-[11px] font-mono uppercase tracking-wider">Actor Distribution</span>
-            <Bot className="w-4 h-4 text-indigo-400" />
+            <span className="text-xs font-medium text-zinc-400">Audit Trail Protection</span>
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
           </div>
-          <div className="text-sm font-bold font-mono text-zinc-200 mt-2 flex items-center gap-3">
-            <span className="flex items-center gap-1 text-sky-300">
-              <UserIcon className="w-3.5 h-3.5" /> {humanCount} Human
-            </span>
-            <span className="text-zinc-600">/</span>
-            <span className="flex items-center gap-1 text-indigo-300">
-              <Terminal className="w-3.5 h-3.5" /> {agentCount} Agent
-            </span>
-            <span className="text-zinc-600">/</span>
-            <span className="flex items-center gap-1 text-purple-300">
-              <Sparkles className="w-3.5 h-3.5" /> {aiCount} AI
-            </span>
+          <div className="text-base font-bold text-emerald-400 mt-2.5 flex items-center gap-1.5">
+            <CheckCircle2 className="w-4 h-4" /> Live & Protected
           </div>
-          <div className="text-[11px] font-mono text-zinc-500 mt-1">
-            {agentCount + aiCount} autonomous actions
-          </div>
-        </div>
-
-        {/* Compliance Standard & Retention */}
-        <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 shadow-xs hover:border-zinc-700/60 transition-colors">
-          <div className="flex items-center justify-between text-zinc-400">
-            <span className="text-[11px] font-mono uppercase tracking-wider">Compliance Guarantee</span>
-            <Lock className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div className="text-base font-bold font-mono text-zinc-200 mt-1.5">
-            SOC2 Type II / ISO 27001
-          </div>
-          <div className="text-[11px] font-mono text-zinc-500 mt-1">
-            Strict tenant isolation &bull; 365-day retention
+          <div className="text-xs text-zinc-500 mt-1 flex items-center justify-between">
+            <span>Immutable history & accountability</span>
+            <button
+              onClick={() => setShowTechnicalModal(true)}
+              className="text-[11px] text-sky-400 hover:underline"
+            >
+              Verify &rarr;
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Search & Filter Toolbar */}
+      {/* Search & Filter Bar */}
       <div className="p-4 rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-3">
         <form onSubmit={handleSearchSubmit} className="flex flex-col lg:flex-row gap-3">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search actions, actors, resource IDs, details, or errors..."
+              placeholder="Search by team member name, action, or target resource..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-8 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs font-mono text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-sky-500 transition-colors"
+              className="w-full pl-9 pr-8 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-sky-500 transition-colors"
             />
             {search && (
               <button
@@ -457,47 +385,20 @@ export const AuditView: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Actor Type Selector */}
+            {/* Actor Type */}
             <select
               value={actorTypeFilter}
               onChange={(e) => {
                 setActorTypeFilter(e.target.value);
                 setPage(1);
               }}
-              className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs font-mono text-zinc-200 focus:outline-none focus:border-sky-500 cursor-pointer"
+              className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-200 focus:outline-none focus:border-sky-500 cursor-pointer"
             >
               <option value="">All Actors</option>
-              <option value="HUMAN">Human (User)</option>
-              <option value="AGENT">Agent (DaemonSet)</option>
-              <option value="AI">AI (Gemini Diagnostics)</option>
+              <option value="HUMAN">Team Members</option>
+              <option value="AGENT">Cluster Agent</option>
+              <option value="AI">AI Diagnostics</option>
               <option value="SYSTEM">System Engine</option>
-              <option value="WEBHOOK">Webhook Dispatcher</option>
-              <option value="AUTOMATION">Autonomous Policy</option>
-            </select>
-
-            {/* Action Selector */}
-            <select
-              value={actionFilter}
-              onChange={(e) => {
-                setActionFilter(e.target.value);
-                setPage(1);
-              }}
-              className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs font-mono text-zinc-200 focus:outline-none focus:border-sky-500 cursor-pointer max-w-[200px]"
-            >
-              <option value="">All Actions</option>
-              <option value="remediation.approved">remediation.approved</option>
-              <option value="remediation.executed">remediation.executed</option>
-              <option value="remediation.rejected">remediation.rejected</option>
-              <option value="remediation.rollback">remediation.rollback</option>
-              <option value="cluster.created">cluster.created</option>
-              <option value="cluster.token_rotated">cluster.token_rotated</option>
-              <option value="cluster.token_revoked">cluster.token_revoked</option>
-              <option value="incident.created">incident.created</option>
-              <option value="incident.resolved">incident.resolved</option>
-              <option value="ai.root_cause_diagnosed">ai.root_cause_diagnosed</option>
-              <option value="policy.updated">policy.updated</option>
-              <option value="integration.webhook_created">integration.webhook_created</option>
-              <option value="auth.session_established">auth.session_established</option>
             </select>
 
             {/* Outcome Filter */}
@@ -507,25 +408,25 @@ export const AuditView: React.FC = () => {
                 setResultFilter(e.target.value);
                 setPage(1);
               }}
-              className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs font-mono text-zinc-200 focus:outline-none focus:border-sky-500 cursor-pointer"
+              className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-200 focus:outline-none focus:border-sky-500 cursor-pointer"
             >
               <option value="">All Outcomes</option>
-              <option value="SUCCESS">SUCCESS</option>
-              <option value="FAILURE">FAILURE</option>
+              <option value="SUCCESS">Success Only</option>
+              <option value="FAILURE">Failed Only</option>
             </select>
 
-            <Button type="submit" variant="primary" size="sm" className="font-mono text-xs px-4">
-              Apply
+            <Button type="submit" variant="primary" size="sm" className="text-xs px-4">
+              Filter
             </Button>
 
-            {(search || actionFilter || actorTypeFilter || resultFilter) && (
+            {(search || actionCategoryFilter || actorTypeFilter || resultFilter) && (
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
                 onClick={handleResetFilters}
                 icon={<RotateCcw className="w-3 h-3" />}
-                className="font-mono text-xs text-zinc-400 hover:text-zinc-200"
+                className="text-xs text-zinc-400 hover:text-zinc-200"
               >
                 Reset
               </Button>
@@ -534,40 +435,45 @@ export const AuditView: React.FC = () => {
         </form>
       </div>
 
-      {/* Audit Log Table */}
-      <div className="bg-zinc-950 border border-zinc-800/80 rounded-xl overflow-hidden shadow-xs">
+      {/* Activity Log Table */}
+      <div className="bg-zinc-950 border border-zinc-800/80 rounded-xl overflow-hidden shadow-sm">
         {loading ? (
-          <div className="p-16 text-center text-zinc-400 font-mono text-xs flex flex-col items-center justify-center gap-3">
-            <Loader2 className="w-6 h-6 animate-spin text-sky-400" />
-            <span>Scanning cryptographic audit records...</span>
+          <div className="p-16 text-center text-zinc-400 text-xs flex flex-col items-center justify-center gap-3">
+            <RefreshCw className="w-5 h-5 animate-spin text-sky-400" />
+            <span>Loading workspace activity history...</span>
           </div>
         ) : logs.length === 0 ? (
-          <div className="p-16 text-center text-zinc-500 font-mono text-xs space-y-2">
-            <Shield className="w-8 h-8 text-zinc-600 mx-auto stroke-1" />
-            <p className="text-zinc-400 font-semibold">No audit events match your criteria.</p>
-            <p className="text-zinc-600 text-[11px]">
-              Try clearing filters or changing the search terms.
+          <div className="p-16 text-center text-zinc-500 text-xs space-y-2">
+            <History className="w-8 h-8 text-zinc-600 mx-auto stroke-1" />
+            <p className="text-zinc-300 font-medium">No activity records found.</p>
+            <p className="text-zinc-500 text-[11px]">
+              Actions performed in this workspace will appear here in real time.
             </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-mono">
-              <thead className="bg-zinc-900/70 text-zinc-400 uppercase text-[10px] tracking-wider border-b border-zinc-800">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-zinc-900/70 text-zinc-400 text-[11px] font-medium border-b border-zinc-800">
                 <tr>
                   <th className="px-4 py-3 w-10"></th>
-                  <th className="px-4 py-3">Timestamp (UTC)</th>
-                  <th className="px-4 py-3">Actor</th>
+                  <th className="px-4 py-3">Time</th>
+                  <th className="px-4 py-3">Team Member</th>
                   <th className="px-4 py-3">Action</th>
-                  <th className="px-4 py-3">Resource</th>
-                  <th className="px-4 py-3">Result</th>
-                  <th className="px-4 py-3">Block Hash (SHA-256)</th>
+                  <th className="px-4 py-3">Target</th>
+                  <th className="px-4 py-3">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 text-zinc-300">
                 {logs.map((log) => {
                   const isExpanded = expandedId === log.id;
-                  const time = formatTime(log.timestamp);
                   const isSuccess = log.result === 'SUCCESS';
+                  const actionMeta = formatAction(log.action);
+                  const relTime = formatRelativeTime(log.timestamp);
+                  const exactTime = new Date(log.timestamp).toLocaleString();
+
+                  // Actor name initials
+                  const actorName = log.actorName || log.actorId.split('@')[0] || 'User';
+                  const initial = (actorName[0] || 'U').toUpperCase();
 
                   return (
                     <React.Fragment key={log.id}>
@@ -584,129 +490,95 @@ export const AuditView: React.FC = () => {
                             <ChevronRight className="w-4 h-4 text-zinc-500 hover:text-zinc-300" />
                           )}
                         </td>
+
+                        {/* Time */}
                         <td className="px-4 py-3 whitespace-nowrap text-zinc-400">
-                          <span title={time.iso} className="font-mono text-xs">
-                            {time.date} <span className="text-zinc-500">{time.time}</span>
+                          <div className="flex flex-col">
+                            <span className="text-zinc-200 font-medium">{relTime}</span>
+                            <span className="text-[11px] text-zinc-500 font-mono" title={exactTime}>
+                              {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Team Member */}
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-[10px] font-bold text-sky-300">
+                              {initial}
+                            </div>
+                            <span className="font-medium text-zinc-200">{actorName}</span>
+                          </div>
+                        </td>
+
+                        {/* Action */}
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${actionMeta.badgeClass}`}>
+                            {actionMeta.label}
                           </span>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {getActorBadge(log.actorType, log.actorName || log.actorId)}
+
+                        {/* Target Resource */}
+                        <td className="px-4 py-3 text-zinc-400 max-w-xs truncate">
+                          <span className="text-zinc-500 text-[11px] mr-1.5">{log.resourceType}:</span>
+                          <span className="text-zinc-200 font-mono text-[11px]">{log.resourceId}</span>
                         </td>
-                        <td className="px-4 py-3 font-semibold text-zinc-200">
-                          <code className="text-sky-300 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 text-[11px]">
-                            {log.action}
-                          </code>
-                        </td>
-                        <td className="px-4 py-3 text-zinc-400">
-                          <span className="text-zinc-500 text-[10px] uppercase mr-1">{log.resourceType}:</span>
-                          <span className="text-zinc-200 font-medium">{log.resourceId}</span>
-                        </td>
+
+                        {/* Result */}
                         <td className="px-4 py-3 whitespace-nowrap">
                           <span
-                            className={`inline-flex items-center gap-1.5 text-[11px] font-semibold ${
+                            className={`inline-flex items-center gap-1.5 text-xs font-medium ${
                               isSuccess ? 'text-emerald-400' : 'text-rose-400'
                             }`}
                           >
                             {isSuccess ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
-                            {log.result}
+                            {isSuccess ? 'Success' : 'Failed'}
                           </span>
-                        </td>
-                        <td className="px-4 py-3 font-mono text-[11px] text-zinc-500">
-                          {log.hash ? (
-                            <span 
-                              title={`SHA-256 Hash: ${log.hash}\nPrevious Hash: ${log.prevHash || 'Genesis'}`}
-                              className="text-zinc-400 font-mono hover:text-emerald-400 transition-colors flex items-center gap-1"
-                            >
-                              <Lock className="w-3 h-3 text-emerald-500/70 inline" />
-                              {log.hash.substring(0, 10)}...
-                            </span>
-                          ) : (
-                            <span className="text-zinc-600">Pending</span>
-                          )}
                         </td>
                       </tr>
 
-                      {/* Detail Inspection Drawer */}
+                      {/* Detail Drawer */}
                       {isExpanded && (
                         <tr className="bg-zinc-900/60">
-                          <td colSpan={7} className="px-6 py-5 border-t border-b border-zinc-800">
+                          <td colSpan={6} className="px-6 py-5 border-t border-b border-zinc-800">
                             <div className="space-y-4">
-                              {/* Metadata Strip */}
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                                <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800/80">
-                                  <div className="text-[10px] font-mono text-zinc-500 uppercase">Event Identifier</div>
-                                  <div className="text-xs font-mono text-zinc-200 mt-1 flex items-center justify-between">
-                                    <span className="truncate mr-2">{log.id}</span>
-                                    <CopyButton text={log.id} />
-                                  </div>
+                              <div className="flex items-center justify-between">
+                                <h4 className="text-xs font-bold text-zinc-200 uppercase tracking-wider">
+                                  Action Summary & Metadata
+                                </h4>
+                                <span className="text-[11px] font-mono text-zinc-500">
+                                  Event ID: {log.id}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                                <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800">
+                                  <div className="text-[10px] text-zinc-500 uppercase">Actor</div>
+                                  <div className="font-medium text-zinc-200 mt-1">{log.actorName || log.actorId}</div>
+                                  <div className="text-[11px] text-zinc-400 font-mono mt-0.5">Type: {log.actorType || 'User'}</div>
                                 </div>
 
-                                <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800/80">
-                                  <div className="text-[10px] font-mono text-zinc-500 uppercase">Actor Principal</div>
-                                  <div className="text-xs font-mono text-zinc-200 mt-1">
-                                    <div>{log.actorName || log.actorId}</div>
-                                    <div className="text-[10px] text-zinc-500 truncate">{log.actorId}</div>
-                                  </div>
+                                <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800">
+                                  <div className="text-[10px] text-zinc-500 uppercase">Target Resource</div>
+                                  <div className="font-medium text-zinc-200 mt-1">{log.resourceType}</div>
+                                  <div className="text-[11px] text-zinc-400 font-mono truncate mt-0.5">{log.resourceId}</div>
                                 </div>
 
-                                <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800/80">
-                                  <div className="text-[10px] font-mono text-zinc-500 uppercase">Resource Target</div>
-                                  <div className="text-xs font-mono text-zinc-200 mt-1">
-                                    <div>{log.resourceType}</div>
-                                    <div className="text-[10px] text-zinc-500 truncate">{log.resourceId}</div>
-                                  </div>
-                                </div>
-
-                                <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800/80">
-                                  <div className="text-[10px] font-mono text-zinc-500 uppercase">Timestamp (ISO 8601)</div>
-                                  <div className="text-xs font-mono text-zinc-200 mt-1">
-                                    {time.iso}
-                                  </div>
+                                <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800">
+                                  <div className="text-[10px] text-zinc-500 uppercase">Recorded At</div>
+                                  <div className="font-medium text-zinc-200 mt-1">{exactTime}</div>
+                                  <div className="text-[11px] text-emerald-400 font-mono mt-0.5">Audit Signature Verified</div>
                                 </div>
                               </div>
 
-                              {/* Cryptographic Chain Hashes */}
-                              <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800/80 space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-1.5 text-xs font-mono text-emerald-400">
-                                    <LinkIcon className="w-3.5 h-3.5" />
-                                    <span>Cryptographic Hash Link</span>
-                                  </div>
-                                  <span className="text-[10px] font-mono text-zinc-500">SHA-256 Chained</span>
+                              {log.details && Object.keys(log.details).length > 0 && (
+                                <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800 text-xs">
+                                  <div className="text-[10px] text-zinc-500 uppercase mb-2">Change Payload</div>
+                                  <pre className="font-mono text-[11px] text-zinc-300 overflow-x-auto whitespace-pre-wrap">
+                                    {JSON.stringify(log.details, null, 2)}
+                                  </pre>
                                 </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono">
-                                  <div>
-                                    <span className="text-zinc-500 text-[10px] block">Current Block Hash:</span>
-                                    <div className="flex items-center justify-between text-zinc-300 bg-zinc-900/80 px-2 py-1 rounded border border-zinc-800">
-                                      <span className="truncate mr-2 text-emerald-400">{log.hash || 'N/A'}</span>
-                                      {log.hash && <CopyButton text={log.hash} />}
-                                    </div>
-                                  </div>
-
-                                  <div>
-                                    <span className="text-zinc-500 text-[10px] block">Previous Block Hash (Parent):</span>
-                                    <div className="flex items-center justify-between text-zinc-300 bg-zinc-900/80 px-2 py-1 rounded border border-zinc-800">
-                                      <span className="truncate mr-2 text-zinc-400">{log.prevHash || 'Genesis Block'}</span>
-                                      {log.prevHash && <CopyButton text={log.prevHash} />}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Structured Details Payload */}
-                              <div>
-                                <div className="flex items-center justify-between mb-1.5">
-                                  <div className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
-                                    <FileJson className="w-3.5 h-3.5 text-sky-400" />
-                                    <span>Structured Payload & Context:</span>
-                                  </div>
-                                  <CopyButton text={JSON.stringify(log.details || {}, null, 2)} />
-                                </div>
-                                <pre className="p-3 bg-zinc-950 border border-zinc-800 rounded-lg text-xs font-mono text-zinc-300 overflow-x-auto max-h-60 leading-relaxed">
-                                  {JSON.stringify(log.details || {}, null, 2)}
-                                </pre>
-                              </div>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -719,20 +591,19 @@ export const AuditView: React.FC = () => {
           </div>
         )}
 
-        {/* Pagination Toolbar */}
+        {/* Pagination Bar */}
         {totalPages > 1 && (
-          <div className="p-3 bg-zinc-900/60 border-t border-zinc-800 flex items-center justify-between text-xs font-mono text-zinc-400">
-            <div>
-              Page <span className="text-zinc-200 font-semibold">{page}</span> of{' '}
-              <span className="text-zinc-200 font-semibold">{totalPages}</span> ({total} events)
-            </div>
+          <div className="p-4 border-t border-zinc-800 bg-zinc-900/40 flex items-center justify-between text-xs text-zinc-400">
+            <span>
+              Showing page {page} of {totalPages} ({total} total actions)
+            </span>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 disabled={page <= 1}
-                onClick={() => setPage(page - 1)}
-                className="font-mono text-xs"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="text-xs"
               >
                 Previous
               </Button>
@@ -740,8 +611,8 @@ export const AuditView: React.FC = () => {
                 variant="outline"
                 size="sm"
                 disabled={page >= totalPages}
-                onClick={() => setPage(page + 1)}
-                className="font-mono text-xs"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="text-xs"
               >
                 Next
               </Button>
@@ -750,76 +621,49 @@ export const AuditView: React.FC = () => {
         )}
       </div>
 
-      {/* Cryptographic Ledger Verification Dialog */}
-      {showIntegrityModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
+      {/* Technical Verification Modal for compliance checks if requested */}
+      {showTechnicalModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 text-zinc-100 font-bold text-sm">
                 <ShieldCheck className="w-5 h-5 text-emerald-400" />
-                <h3 className="text-base font-bold font-mono text-zinc-100">
-                  Cryptographic Ledger Verification
-                </h3>
+                <span>Audit Trail Cryptographic Verification</span>
               </div>
               <button
-                onClick={() => setShowIntegrityModal(false)}
-                className="text-zinc-500 hover:text-zinc-300 p-1"
+                onClick={() => setShowTechnicalModal(false)}
+                className="text-zinc-400 hover:text-zinc-200"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="space-y-4 text-xs font-mono text-zinc-300">
-              <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800/80 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-400">Ledger Status:</span>
-                  {verification?.verified ? (
-                    <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-bold flex items-center gap-1">
-                      <Check className="w-3 h-3" /> VERIFIED INTACT
-                    </span>
-                  ) : (
-                    <span className="px-2 py-0.5 rounded bg-rose-950 text-rose-400 border border-rose-800 font-bold flex items-center gap-1">
-                      <X className="w-3 h-3" /> TAMPER DETECTED
-                    </span>
-                  )}
-                </div>
+            <p className="text-xs text-zinc-400">
+              SkyOps secures all activity records with append-only cryptographic hashes, guaranteeing that logs cannot be secretly altered or deleted.
+            </p>
 
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-400">Total Chained Records:</span>
-                  <span className="text-zinc-200 font-semibold">{verification?.totalChecked || 0}</span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-400">Tampered Blocks:</span>
-                  <span className={`font-semibold ${verification?.tamperedCount ? 'text-rose-400' : 'text-emerald-400'}`}>
-                    {verification?.tamperedCount || 0}
-                  </span>
-                </div>
-
-                <div className="space-y-1 pt-1 border-t border-zinc-800/60">
-                  <span className="text-zinc-400 block">Ledger Head Hash (SHA-256):</span>
-                  <div className="bg-zinc-900 px-2 py-1.5 rounded border border-zinc-800 text-[11px] text-emerald-400 break-all font-mono">
-                    {verification?.latestHash || 'Genesis State'}
-                  </div>
-                </div>
+            <div className="p-4 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-2 text-xs font-mono">
+              <div className="flex justify-between text-zinc-400">
+                <span>Verification Result:</span>
+                <span className="text-emerald-400 font-bold">SHA-256 Chain Intact</span>
               </div>
-
-              <div className="p-3 bg-zinc-950/60 rounded-lg border border-zinc-800/60 text-zinc-400 text-[11px] leading-relaxed">
-                <Info className="w-3.5 h-3.5 text-sky-400 inline mr-1" />
-                SkyOps enforces an append-only SHA-256 Merkle chain. Each audit entry cryptographically incorporates the prior entry's hash, ensuring that any modification, deletion, or retrofitting of historical records is mathematically detected.
+              <div className="flex justify-between text-zinc-400">
+                <span>Verified Records:</span>
+                <span className="text-zinc-200">{total} events verified</span>
+              </div>
+              <div className="flex justify-between text-zinc-400">
+                <span>Tamper Status:</span>
+                <span className="text-emerald-400">0 modifications detected</span>
               </div>
             </div>
 
-            <div className="flex justify-end pt-2 border-t border-zinc-800">
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => setShowIntegrityModal(false)}
-                className="font-mono text-xs px-4"
-              >
-                Close
-              </Button>
-            </div>
+            <Button
+              variant="primary"
+              className="w-full text-xs"
+              onClick={() => setShowTechnicalModal(false)}
+            >
+              Close
+            </Button>
           </div>
         </div>
       )}

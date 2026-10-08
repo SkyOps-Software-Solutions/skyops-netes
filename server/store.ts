@@ -784,8 +784,10 @@ export class DataStore {
 
     // Ensure organizations owned by user are recognized
     for (const org of this.orgs.values()) {
+      const orgOwnerEmail = ((org as any).ownerEmail || '').trim().toLowerCase();
       const isOwner =
         org.ownerUserId === userId ||
+        (normalizedEmail && orgOwnerEmail && orgOwnerEmail === normalizedEmail) ||
         (normalizedEmail && this.users.get(org.ownerUserId || '')?.email?.trim().toLowerCase() === normalizedEmail);
 
       if (isOwner) {
@@ -865,6 +867,7 @@ export class DataStore {
         security: { enforceMfa: false, sessionTimeoutMinutes: 1440 }
       }
     };
+    (org as any).ownerEmail = email;
     this.orgs.set(orgId, org);
 
     this.members.set(orgId, [
@@ -1125,8 +1128,10 @@ export class DataStore {
       (m) => m.userId === userId || (normalizedEmail && m.email && m.email.trim().toLowerCase() === normalizedEmail)
     );
     if (!member) {
+      const orgOwnerEmail = ((org as any).ownerEmail || '').trim().toLowerCase();
       const isOwner =
         org.ownerUserId === userId ||
+        (normalizedEmail && orgOwnerEmail && orgOwnerEmail === normalizedEmail) ||
         (normalizedEmail && this.users.get(org.ownerUserId || '')?.email?.trim().toLowerCase() === normalizedEmail);
 
       if (isOwner) {
@@ -1251,6 +1256,72 @@ export class DataStore {
       }
     }
     return list.sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  public getInvitationsForUser(userEmail: string): OrgInvitation[] {
+    const cleanEmail = (userEmail || '').trim().toLowerCase();
+    if (!cleanEmail) return [];
+    const list: OrgInvitation[] = [];
+    const now = Date.now();
+    for (const inv of this.invitations.values()) {
+      if (inv.email.trim().toLowerCase() === cleanEmail) {
+        if (inv.status === 'PENDING' && inv.expiresAt <= now) {
+          inv.status = 'EXPIRED';
+        }
+        if (inv.status === 'PENDING') {
+          const org = this.orgs.get(inv.orgId);
+          const inviter = this.users.get(inv.invitedByUserId);
+          list.push({
+            ...inv,
+            orgName: org?.name || 'SkyOps Workspace',
+            invitedByName: inviter?.name || inv.invitedByEmail.split('@')[0]
+          });
+        }
+      }
+    }
+    return list.sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  public acceptInvitationById(
+    invitationId: string,
+    user: { id: string; email: string; name: string }
+  ): { org: Organization; role: Role } {
+    const inv = this.invitations.get(invitationId);
+    if (!inv) {
+      throw new Error('Invitation not found');
+    }
+    return this.acceptInvitation(inv.token, user);
+  }
+
+  public declineInvitationById(
+    invitationId: string,
+    user: { id: string; email: string }
+  ): boolean {
+    const inv = this.invitations.get(invitationId);
+    if (!inv) {
+      throw new Error('Invitation not found');
+    }
+    if (inv.email.trim().toLowerCase() !== user.email.trim().toLowerCase()) {
+      throw new Error('Invitation email does not match authenticated user');
+    }
+    inv.status = 'DECLINED' as any;
+    (inv as any).declinedAt = Date.now();
+    this.saveSnapshot();
+    this.persistence.saveInvitation(inv).catch((err) =>
+      console.warn('[DataStore] Failed to persist declined invitation:', err?.message || err)
+    );
+    auditService.record({
+      orgId: inv.orgId,
+      actorId: user.id,
+      actorName: user.email,
+      actorType: 'USER',
+      action: 'invitation.decline' as any,
+      resourceType: 'ORGANIZATION',
+      resourceId: invitationId,
+      result: 'SUCCESS',
+      details: { email: inv.email }
+    });
+    return true;
   }
 
   public getInvitationByToken(token: string): OrgInvitation | null {
@@ -1832,12 +1903,27 @@ export class DataStore {
     this.saveSnapshot();
   }
 
+  private ensureClusterInfrastructure(cluster: Cluster): void {
+    const resources = this.resources.get(cluster.id) || [];
+    const nodes = resources.filter((r) => r.kind === 'Node');
+    if (nodes.length > 0) {
+      const cloudMeta = aggregateClusterCloudMetadata(nodes, cluster.provider, cluster.region);
+      cluster.infrastructure = cloudMeta;
+      if (cloudMeta.provider !== 'Unknown') cluster.provider = cloudMeta.provider;
+      if (cloudMeta.region !== 'Unknown') cluster.region = cloudMeta.region;
+      cluster.regions = cloudMeta.regions;
+      cluster.zones = cloudMeta.zones;
+      cluster.instanceTypes = cloudMeta.instanceTypes;
+    }
+  }
+
   public getClusters(orgId: string): Cluster[] {
     const now = Date.now();
     return Array.from(this.clusters.values())
       .filter((c) => c.orgId === orgId)
       .map((c) => {
         this.reconcileClusterConnectionState(c, now);
+        this.ensureClusterInfrastructure(c);
         return { ...c };
       });
   }
@@ -1847,6 +1933,7 @@ export class DataStore {
     if (!cluster) return null;
     if (orgId && cluster.orgId !== orgId) return null;
     this.reconcileClusterConnectionState(cluster);
+    this.ensureClusterInfrastructure(cluster);
     return { ...cluster };
   }
 
@@ -1854,6 +1941,7 @@ export class DataStore {
     const cluster = this.clusters.get(clusterId);
     if (!cluster) return null;
     this.reconcileClusterConnectionState(cluster);
+    this.ensureClusterInfrastructure(cluster);
     return cluster;
   }
 

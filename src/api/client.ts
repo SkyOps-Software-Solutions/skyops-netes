@@ -376,6 +376,26 @@ class ApiClient {
     });
   }
 
+  // --- In-App Direct User Invitations ---
+  async getMyInvitations(): Promise<OrgInvitation[]> {
+    const data = await this.request<{ invitations: OrgInvitation[] }>('/api/v1/users/me/invitations');
+    return data.invitations || [];
+  }
+
+  async acceptMyInvitation(invitationId: string): Promise<{ success: boolean; organization: Organization; role: Role }> {
+    return this.request<{ success: boolean; organization: Organization; role: Role }>(
+      `/api/v1/users/me/invitations/${invitationId}/accept`,
+      { method: 'POST' }
+    );
+  }
+
+  async declineMyInvitation(invitationId: string): Promise<{ success: boolean; message?: string }> {
+    return this.request<{ success: boolean; message?: string }>(
+      `/api/v1/users/me/invitations/${invitationId}/decline`,
+      { method: 'POST' }
+    );
+  }
+
   // --- Support ---
   async createSupportTicket(data: {
     subject: string;

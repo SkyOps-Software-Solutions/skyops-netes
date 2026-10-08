@@ -68,7 +68,7 @@ export const PLANS: Record<PlanId, Plan> = {
       clusters: 1,
       nodes: 5,
       workloads: 100,
-      members: 1,
+      members: 25,
       dataRetentionDays: 7,
       telemetryRetentionDays: 7,
       aiInvestigationsMonthly: 20,
@@ -95,7 +95,7 @@ export const PLANS: Record<PlanId, Plan> = {
     highlights: [
       '1 Managed Kubernetes cluster',
       'Up to 5 nodes & 100 workload pods',
-      '1 Organization member seat',
+      'Up to 25 Organization member seats',
       '7-day data & audit retention',
       '20 Gemini AI incident investigations/month',
       '0 automated remediation executions',

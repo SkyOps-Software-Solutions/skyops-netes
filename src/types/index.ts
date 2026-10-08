@@ -1,5 +1,7 @@
 export * from './k8s';
+import type { ClusterCloudMetadata } from '../utils/cloudMetadata';
 export * from '../utils/cloudMetadata';
+export type { CloudProvider } from '../utils/cloudMetadata';
 
 export type Role =
   | 'OWNER'
@@ -243,21 +245,24 @@ export interface OrgMember {
   lastActiveAt?: number;
 }
 
-export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
+export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED' | 'DECLINED';
 
 export interface OrgInvitation {
   id: string;
   orgId: string;
+  orgName?: string;
   email: string;
   role: Role;
   token: string;
   status: InvitationStatus;
   invitedByUserId: string;
   invitedByEmail: string;
+  invitedByName?: string;
   createdAt: number;
   expiresAt: number;
   acceptedAt?: number;
   revokedAt?: number;
+  declinedAt?: number;
 }
 
 export type TicketCategory = 'INCIDENT' | 'AGENT' | 'PLATFORM' | 'BILLING_QUERY' | 'GENERAL';

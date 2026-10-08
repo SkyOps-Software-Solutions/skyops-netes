@@ -32,6 +32,7 @@ import { ClusterStatusBadge, SeverityBadge, StatusBadge } from '../common/Badges
 import { Button, EmptyState } from '../common/UI';
 import { ErrorBoundary } from '../common/ErrorBoundary';
 import { BrandLogo } from '../common/BrandLogo';
+import { ClusterInfrastructureBadges } from '../common/CloudProviderBadge';
 
 interface OverviewViewProps {
   metrics: OverviewMetrics | null;
@@ -597,6 +598,11 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
                     p.status === 'OOMKilled'
                 );
                 const clusterIncidents = openIncidents.filter((i) => i.clusterId === cluster.id);
+                const clusterProvider = cluster.provider || cluster.infrastructure?.provider;
+                const clusterRegion = cluster.region || cluster.infrastructure?.region;
+                const clusterRegions = cluster.regions || cluster.infrastructure?.regions || [];
+                const clusterZones = cluster.zones || cluster.infrastructure?.zones || [];
+                const clusterInstanceTypes = cluster.instanceTypes || cluster.infrastructure?.instanceTypes || [];
 
                 return (
                   <div
@@ -605,7 +611,7 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
                     className="p-4 hover:bg-zinc-850/60 transition-colors cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-mono text-xs"
                   >
                     <div className="space-y-1.5 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-sm text-zinc-100 font-mono truncate">
                           {cluster.name}
                         </span>
@@ -614,6 +620,13 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
                             TEST
                           </span>
                         )}
+                        <ClusterInfrastructureBadges
+                          provider={clusterProvider}
+                          region={clusterRegion}
+                          regions={clusterRegions}
+                          zones={clusterZones}
+                          instanceTypes={clusterInstanceTypes}
+                        />
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2 text-zinc-400 text-[11px]">
@@ -628,6 +641,42 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
                         <span>{cluster.nodeCount} Nodes</span>
                         <span className="text-zinc-600">•</span>
                         <span>{cluster.podCount} Pods</span>
+
+                        {clusterProvider && clusterProvider !== 'Unknown' && (
+                          <>
+                            <span className="text-zinc-600">•</span>
+                            <span className="text-zinc-300">
+                              Hosting: <strong className="text-sky-300 font-normal">{clusterProvider}</strong>
+                            </span>
+                          </>
+                        )}
+
+                        {clusterRegion && clusterRegion !== 'Unknown' && (
+                          <>
+                            <span className="text-zinc-600">•</span>
+                            <span className="text-zinc-300">
+                              Region: <strong className="text-sky-400 font-normal">{clusterRegion}</strong>
+                            </span>
+                          </>
+                        )}
+
+                        {clusterZones.length > 0 && (
+                          <>
+                            <span className="text-zinc-600">•</span>
+                            <span className="text-zinc-300">
+                              AZ: <strong className="text-zinc-400 font-normal">{clusterZones.join(', ')}</strong>
+                            </span>
+                          </>
+                        )}
+
+                        {clusterInstanceTypes.length > 0 && (
+                          <>
+                            <span className="text-zinc-600">•</span>
+                            <span className="text-zinc-300">
+                              Type: <strong className="text-emerald-400 font-normal">{clusterInstanceTypes.join(', ')}</strong>
+                            </span>
+                          </>
+                        )}
 
                         {clusterCrashing.length > 0 && (
                           <>

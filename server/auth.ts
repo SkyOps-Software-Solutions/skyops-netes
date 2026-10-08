@@ -365,47 +365,38 @@ export async function requireOrgMembership(
   }
 
   if (userOrgs.length === 0) {
-    // Bootstrap only while establishing a session.  In particular, never let
-    // an arbitrary organization id in a resource request create an access
-    // path, even when an old/malformed organization has no member records.
-    const isSessionEndpoint =
-      req.path === '/api/v1/auth/session' ||
-      req.originalUrl?.includes('/api/v1/auth/session') ||
-      req.url?.includes('/api/v1/auth/session');
-    if (!isSessionEndpoint) {
-      return res.status(403).json({
-        error: 'Forbidden: You are not a member of an organization',
-        code: 'ORG_MEMBERSHIP_REQUIRED'
-      });
+    // Check if requestedOrgId exists and user has ownership or access
+    if (requestedOrgId) {
+      const accessCheck = store.checkUserOrgAccess(req.user.id, requestedOrgId, req.user.email);
+      if (accessCheck.hasAccess) {
+        const found = store.getOrganization(requestedOrgId);
+        if (found) userOrgs = [found];
+      }
     }
-    // Auto-bootstrap an isolated personal workspace for a newly authenticated user.
-    const userWorkspaceName = req.user.name ? `${req.user.name.split(' ')[0]}'s Workspace` : 'Primary Workspace';
-    const newOrg = store.createOrganization(userWorkspaceName, req.user.id, req.user.email, req.user.name);
-    req.orgId = newOrg.id;
-    req.userRole = 'OWNER';
-    return next();
+
+    if (userOrgs.length === 0) {
+      // Auto-bootstrap an isolated personal workspace for a newly authenticated user.
+      const userWorkspaceName = req.user.name ? `${req.user.name.split(' ')[0]}'s Workspace` : 'Primary Workspace';
+      const newOrg = store.createOrganization(userWorkspaceName, req.user.id, req.user.email, req.user.name);
+      userOrgs = [newOrg];
+    }
   }
 
   // Resolve target organization by stable canonical ID
   let targetOrg = requestedOrgId
-    ? userOrgs.find((o) => o.id === requestedOrgId)
+    ? userOrgs.find((o) => o.id === requestedOrgId || o.slug === requestedOrgId)
     : userOrgs[0];
 
   if (!targetOrg && requestedOrgId) {
-    // If not in userOrgs directly, check backend membership access for requestedOrgId
+    // Check backend membership access for requestedOrgId
     const accessCheck = store.checkUserOrgAccess(req.user.id, requestedOrgId, req.user.email);
     if (accessCheck.hasAccess) {
       targetOrg = store.getOrganization(requestedOrgId) || undefined;
     }
   }
 
-  // For /api/v1/auth/session, or if no specific org was requested,
-  // fall back to user's first valid organization for session establishment
-  const isSessionEndpoint =
-    req.path === '/api/v1/auth/session' ||
-    req.originalUrl?.includes('/api/v1/auth/session') ||
-    req.url?.includes('/api/v1/auth/session');
-  if (!targetOrg && (isSessionEndpoint || !requestedOrgId)) {
+  // If requested organization is invalid or inaccessible, fall back to user's first valid organization
+  if (!targetOrg && userOrgs.length > 0) {
     targetOrg = userOrgs[0];
   }
 

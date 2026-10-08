@@ -132,13 +132,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'security',
-      label: 'Security & Posture',
-      icon: <ShieldAlert className="w-4 h-4" />
+      label: 'Security Health',
+      icon: <ShieldCheck className="w-4 h-4" />
     },
     {
       id: 'audit',
-      label: 'Audit & Compliance',
-      icon: <Shield className="w-4 h-4" />
+      label: 'Activity & Audit Log',
+      icon: <Activity className="w-4 h-4" />
     },
     {
       id: 'settings',

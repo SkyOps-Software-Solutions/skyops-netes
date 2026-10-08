@@ -44,6 +44,14 @@ import { ServiceDetailModal } from '../resources/ServiceDetailModal';
 import { ClusterObservabilityView } from './ClusterObservabilityView';
 import { ClusterEventsView } from '../events/ClusterEventsView';
 import { ErrorBoundary } from '../common/ErrorBoundary';
+import { discoverNodeCloudMetadata } from '../../utils/cloudMetadata';
+import {
+  CloudProviderBadge,
+  RegionBadge,
+  InstanceTypeBadge,
+  NodeInfrastructureBadges,
+  ClusterInfrastructureBadges
+} from '../common/CloudProviderBadge';
 
 interface ClusterDetailViewProps {
   clusterId: string;
@@ -370,15 +378,42 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-bold text-zinc-100 font-mono">{cluster.name}</h1>
               <ClusterStatusBadge
                 status={cluster.status}
                 agentStatus={cluster.agentStatus}
                 isLastKnownState={cluster.isLastKnownState || cluster.agentStatus === 'OFFLINE' || cluster.connectionState === 'offline'}
               />
+              <ClusterInfrastructureBadges
+                provider={cluster.provider || cluster.infrastructure?.provider}
+                region={cluster.region || cluster.infrastructure?.region}
+                regions={cluster.regions || cluster.infrastructure?.regions}
+                zones={cluster.zones || cluster.infrastructure?.zones}
+                instanceTypes={cluster.instanceTypes || cluster.infrastructure?.instanceTypes}
+              />
             </div>
-            <div className="text-xs font-mono text-zinc-500 mt-0.5">{cluster.id}</div>
+            <div className="text-xs font-mono text-zinc-500 mt-0.5 flex items-center gap-2 flex-wrap">
+              <span>Cluster ID: <strong className="text-zinc-400 font-normal">{cluster.id}</strong></span>
+              {(cluster.provider || cluster.infrastructure?.provider) && (
+                <>
+                  <span className="text-zinc-700">•</span>
+                  <span>Hosting: <strong className="text-sky-300 font-normal">{cluster.provider || cluster.infrastructure?.provider}</strong></span>
+                </>
+              )}
+              {(cluster.region || cluster.infrastructure?.region) && (
+                <>
+                  <span className="text-zinc-700">•</span>
+                  <span>Region: <strong className="text-sky-400 font-normal">{cluster.region || cluster.infrastructure?.region}</strong></span>
+                </>
+              )}
+              {(cluster.zones?.length || cluster.infrastructure?.zones?.length) ? (
+                <>
+                  <span className="text-zinc-700">•</span>
+                  <span>AZ: <strong className="text-zinc-400 font-normal">{(cluster.zones || cluster.infrastructure?.zones || []).join(', ')}</strong></span>
+                </>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -543,7 +578,7 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
       ) : null}
 
       {/* Cluster Overview Stats Bar */}
-      <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 grid grid-cols-2 sm:grid-cols-5 gap-4 text-xs font-mono">
+      <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 text-xs font-mono">
         <div>
           <span className="text-zinc-500 block uppercase text-[10px]">Agent Status</span>
           <span className="text-zinc-200 font-semibold flex items-center gap-1.5 mt-1">
@@ -565,11 +600,21 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
         </div>
 
         <div>
-          <span className="text-zinc-500 block uppercase text-[10px]">Last Heartbeat</span>
-          <span className="text-zinc-200 font-semibold block mt-1 flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5 text-zinc-500" />
-            {formatTimeAgo(cluster.lastHeartbeat)}
-          </span>
+          <span className="text-zinc-500 block uppercase text-[10px]">Hosting & Cloud</span>
+          <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+            <CloudProviderBadge provider={cluster.provider || cluster.infrastructure?.provider} size="xs" />
+          </div>
+        </div>
+
+        <div>
+          <span className="text-zinc-500 block uppercase text-[10px]">Region & AZ</span>
+          <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+            <RegionBadge
+              region={cluster.region || cluster.infrastructure?.region}
+              zones={cluster.zones || cluster.infrastructure?.zones}
+              size="xs"
+            />
+          </div>
         </div>
 
         <div>
@@ -928,17 +973,34 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
                       (c) => c.type === 'DiskPressure' && (c.status === 'True' || (c.status as any) === true)
                     );
                     const nodePods = pods.filter((p) => p.nodeName === node.name);
+                    const nodeMeta = discoverNodeCloudMetadata(node, {
+                      provider: cluster.provider,
+                      region: cluster.region
+                    });
 
                     return (
                       <div
                         key={node.id}
                         onClick={() => setSelectedResource(node)}
-                        className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800/80 hover:border-zinc-700 cursor-pointer transition-colors space-y-1"
+                        className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800/80 hover:border-zinc-700 cursor-pointer transition-colors space-y-1.5"
                       >
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-zinc-200 truncate">{node.name}</span>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                            <span className="font-bold text-zinc-200 truncate">{node.name}</span>
+                            {nodeMeta.isControlPlane && (
+                              <span className="px-1 py-0.2 rounded text-[9px] font-mono bg-zinc-800 text-zinc-400 border border-zinc-700 shrink-0">
+                                CP
+                              </span>
+                            )}
+                            <NodeInfrastructureBadges
+                              provider={nodeMeta.provider !== 'Unknown' ? nodeMeta.provider : cluster.provider}
+                              region={nodeMeta.region !== 'Unknown' ? nodeMeta.region : cluster.region}
+                              zone={nodeMeta.zone !== 'Unknown' ? nodeMeta.zone : undefined}
+                              instanceType={nodeMeta.instanceType !== 'Unknown' ? nodeMeta.instanceType : undefined}
+                            />
+                          </div>
                           <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
                               isReady && !hasMemoryPressure && !hasDiskPressure
                                 ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
                                 : 'bg-amber-950 text-amber-300 border border-amber-800'
@@ -947,9 +1009,23 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
                             {isReady ? 'Ready' : node.status}
                           </span>
                         </div>
-                        <div className="flex items-center justify-between text-[10px] text-zinc-400">
-                          <span>{nodePods.length} Scheduled Pods</span>
-                          <span>
+                        <div className="flex items-center justify-between text-[10px] text-zinc-400 pt-0.5 border-t border-zinc-900">
+                          <div className="flex items-center gap-2 text-zinc-400 flex-wrap">
+                            <span>{nodePods.length} Scheduled Pods</span>
+                            {nodeMeta.instanceType && nodeMeta.instanceType !== 'Unknown' && (
+                              <>
+                                <span className="text-zinc-600">•</span>
+                                <span className="text-emerald-400 font-mono">{nodeMeta.instanceType}</span>
+                              </>
+                            )}
+                            {nodeMeta.zone && nodeMeta.zone !== 'Unknown' && (
+                              <>
+                                <span className="text-zinc-600">•</span>
+                                <span className="text-sky-400 font-mono">AZ: {nodeMeta.zone}</span>
+                              </>
+                            )}
+                          </div>
+                          <span className="shrink-0">
                             {hasMemoryPressure ? 'Mem Pressure' : hasDiskPressure ? 'Disk Pressure' : 'Healthy Spec'}
                           </span>
                         </div>
@@ -1233,6 +1309,9 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
                 <tr>
                   <th className="px-4 py-2.5">Node Name</th>
                   <th className="px-4 py-2.5">Status</th>
+                  <th className="px-4 py-2.5">Provider</th>
+                  <th className="px-4 py-2.5">Region / AZ</th>
+                  <th className="px-4 py-2.5">Instance Type</th>
                   <th className="px-4 py-2.5">Kubelet Version</th>
                   <th className="px-4 py-2.5">Allocatable Memory</th>
                   <th className="px-4 py-2.5">Allocatable CPU</th>
@@ -1242,7 +1321,7 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
               <tbody className="divide-y divide-zinc-800/60 text-zinc-300">
                 {getFilteredResources().length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-zinc-500 font-mono text-xs">
+                    <td colSpan={9} className="px-4 py-8 text-center text-zinc-500 font-mono text-xs">
                       No nodes found in this cluster.
                     </td>
                   </tr>
@@ -1251,13 +1330,27 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
                     const kubeletVer = (res.statusSummary?.kubeletVersion as string) || (res.specSummary?.kubeletVersion as string) || cluster.k8sVersion || 'Unavailable';
                     const allocMem = (res.statusSummary?.allocatable as any)?.memory || res.statusSummary?.allocatableMemory || (res.statusSummary?.capacity as any)?.memory || 'Unavailable';
                     const allocCpu = (res.statusSummary?.allocatable as any)?.cpu || res.statusSummary?.allocatableCpu || (res.statusSummary?.capacity as any)?.cpu || 'Unavailable';
+                    const nodeMeta = discoverNodeCloudMetadata(res, {
+                      provider: cluster.provider,
+                      region: cluster.region
+                    });
+
                     return (
                       <tr
                         key={res.id}
                         onClick={() => setSelectedResource(res)}
                         className="hover:bg-zinc-800/40 transition-colors cursor-pointer"
                       >
-                        <td className="px-4 py-3 font-semibold text-zinc-100">{res.name}</td>
+                        <td className="px-4 py-3 font-semibold text-zinc-100">
+                          <div className="flex items-center gap-1.5">
+                            <span>{res.name}</span>
+                            {nodeMeta.isControlPlane && (
+                              <span className="px-1 py-0.2 rounded text-[9px] font-mono bg-zinc-800 text-zinc-400 border border-zinc-700">
+                                CP
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-4 py-3">
                           <span className={`px-2 py-0.5 rounded text-[11px] ${
                             res.status === 'Ready'
@@ -1266,6 +1359,15 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
                           }`}>
                             {res.status}
                           </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <CloudProviderBadge provider={nodeMeta.provider !== 'Unknown' ? nodeMeta.provider : cluster.provider} size="xs" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <RegionBadge region={nodeMeta.region} zone={nodeMeta.zone} size="xs" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <InstanceTypeBadge instanceType={nodeMeta.instanceType} size="xs" />
                         </td>
                         <td className="px-4 py-3 text-zinc-400">
                           {kubeletVer}

@@ -82,7 +82,6 @@ app.use(
 
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   if (isProduction) {
@@ -534,6 +533,37 @@ app.post('/api/v1/invitations/accept', requireUserAuth, (req: AuthenticatedUserR
     res.json({ success: true, organization: result.org, role: result.role });
   } catch (err: any) {
     res.status(400).json({ error: err?.message || 'Failed to accept invitation' });
+  }
+});
+
+// --- In-App Direct User Invitations (Directly in-app, no email required) ---
+app.get('/api/v1/users/me/invitations', requireUserAuth, (req: AuthenticatedUserRequest, res: Response) => {
+  const invitations = store.getInvitationsForUser(req.user!.email);
+  res.json({ invitations });
+});
+
+app.post('/api/v1/users/me/invitations/:id/accept', requireUserAuth, (req: AuthenticatedUserRequest, res: Response) => {
+  try {
+    const result = store.acceptInvitationById(req.params.id, {
+      id: req.user!.id,
+      email: req.user!.email,
+      name: req.user!.name || req.user!.email
+    });
+    res.json({ success: true, organization: result.org, role: result.role });
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Failed to accept invitation' });
+  }
+});
+
+app.post('/api/v1/users/me/invitations/:id/decline', requireUserAuth, (req: AuthenticatedUserRequest, res: Response) => {
+  try {
+    store.declineInvitationById(req.params.id, {
+      id: req.user!.id,
+      email: req.user!.email
+    });
+    res.json({ success: true, message: 'Invitation declined' });
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Failed to decline invitation' });
   }
 });
 

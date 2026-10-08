@@ -21,7 +21,6 @@ import { NavigationTab, Sidebar } from './Sidebar';
 import { Footer } from './Footer';
 import { DocTopic, KnowledgeBaseModal } from '../docs/KnowledgeBaseModal';
 import { BrandLogo } from '../common/BrandLogo';
-import { PendingInvitationsBanner } from '../invitations/PendingInvitationsBanner';
 
 interface AppShellProps {
   initialOpenAddCluster?: boolean;
@@ -295,7 +294,6 @@ export const AppShell: React.FC<AppShellProps> = ({
             </span>
           </div>
         </header>
-        <PendingInvitationsBanner />
 
         {/* View Routing */}
         <div className="flex-1">

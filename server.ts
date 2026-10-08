@@ -76,7 +76,8 @@ app.use(
       : true,
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-org-id', 'x-request-id', 'x-skyops-agent-version']
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-org-id', 'x-request-id', 'x-skyops-agent-version'],
+    exposedHeaders: ['x-active-org-id', 'x-request-id']
   })
 );
 

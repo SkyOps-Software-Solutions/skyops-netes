@@ -198,35 +198,64 @@ class ApiClient {
       }
     }
 
-    const text = await res.text();
-    let data: any;
-
-    if (text.trim().startsWith('<') || text.includes('<!DOCTYPE') || text.includes('<!doctype')) {
-      if (!res.ok) {
-        throw new Error(`API error (${res.status} ${res.statusText})`);
+    // Automatically sync active organization header from backend if returned
+    const serverActiveOrg = res.headers.get('x-active-org-id');
+    if (serverActiveOrg && serverActiveOrg !== 'undefined' && serverActiveOrg !== 'null') {
+      const localOrg = localStorage.getItem('skyops_active_org_id');
+      if (localOrg !== serverActiveOrg) {
+        localStorage.setItem('skyops_active_org_id', serverActiveOrg);
       }
-      throw new Error(`Received unexpected HTML response from ${url}`);
     }
 
+    const text = await res.text();
+    let data: any = null;
+
     try {
-      data = text ? JSON.parse(text) : {};
-    } catch {
-      if (!res.ok) {
-        throw new Error(`API error (${res.status} ${res.statusText})`);
+      if (text && !text.trim().startsWith('<') && !text.includes('<!DOCTYPE')) {
+        data = JSON.parse(text);
       }
-      throw new Error(`Malformed JSON response from ${url}`);
+    } catch {
+      data = null;
+    }
+
+    // Handle 403 ORG_ACCESS_DENIED due to stale localStorage org ID:
+    // Clear the stale ID and retry once with no header so server resolves authoritative org
+    if (
+      res.status === 403 &&
+      !(options as any)?._isOrgRetry &&
+      headers['x-org-id'] &&
+      (data?.code === 'ORG_ACCESS_DENIED' || /access to this organization|not authorized/i.test(data?.error || text || ''))
+    ) {
+      console.warn('[SkyOps API] Stale organization detected in local storage. Clearing and retrying with primary workspace...');
+      localStorage.removeItem('skyops_active_org_id');
+      const retryHeaders = { ...headers };
+      delete retryHeaders['x-org-id'];
+      return this.request<T>(url, {
+        ...options,
+        headers: retryHeaders,
+        ...({ _isOrgRetry: true } as any)
+      });
     }
 
     if (!res.ok) {
-      const errMsg = data?.error || `API request failed with status ${res.status}`;
+      const errMsg =
+        data?.error ||
+        (text && !text.trim().startsWith('<') && text.length < 300 ? text : null) ||
+        (res.status === 403
+          ? 'Access denied to this workspace resource (HTTP 403 Forbidden)'
+          : `API request failed with status ${res.status} (${res.statusText || 'Error'})`);
       const err = new Error(errMsg) as any;
       err.status = res.status;
-      err.code = data?.code;
+      err.code = data?.code || (res.status === 403 ? 'FORBIDDEN' : 'API_ERROR');
       err.data = data;
       throw err;
     }
 
-    return data as T;
+    if (text.trim().startsWith('<') || text.includes('<!DOCTYPE') || text.includes('<!doctype')) {
+      throw new Error(`Received unexpected HTML response from ${url}`);
+    }
+
+    return (data ?? {}) as T;
   }
 
   // --- Auth & Session ---

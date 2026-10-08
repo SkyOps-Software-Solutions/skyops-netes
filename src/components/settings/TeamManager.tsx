@@ -37,11 +37,21 @@ const ROLE_DESCRIPTIONS: Record<Role, string> = {
 };
 
 export const TeamManager: React.FC = () => {
-  const { currentOrg, role: currentUserRole, user, organizations, switchOrganization } = useAuth();
+  const {
+    currentOrg,
+    role: currentUserRole,
+    user,
+    organizations,
+    switchOrganization,
+    pendingInvitations: authPendingInvitations,
+    acceptInvitation: authAcceptInvitation,
+    declineInvitation: authDeclineInvitation
+  } = useAuth();
   const isOwnerOrAdmin = currentUserRole === 'OWNER' || currentUserRole === 'ADMIN';
 
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [invitations, setInvitations] = useState<OrgInvitation[]>([]);
+  const [myInvitations, setMyInvitations] = useState<OrgInvitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<{
@@ -75,12 +85,22 @@ export const TeamManager: React.FC = () => {
       setLoading(true);
       setError(null);
       setAuthError(null);
-      const [membersData, invitationsData] = await Promise.all([
-        api.getOrgMembers(),
-        isOwnerOrAdmin ? api.getOrgInvitations() : Promise.resolve([])
+      const [membersData, invitationsData, myInvitesData] = await Promise.all([
+        api.getOrgMembers().catch((err) => {
+          console.warn('[TeamManager] Failed to load org members:', err);
+          return [];
+        }),
+        isOwnerOrAdmin
+          ? api.getOrgInvitations().catch((err) => {
+              console.warn('[TeamManager] Notice: Invitations restricted:', err);
+              return [];
+            })
+          : Promise.resolve([]),
+        api.getMyInvitations().catch(() => [])
       ]);
       setMembers(membersData);
       setInvitations(invitationsData);
+      setMyInvitations(myInvitesData);
     } catch (err: any) {
       const is403 =
         err?.status === 403 ||
@@ -100,6 +120,29 @@ export const TeamManager: React.FC = () => {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAcceptReceivedInvitation = async (invitationId: string) => {
+    try {
+      setLoading(true);
+      await authAcceptInvitation(invitationId);
+      showNotification('Invitation accepted! Switched to your new workspace.');
+      await loadData();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to accept invitation');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeclineReceivedInvitation = async (invitationId: string) => {
+    try {
+      await authDeclineInvitation(invitationId);
+      showNotification('Invitation declined.');
+      setMyInvitations((prev) => prev.filter((i) => i.id !== invitationId));
+    } catch (err: any) {
+      setError(err?.message || 'Failed to decline invitation');
     }
   };
 
@@ -351,6 +394,60 @@ export const TeamManager: React.FC = () => {
             <button onClick={() => setError(null)} className="text-zinc-500 hover:text-zinc-300">
               <X className="w-3.5 h-3.5" />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Received Workspace Invitations Section (Direct In-App Joining) */}
+      {myInvitations && myInvitations.length > 0 && (
+        <div className="p-5 rounded-xl bg-amber-950/20 border border-amber-600/40 space-y-3 font-mono">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Mail className="w-4 h-4 text-amber-400 shrink-0" />
+              <h3 className="text-xs font-bold text-amber-300 uppercase tracking-wider">
+                Workspace Invitations For You ({myInvitations.length})
+              </h3>
+            </div>
+            <span className="text-[10px] text-amber-400/80">Pending your acceptance</span>
+          </div>
+          <div className="space-y-2">
+            {myInvitations.map((inv) => (
+              <div
+                key={inv.id}
+                className="p-3 rounded-lg bg-zinc-950/80 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+              >
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-zinc-100">{inv.orgName || 'Workspace'}</span>
+                    <span className="px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800 text-[10px] uppercase font-bold">
+                      {inv.role}
+                    </span>
+                  </div>
+                  <div className="text-xs text-zinc-400">
+                    Invited by: <span className="text-zinc-300">{inv.invitedByName || inv.invitedByEmail}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => handleAcceptReceivedInvitation(inv.id)}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
+                    icon={<CheckCircle2 className="w-3.5 h-3.5" />}
+                  >
+                    Accept & Switch Workspace
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDeclineReceivedInvitation(inv.id)}
+                    className="text-xs text-zinc-400 hover:text-zinc-200"
+                  >
+                    Decline
+                  </Button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

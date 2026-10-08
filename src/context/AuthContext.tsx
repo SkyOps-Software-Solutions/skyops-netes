@@ -11,7 +11,7 @@ import {
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { auth, googleProvider, resolvedFirebaseConfig } from '../firebase';
-import { Organization, OrgMember, Role, User } from '../types/index';
+import { Organization, OrgInvitation, OrgMember, Role, User } from '../types/index';
 
 interface AuthContextType {
   user: User | null;
@@ -20,6 +20,7 @@ interface AuthContextType {
   organizations: Organization[];
   role: Role;
   members: OrgMember[];
+  pendingInvitations: OrgInvitation[];
   loading: boolean;
   error: string | null;
   isAuthenticated: boolean;
@@ -31,6 +32,9 @@ interface AuthContextType {
   switchOrganization: (orgId: string) => Promise<void>;
   createOrganization: (name: string) => Promise<Organization>;
   refreshSession: () => Promise<void>;
+  refreshPendingInvitations: () => Promise<void>;
+  acceptInvitation: (invitationId: string) => Promise<void>;
+  declineInvitation: (invitationId: string) => Promise<void>;
   canManageClusters: boolean;
   canEditIncidents: boolean;
   canDeleteClusters: boolean;
@@ -55,6 +59,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentOrg, setCurrentOrg] = useState<Organization | null>(null);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [members, setMembers] = useState<OrgMember[]>([]);
+  const [pendingInvitations, setPendingInvitations] = useState<OrgInvitation[]>([]);
   const [role, setRole] = useState<Role>('OWNER');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,12 +72,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       role?: Role;
     }
   ) => {
-    // Profiles and organization roles are server-owned.  Firebase Auth is the
-    // only browser-side identity write; session establishment creates/updates
-    // the control-plane profile after verifying the ID token.  Keeping role
-    // data out of Firestore client writes prevents privilege escalation.
     void fbUser;
     void options;
+  };
+
+  const refreshPendingInvitations = async () => {
+    try {
+      const invites = await api.getMyInvitations();
+      setPendingInvitations(invites || []);
+    } catch {
+      // Gracefully catch background invitation lookup
+    }
   };
 
   const refreshSession = async () => {
@@ -86,9 +96,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setMembers(session.members || []);
         setRole(session.role || 'OWNER');
       }
+      await refreshPendingInvitations();
     } catch (err: any) {
       console.warn('Session refresh notice:', err?.message || err);
-      // If unauthorized or network error, keep current state or let onAuthStateChanged manage it
+      if (err?.status === 403 || err?.code === 'ORG_ACCESS_DENIED') {
+        localStorage.removeItem('skyops_active_org_id');
+        try {
+          const retrySession = await api.getSession();
+          if (retrySession && retrySession.user) {
+            setUser(retrySession.user);
+            setCurrentOrg(retrySession.currentOrg || null);
+            setOrganizations(retrySession.organizations || []);
+            setMembers(retrySession.members || []);
+            setRole(retrySession.role || 'OWNER');
+          }
+        } catch {
+          // Keep current state
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -306,6 +331,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return newOrg;
   };
 
+  const acceptInvitation = async (invitationId: string) => {
+    const res = await api.acceptMyInvitation(invitationId);
+    if (res.organization?.id) {
+      localStorage.setItem('skyops_active_org_id', res.organization.id);
+    }
+    await refreshSession();
+    await refreshPendingInvitations();
+  };
+
+  const declineInvitation = async (invitationId: string) => {
+    await api.declineMyInvitation(invitationId);
+    setPendingInvitations((prev) => prev.filter((i) => i.id !== invitationId));
+  };
+
   const isAuthenticated = !!firebaseUser || !!user;
   const canManageClusters = role === 'OWNER' || role === 'ADMIN' || role === 'SRE' || role === 'OPERATOR';
   const canDeleteClusters = role === 'OWNER' || role === 'ADMIN';
@@ -331,6 +370,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         organizations,
         role,
         members,
+        pendingInvitations,
         loading,
         error,
         isAuthenticated,
@@ -342,6 +382,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         switchOrganization,
         createOrganization,
         refreshSession,
+        refreshPendingInvitations,
+        acceptInvitation,
+        declineInvitation,
         canManageClusters,
         canEditIncidents,
         canDeleteClusters,

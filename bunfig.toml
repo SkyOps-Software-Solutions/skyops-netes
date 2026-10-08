@@ -1,4 +1,0 @@
-[install]
-backend = "copyfile"
-network-concurrency = 8
-prefer-offline = true

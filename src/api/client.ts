@@ -707,6 +707,169 @@ class ApiClient {
     return await this.request<PodLogsResponse>(url);
   }
 
+  // --- Production Kubernetes Logs Management Module ---
+  async getLogStats(clusterId?: string): Promise<LogOverviewStats> {
+    const query = clusterId ? `?clusterId=${encodeURIComponent(clusterId)}` : '';
+    return this.request<LogOverviewStats>(`/api/v1/logs/stats${query}`);
+  }
+
+  async getLogWorkloads(clusterId?: string, namespace?: string): Promise<{ workloads: WorkloadLogSummary[] }> {
+    const params = new URLSearchParams();
+    if (clusterId) params.set('clusterId', clusterId);
+    if (namespace && namespace !== 'all') params.set('namespace', namespace);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request<{ workloads: WorkloadLogSummary[] }>(`/api/v1/logs/workloads${qs}`);
+  }
+
+  async searchLogs(filter: LogQueryFilter): Promise<LogSearchResult> {
+    const params = new URLSearchParams();
+    if (filter.clusterId) params.set('clusterId', filter.clusterId);
+    if (filter.namespace && filter.namespace !== 'all') params.set('namespace', filter.namespace);
+    if (filter.workload && filter.workload !== 'all') params.set('workload', filter.workload);
+    if (filter.podName && filter.podName !== 'all') params.set('podName', filter.podName);
+    if (filter.container && filter.container !== 'all') params.set('container', filter.container);
+    if (filter.nodeName && filter.nodeName !== 'all') params.set('nodeName', filter.nodeName);
+    if (filter.severity && filter.severity !== 'ALL') params.set('severity', filter.severity);
+    if (filter.search) params.set('search', filter.search);
+    if (filter.sinceSeconds) params.set('sinceSeconds', String(filter.sinceSeconds));
+    if (filter.startTimeMs) params.set('startTimeMs', String(filter.startTimeMs));
+    if (filter.endTimeMs) params.set('endTimeMs', String(filter.endTimeMs));
+    if (filter.previous) params.set('previous', 'true');
+    if (filter.limit) params.set('limit', String(filter.limit));
+    if (filter.offset) params.set('offset', String(filter.offset));
+
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request<LogSearchResult>(`/api/v1/logs/search${qs}`);
+  }
+
+  async getLogErrorSpikes(clusterId?: string): Promise<{ spikes: ErrorSpike[] }> {
+    const query = clusterId ? `?clusterId=${encodeURIComponent(clusterId)}` : '';
+    return this.request<{ spikes: ErrorSpike[] }>(`/api/v1/logs/spikes${query}`);
+  }
+
+  async compareDeployments(workload: string, namespace?: string): Promise<DeploymentLogComparison> {
+    return this.request<DeploymentLogComparison>('/api/v1/logs/deployment-comparison', {
+      method: 'POST',
+      body: JSON.stringify({ workload, namespace })
+    });
+  }
+
+  async getLogAlertRules(): Promise<LogAlertRule[]> {
+    const data = await this.request<{ rules: LogAlertRule[] }>('/api/v1/logs/alerts');
+    return data.rules || [];
+  }
+
+  async createLogAlertRule(data: Partial<LogAlertRule>): Promise<LogAlertRule> {
+    const res = await this.request<{ rule: LogAlertRule }>('/api/v1/logs/alerts', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    return res.rule;
+  }
+
+  async updateLogAlertRule(id: string, data: Partial<LogAlertRule>): Promise<LogAlertRule> {
+    const res = await this.request<{ rule: LogAlertRule }>(`/api/v1/logs/alerts/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data)
+    });
+    return res.rule;
+  }
+
+  async deleteLogAlertRule(id: string): Promise<boolean> {
+    await this.request<{ success: boolean }>(`/api/v1/logs/alerts/${id}`, {
+      method: 'DELETE'
+    });
+    return true;
+  }
+
+  async getLogAlertEvents(limit = 50): Promise<LogAlertTriggerEvent[]> {
+    const data = await this.request<{ events: LogAlertTriggerEvent[] }>(`/api/v1/logs/alerts/events?limit=${limit}`);
+    return data.events || [];
+  }
+
+  async getLogCollectionRules(): Promise<LogCollectionRule[]> {
+    const data = await this.request<{ rules: LogCollectionRule[] }>('/api/v1/logs/collection-rules');
+    return data.rules || [];
+  }
+
+  async createLogCollectionRule(data: Partial<LogCollectionRule>): Promise<LogCollectionRule> {
+    const res = await this.request<{ rule: LogCollectionRule }>('/api/v1/logs/collection-rules', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    return res.rule;
+  }
+
+  async updateLogCollectionRule(id: string, data: Partial<LogCollectionRule>): Promise<LogCollectionRule> {
+    const res = await this.request<{ rule: LogCollectionRule }>(`/api/v1/logs/collection-rules/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data)
+    });
+    return res.rule;
+  }
+
+  async deleteLogCollectionRule(id: string): Promise<boolean> {
+    await this.request<{ success: boolean }>(`/api/v1/logs/collection-rules/${id}`, {
+      method: 'DELETE'
+    });
+    return true;
+  }
+
+  async getSavedLogSearches(): Promise<SavedLogSearch[]> {
+    const data = await this.request<{ searches: SavedLogSearch[] }>('/api/v1/logs/saved-searches');
+    return data.searches || [];
+  }
+
+  async createSavedLogSearch(data: Partial<SavedLogSearch>): Promise<SavedLogSearch> {
+    const res = await this.request<{ search: SavedLogSearch }>('/api/v1/logs/saved-searches', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    return res.search;
+  }
+
+  async deleteSavedLogSearch(id: string): Promise<boolean> {
+    await this.request<{ success: boolean }>(`/api/v1/logs/saved-searches/${id}`, {
+      method: 'DELETE'
+    });
+    return true;
+  }
+
+  async createIncidentFromLogs(data: {
+    clusterId: string;
+    workload: string;
+    namespace: string;
+    errorPattern: string;
+    occurrences: number;
+    timeWindow: string;
+    sampleLines: string[];
+  }): Promise<{ success: boolean; incident: any }> {
+    return this.request<{ success: boolean; incident: any }>('/api/v1/logs/incidents/create', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async exportLogs(
+    format: 'txt' | 'json' | 'csv',
+    filter: LogQueryFilter
+  ): Promise<{ data: string; filename: string }> {
+    const dynamicHeaders = await this.getHeaders();
+    const res = await fetch('/api/v1/logs/export', {
+      method: 'POST',
+      headers: { ...dynamicHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ format, ...filter })
+    });
+    if (!res.ok) {
+      throw new Error(`Export failed with HTTP status ${res.status}`);
+    }
+    const text = await res.text();
+    const disposition = res.headers.get('content-disposition') || '';
+    const filenameMatch = disposition.match(/filename="?([^";]+)"?/);
+    const filename = filenameMatch ? filenameMatch[1] : `logs-export.${format}`;
+    return { data: text, filename };
+  }
+
   // --- Incidents ---
   async getIncidents(filters?: {
     status?: IncidentStatus;

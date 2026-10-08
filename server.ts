@@ -56,6 +56,7 @@ import { billingService } from './server/billing/billingService';
 import { getBillingConfig } from './server/billing/provider';
 import { PLANS, BILLING_INTERVALS, DEFAULT_TRIAL_DAYS } from './src/config/plans';
 import { storageRouter } from './server/storageRoutes';
+import { logRouter } from './server/logs/logRoutes';
 import { CostEngine } from './server/cost/costEngine';
 import { SecurityEngine } from './server/security/securityEngine';
 import { ROLE_PERMISSIONS } from './server/auth';
@@ -95,6 +96,7 @@ app.use(correlationIdMiddleware);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(storageRouter);
+app.use('/api/v1/logs', logRouter);
 app.use(express.static(path.join(process.cwd(), 'public')));
 
 // Explicit brand logo and browser favicon endpoints

@@ -7,6 +7,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { DocTopic, KnowledgeBaseModal } from '../docs/KnowledgeBaseModal';
 import { api } from '../../api/client';
+import { PWAInstallButton } from '../common/PWAInstallButton';
+import { BrandLogo } from '../common/BrandLogo';
 
 interface LandingPageProps {
   onSignIn: () => void;
@@ -719,13 +721,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
           user-select: none;
         }
 
-        .skyops-logo i {
-          width: 14px;
-          height: 14px;
-          background: var(--blue);
-          transform: rotate(45deg);
-          box-shadow: 0 0 14px var(--blue);
-          display: inline-block;
+        .skyops-logo img {
+          width: 28px;
+          height: 28px;
+          object-fit: contain;
+          border-radius: 6px;
         }
 
         nav.skyops-nav a,
@@ -1187,8 +1187,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
       {/* Top Navigation */}
       <nav id="nav" ref={navRef} className="skyops-nav">
         <div className="skyops-logo" onClick={() => scrollToSection(0)} style={{ cursor: 'pointer' }}>
-          <i />
-          SkyOps
+          <BrandLogo size="md" className="rounded-md" priority />
+          <span>SkyOps</span>
         </div>
         <div className="skyops-links">
           <button className="nav-link" onClick={() => scrollToSection(1)}>Platform</button>
@@ -1197,6 +1197,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
           <button className="nav-link" onClick={() => scrollToSection(7)}>Security</button>
           <button className="nav-link" onClick={() => { setActiveDocTopic('quickstart'); setIsDocModalOpen(true); }}>Docs</button>
         </div>
+        <PWAInstallButton />
         <button className="nav-link" onClick={onSignIn}>Sign in</button>
         <button
           className="btn"

@@ -72,6 +72,36 @@ export const ClustersView: React.FC<ClustersViewProps> = ({
 
   // Hierarchy Data from API
   const [hierarchyGroups, setHierarchyGroups] = useState<ClusterHierarchyGroup[]>([]);
+  const [healingClusterId, setHealingClusterId] = useState<string | null>(null);
+  const [autoHealNotice, setAutoHealNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const handleAutoHealCluster = async (cluster: Cluster, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      setHealingClusterId(cluster.id);
+      setAutoHealNotice(null);
+      const res = await api.autoHealCluster(cluster.id);
+      setAutoHealNotice({
+        type: 'success',
+        message: res.message || `Cluster ${cluster.displayName || cluster.name}: auto-healed ${res.healed} of ${res.total} incidents.`
+      });
+      if (healthModalCluster && healthModalCluster.id === cluster.id) {
+        const updatedHealth = await api.getClusterHealth(cluster.id);
+        if (updatedHealth?.health) {
+          setHealthSummary(updatedHealth.health);
+        }
+      }
+      onRefresh();
+    } catch (err: any) {
+      console.error('Failed to auto-heal cluster:', err);
+      setAutoHealNotice({
+        type: 'error',
+        message: err?.message || 'Failed to auto-heal cluster incidents'
+      });
+    } finally {
+      setHealingClusterId(null);
+    }
+  };
 
   useEffect(() => {
     const fetchHierarchy = async () => {
@@ -214,6 +244,32 @@ export const ClustersView: React.FC<ClustersViewProps> = ({
         </div>
       </div>
 
+      {/* Auto-Heal Result Notice */}
+      {autoHealNotice && (
+        <div
+          className={`p-3 text-xs rounded-xl font-mono flex items-center justify-between border ${
+            autoHealNotice.type === 'success'
+              ? 'bg-emerald-950/60 border-emerald-700/60 text-emerald-300'
+              : 'bg-rose-950/60 border-rose-800 text-rose-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {autoHealNotice.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            )}
+            <span>{autoHealNotice.message}</span>
+          </div>
+          <button
+            onClick={() => setAutoHealNotice(null)}
+            className="text-zinc-400 hover:text-zinc-200 ml-3 cursor-pointer"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
       {/* Filter / Search Bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
         <div className="relative flex-1 max-w-md">
@@ -337,13 +393,30 @@ export const ClustersView: React.FC<ClustersViewProps> = ({
                               </div>
 
                               <div className="flex items-center justify-between pt-1">
-                                <button
-                                  onClick={(e) => handleOpenHealthModal(cluster, e)}
-                                  className="text-xs font-mono text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer transition-colors"
-                                >
-                                  <HeartPulse className="w-3.5 h-3.5 text-sky-400" />
-                                  <span>Cluster Health</span>
-                                </button>
+                                <div className="flex items-center gap-3">
+                                  <button
+                                    onClick={(e) => handleOpenHealthModal(cluster, e)}
+                                    className="text-xs font-mono text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer transition-colors"
+                                  >
+                                    <HeartPulse className="w-3.5 h-3.5 text-sky-400" />
+                                    <span>Cluster Health</span>
+                                  </button>
+                                  {cluster.openIncidentCount > 0 && (
+                                    <button
+                                      onClick={(e) => handleAutoHealCluster(cluster, e)}
+                                      disabled={healingClusterId === cluster.id}
+                                      className="text-xs font-mono text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer transition-colors font-bold"
+                                      title="Auto-heal all active incidents on this cluster"
+                                    >
+                                      {healingClusterId === cluster.id ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-300" />
+                                      ) : (
+                                        <Zap className="w-3.5 h-3.5 text-amber-300" />
+                                      )}
+                                      <span>{healingClusterId === cluster.id ? 'Healing...' : 'Auto-Heal'}</span>
+                                    </button>
+                                  )}
+                                </div>
 
                                 <span className="text-xs font-mono text-zinc-500 group-hover:text-zinc-300 transition-colors flex items-center gap-1">
                                   Manage <ArrowRight className="w-3 h-3" />
@@ -465,6 +538,21 @@ export const ClustersView: React.FC<ClustersViewProps> = ({
 
                         <td className="px-5 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-2">
+                            {cluster.openIncidentCount > 0 && (
+                              <button
+                                onClick={(e) => handleAutoHealCluster(cluster, e)}
+                                disabled={healingClusterId === cluster.id}
+                                className="px-2 py-1 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 text-emerald-300 rounded text-xs transition-colors cursor-pointer flex items-center gap-1 font-mono font-bold"
+                                title="Auto-heal all active incidents on this cluster"
+                              >
+                                {healingClusterId === cluster.id ? (
+                                  <Loader2 className="w-3 h-3 animate-spin text-emerald-300" />
+                                ) : (
+                                  <Zap className="w-3 h-3 text-amber-300" />
+                                )}
+                                <span>Auto-Heal</span>
+                              </button>
+                            )}
                             <button
                               onClick={(e) => handleOpenHealthModal(cluster, e)}
                               className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 text-sky-400 rounded text-xs transition-colors cursor-pointer"
@@ -617,6 +705,19 @@ export const ClustersView: React.FC<ClustersViewProps> = ({
               >
                 Close
               </Button>
+              {((healthSummary?.activeIncidents ?? 0) > 0 || healthModalCluster.openIncidentCount > 0) && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => handleAutoHealCluster(healthModalCluster)}
+                  disabled={healingClusterId === healthModalCluster.id}
+                  icon={<Zap className={`w-3.5 h-3.5 text-amber-300 ${healingClusterId === healthModalCluster.id ? 'animate-bounce' : ''}`} />}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold"
+                  title="Auto-heal all active incidents on this cluster"
+                >
+                  {healingClusterId === healthModalCluster.id ? 'Healing Cluster...' : '⚡ Auto-Heal Cluster'}
+                </Button>
+              )}
               <Button
                 variant="primary"
                 size="sm"

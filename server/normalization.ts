@@ -1,5 +1,6 @@
 import { ConditionDiagnostic, ContainerDiagnostic, K8sEvent, KubernetesResource } from '../src/types/index';
 import { buildPodResourceMetrics } from './metrics';
+import { discoverNodeCloudMetadata } from './cloudMetadata';
 
 type RecordValue = Record<string, unknown>;
 const FAILURE_WAITING = new Set(['ErrImagePull', 'ImagePullBackOff', 'InvalidImageName', 'CreateContainerConfigError', 'CreateContainerError', 'CrashLoopBackOff']);
@@ -229,7 +230,10 @@ export function normalizeResource(value: unknown, authenticatedClusterId: string
     updatedAt: now,
     observedAt,
     ingestedAt: now,
-    specSummary: spec,
+    specSummary: kind === 'Node' ? {
+      ...spec,
+      providerID: asString(spec.providerID) || asString(target.providerID) || asString(asObject(target.spec).providerID) || asString(asObject(target.specSummary).providerID) || undefined
+    } : spec,
     statusSummary: status,
     conditions,
     containers,
@@ -267,6 +271,8 @@ export function normalizeResource(value: unknown, authenticatedClusterId: string
 
   if (kind === 'Pod') {
     res.metrics = buildPodResourceMetrics(res, now);
+  } else if (kind === 'Node') {
+    (res as any).cloudMetadata = discoverNodeCloudMetadata(res);
   }
 
   return res;

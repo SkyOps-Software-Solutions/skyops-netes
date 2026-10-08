@@ -1,4 +1,5 @@
 export * from './k8s';
+export * from '../utils/cloudMetadata';
 
 export type Role =
   | 'OWNER'
@@ -228,6 +229,8 @@ export interface OrgBillingOverview {
 }
 
 export interface OrgMember {
+  id?: string;
+  membershipId?: string;
   userId: string;
   orgId?: string;
   email: string;
@@ -373,6 +376,10 @@ export interface Cluster {
   agentOfflineSince?: number;
   disconnectedAt?: number;
   reconnectedAt?: number;
+  infrastructure?: ClusterCloudMetadata;
+  regions?: string[];
+  zones?: string[];
+  instanceTypes?: string[];
 }
 
 export type IncidentSeverity = 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';

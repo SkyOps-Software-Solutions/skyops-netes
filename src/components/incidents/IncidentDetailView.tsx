@@ -33,6 +33,8 @@ import {
   User,
   UserCheck,
   Zap,
+  X,
+  Loader2,
   History,
   Network,
   GitBranch,
@@ -56,7 +58,7 @@ import {
 import { formatIncidentDetectedDateTime, formatTimeAgo } from '../../utils/date';
 import { generateIncidentPdf, getPriorityLabel } from '../../utils/incidentPdfGenerator';
 import { ProvenanceBadge, SeverityBadge, StatusBadge } from '../common/Badges';
-import { Button, CopyButton, EmptyState, LoadingState } from '../common/UI';
+import { Button, CopyButton, EmptyState, LoadingState, Modal } from '../common/UI';
 import { ArchitecturalFaultTopology } from './ArchitecturalFaultTopology';
 import { IncidentEvidenceSection } from './IncidentEvidenceSection';
 import { IncidentRemediationCard } from './IncidentRemediationCard';
@@ -95,6 +97,14 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [pdfSuccess, setPdfSuccess] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+
+  // Auto-Healing & Safe Modal States
+  const [isAutoHealing, setIsAutoHealing] = useState(false);
+  const [isAutoHealingCluster, setIsAutoHealingCluster] = useState(false);
+  const [autoHealMessage, setAutoHealMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isResolveModalOpen, setIsResolveModalOpen] = useState(false);
+  const [resolutionNote, setResolutionNote] = useState('');
 
   // PROMPT 2: Drawers & Modals State
   const [isWhatChangedOpen, setIsWhatChangedOpen] = useState<boolean>(false);
@@ -191,12 +201,17 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
     }
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!incident || !canEditIncidents) return;
-    if (!window.confirm(`Are you sure you want to delete incident ticket ${incident.id}?`)) return;
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!incident || !canEditIncidents) return;
     try {
       setIsDeleting(true);
       await api.deleteIncident(incident.id);
+      setIsDeleteModalOpen(false);
       onBack();
     } catch (err) {
       console.error('Failed to delete incident:', err);
@@ -206,21 +221,15 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
 
   const handleStatusChange = async (newStatus: IncidentStatus) => {
     if (!incident || !canEditIncidents) return;
+    if (newStatus === 'RESOLVED') {
+      setIsResolveModalOpen(true);
+      return;
+    }
     try {
       setStatusUpdateLoading(true);
       setStatusError(null);
-      let resolutionReason: string | undefined = undefined;
-      if (newStatus === 'RESOLVED') {
-        const inputReason = window.prompt(
-          'Enter an optional resolution note or reason for manually marking this incident resolved:'
-        );
-        if (inputReason !== null) {
-          resolutionReason = inputReason.trim() || undefined;
-        }
-      }
       const updated = await api.updateIncident(incident.id, {
-        status: newStatus,
-        resolutionReason
+        status: newStatus
       });
       setIncident(updated);
       const updatedData = await api.getIncident(incident.id);
@@ -230,6 +239,76 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
       setStatusError(err?.message || 'Failed to update incident status');
     } finally {
       setStatusUpdateLoading(false);
+    }
+  };
+
+  const confirmResolve = async () => {
+    if (!incident || !canEditIncidents) return;
+    try {
+      setStatusUpdateLoading(true);
+      setStatusError(null);
+      const updated = await api.updateIncident(incident.id, {
+        status: 'RESOLVED',
+        resolutionReason: resolutionNote.trim() || undefined
+      });
+      setIncident(updated);
+      setIsResolveModalOpen(false);
+      setResolutionNote('');
+      const updatedData = await api.getIncident(incident.id);
+      setTimeline(updatedData.timeline);
+    } catch (err: any) {
+      console.error('Failed to resolve incident:', err);
+      setStatusError(err?.message || 'Failed to resolve incident');
+    } finally {
+      setStatusUpdateLoading(false);
+    }
+  };
+
+  const handleAutoHealThisIncident = async () => {
+    if (!incident) return;
+    try {
+      setIsAutoHealing(true);
+      setAutoHealMessage(null);
+      const res = await api.autoHealIncident(incident.id);
+      setIncident(res.incident);
+      if (res.remediation) {
+        setRemediation(res.remediation);
+      }
+      setAutoHealMessage({
+        type: 'success',
+        text: `Incident ${incident.id} auto-healed and verified successfully! Telemetry restored to Healthy.`
+      });
+      await fetchIncidentData();
+    } catch (err: any) {
+      console.error('Failed to auto-heal incident:', err);
+      setAutoHealMessage({
+        type: 'error',
+        text: err?.message || 'Failed to auto-heal incident'
+      });
+    } finally {
+      setIsAutoHealing(false);
+    }
+  };
+
+  const handleAutoHealCluster = async () => {
+    if (!incident?.clusterId) return;
+    try {
+      setIsAutoHealingCluster(true);
+      setAutoHealMessage(null);
+      const res = await api.autoHealCluster(incident.clusterId);
+      setAutoHealMessage({
+        type: 'success',
+        text: res.message || `Cluster auto-healed: ${res.healed} of ${res.total} incidents resolved.`
+      });
+      await fetchIncidentData();
+    } catch (err: any) {
+      console.error('Failed to auto-heal cluster incidents:', err);
+      setAutoHealMessage({
+        type: 'error',
+        text: err?.message || 'Failed to auto-heal cluster incidents'
+      });
+    } finally {
+      setIsAutoHealingCluster(false);
     }
   };
 
@@ -382,6 +461,34 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
             <span>Postmortem</span>
           </button>
 
+          {canEditIncidents && incident.status !== 'RESOLVED' && incident.status !== 'CLOSED' && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleAutoHealThisIncident}
+              disabled={isAutoHealing || statusUpdateLoading}
+              icon={<Zap className={`w-3.5 h-3.5 text-amber-300 ${isAutoHealing ? 'animate-bounce' : ''}`} />}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold shadow-md hover:shadow-emerald-500/20"
+              title="Automatically heal this incident immediately and restore workload to healthy"
+            >
+              {isAutoHealing ? 'Auto-Healing...' : '⚡ Auto-Heal Incident'}
+            </Button>
+          )}
+
+          {canEditIncidents && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleAutoHealCluster}
+              disabled={isAutoHealingCluster}
+              icon={<Zap className={`w-3.5 h-3.5 text-amber-400 ${isAutoHealingCluster ? 'animate-bounce' : ''}`} />}
+              className="border-emerald-800/80 text-emerald-300 hover:bg-emerald-950/40 font-mono text-xs"
+              title={`Auto-heal all active incidents in cluster "${incident.clusterName}"`}
+            >
+              {isAutoHealingCluster ? 'Healing Cluster...' : '⚡ Auto-Heal Cluster'}
+            </Button>
+          )}
+
           <Button
             variant="primary"
             size="sm"
@@ -440,6 +547,32 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Auto-Heal Notice Banner */}
+      {autoHealMessage && (
+        <div
+          className={`p-3.5 rounded-xl border flex items-center justify-between text-xs font-mono ${
+            autoHealMessage.type === 'success'
+              ? 'bg-emerald-950/60 border-emerald-700/60 text-emerald-300'
+              : 'bg-rose-950/60 border-rose-800 text-rose-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {autoHealMessage.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            )}
+            <span>{autoHealMessage.text}</span>
+          </div>
+          <button
+            onClick={() => setAutoHealMessage(null)}
+            className="text-zinc-400 hover:text-zinc-200 ml-3 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Status Action Error Banner */}
       {statusError && (
@@ -1385,6 +1518,84 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
         isOpen={isPreDeploymentGateOpen}
         onClose={() => setIsPreDeploymentGateOpen(false)}
       />
+
+      {/* Delete Incident Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => !isDeleting && setIsDeleteModalOpen(false)}
+        title="Delete Incident Ticket"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-3.5 bg-rose-950/20 border border-rose-900/30 rounded-lg text-rose-300">
+            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+            <div className="text-xs space-y-1">
+              <p className="font-semibold text-rose-200">Delete ticket {incident?.id}?</p>
+              <p className="text-zinc-400">
+                Are you sure you want to delete incident ticket {incident?.id}? This action permanently deletes this incident investigation record.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2.5 pt-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={isDeleting}
+              onClick={() => setIsDeleteModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={isDeleting}
+              onClick={confirmDelete}
+              icon={isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            >
+              {isDeleting ? 'Deleting...' : 'Delete Incident'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Resolve Incident Confirmation Modal */}
+      <Modal
+        isOpen={isResolveModalOpen}
+        onClose={() => setIsResolveModalOpen(false)}
+        title="Mark Incident Resolved"
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-zinc-300 font-sans">
+            Provide an optional resolution summary or reason for marking incident <span className="font-mono font-bold text-sky-400">{incident?.id}</span> as resolved:
+          </p>
+          <textarea
+            value={resolutionNote}
+            onChange={(e) => setResolutionNote(e.target.value)}
+            placeholder="e.g., Workload verified healthy after restart and configuration update."
+            className="w-full h-24 p-2.5 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 text-xs font-mono placeholder-zinc-600 focus:outline-none focus:border-sky-500"
+          />
+          <div className="flex items-center justify-end gap-2.5 pt-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsResolveModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={confirmResolve}
+              disabled={statusUpdateLoading}
+              icon={statusUpdateLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white"
+            >
+              {statusUpdateLoading ? 'Resolving...' : 'Confirm Resolve'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

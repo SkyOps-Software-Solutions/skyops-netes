@@ -5,6 +5,7 @@
  */
 
 import { ConditionDiagnostic, ContainerDiagnostic, K8sEvent, ResourceMetrics, ResourceMetricValue } from './index';
+import type { NodeCloudMetadata } from '../utils/cloudMetadata';
 
 export type WorkloadKind = 'Deployment' | 'StatefulSet' | 'DaemonSet' | 'ReplicaSet' | 'Job' | 'CronJob' | 'Rollout';
 export type ResourceHealthStatus = 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'UNKNOWN';
@@ -89,6 +90,7 @@ export interface NodeResource extends BaseKubernetesResource {
     taints?: Array<{ key: string; value?: string; effect: string }>;
     unschedulable?: boolean;
   };
+  cloudMetadata?: NodeCloudMetadata;
 }
 
 // 2. Deployment Model

@@ -594,8 +594,9 @@ func (c *Collector) collectNodes(ctx context.Context, eventsMap map[string][]Eve
 			Annotations:     sanitizeAnnotations(node.Metadata.Annotations),
 			OwnerReferences: convertOwnerReferences(node.Metadata.OwnerReferences),
 			SpecSummary: map[string]interface{}{
-				"podCIDR": node.Spec.PodCIDR,
-				"taints":  taintsSummary,
+				"podCIDR":    node.Spec.PodCIDR,
+				"providerID": node.Spec.ProviderID,
+				"taints":     taintsSummary,
 			},
 			StatusSummary: statusSummary,
 			Conditions:    conditions,

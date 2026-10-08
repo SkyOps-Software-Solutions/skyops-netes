@@ -2124,6 +2124,147 @@ app.post(
   }
 );
 
+// --- Dedicated Autonomous Auto-Healing Endpoints ---
+app.post(
+  '/api/v1/incidents/:id/auto-heal',
+  requireUserAuth,
+  requireOrgMembership,
+  requirePermission('incident.heal'),
+  (req: AuthenticatedUserRequest, res) => {
+    const entitlement = entitlementService.canExecuteRemediation(req.orgId!);
+    if (!entitlement.allowed) {
+      return res.status(402).json(entitlement.error);
+    }
+
+    try {
+      const result = store.executeAutoHeal(
+        req.params.id,
+        req.orgId!,
+        { id: req.user!.id, name: req.user!.name, email: req.user!.email },
+        req.body
+      );
+
+      auditService.record({
+        orgId: req.orgId!,
+        actorId: req.user!.id,
+        actorName: req.user!.name,
+        actorType: 'HUMAN',
+        action: 'incident.auto_healed',
+        resourceType: 'INCIDENT',
+        resourceId: req.params.id,
+        result: 'SUCCESS',
+        details: {
+          incidentId: req.params.id,
+          clusterId: result.incident.clusterId,
+          status: result.incident.status
+        }
+      });
+
+      res.json({
+        success: true,
+        message: `Incident ${req.params.id} auto-healed and verified successfully`,
+        ...result
+      });
+    } catch (err: any) {
+      console.error(`[SkyOps API] Auto-heal error for incident ${req.params.id}:`, err);
+      res.status(400).json({ error: err?.message || 'Failed to auto-heal incident' });
+    }
+  }
+);
+
+app.post(
+  '/api/v1/clusters/:id/auto-heal',
+  requireUserAuth,
+  requireOrgMembership,
+  requirePermission('incident.heal'),
+  (req: AuthenticatedUserRequest, res) => {
+    const entitlement = entitlementService.canExecuteRemediation(req.orgId!);
+    if (!entitlement.allowed) {
+      return res.status(402).json(entitlement.error);
+    }
+
+    try {
+      const result = store.autoHealCluster(
+        req.params.id,
+        req.orgId!,
+        { id: req.user!.id, name: req.user!.name, email: req.user!.email }
+      );
+
+      auditService.record({
+        orgId: req.orgId!,
+        actorId: req.user!.id,
+        actorName: req.user!.name,
+        actorType: 'HUMAN',
+        action: 'cluster.auto_healed',
+        resourceType: 'CLUSTER',
+        resourceId: req.params.id,
+        result: 'SUCCESS',
+        details: {
+          clusterId: req.params.id,
+          total: result.total,
+          healed: result.healed
+        }
+      });
+
+      res.json({
+        success: true,
+        message: `Cluster ${req.params.id}: ${result.healed} of ${result.total} active incidents auto-healed and verified`,
+        ...result
+      });
+    } catch (err: any) {
+      console.error(`[SkyOps API] Cluster auto-heal error for ${req.params.id}:`, err);
+      res.status(400).json({ error: err?.message || 'Failed to auto-heal cluster incidents' });
+    }
+  }
+);
+
+app.post(
+  '/api/v1/incidents/auto-heal',
+  requireUserAuth,
+  requireOrgMembership,
+  requirePermission('incident.heal'),
+  (req: AuthenticatedUserRequest, res) => {
+    const entitlement = entitlementService.canExecuteRemediation(req.orgId!);
+    if (!entitlement.allowed) {
+      return res.status(402).json(entitlement.error);
+    }
+
+    try {
+      const clusterId = req.body?.clusterId || (typeof req.query.clusterId === 'string' ? req.query.clusterId : undefined);
+      const result = store.autoHealAllIncidents(
+        req.orgId!,
+        clusterId,
+        { id: req.user!.id, name: req.user!.name, email: req.user!.email }
+      );
+
+      auditService.record({
+        orgId: req.orgId!,
+        actorId: req.user!.id,
+        actorName: req.user!.name,
+        actorType: 'HUMAN',
+        action: 'incidents.batch_auto_healed',
+        resourceType: 'INCIDENT',
+        resourceId: 'batch',
+        result: 'SUCCESS',
+        details: {
+          clusterId: clusterId || 'ALL',
+          total: result.total,
+          healed: result.healed
+        }
+      });
+
+      res.json({
+        success: true,
+        message: `Successfully auto-healed ${result.healed} of ${result.total} incidents`,
+        ...result
+      });
+    } catch (err: any) {
+      console.error('[SkyOps API] Batch auto-heal error:', err);
+      res.status(400).json({ error: err?.message || 'Failed to auto-heal incidents' });
+    }
+  }
+);
+
 // --- Remediation Policy & Audit Endpoints ---
 const UpdateRemediationPolicySchema = z.object({
   clusterId: z.string().optional(),

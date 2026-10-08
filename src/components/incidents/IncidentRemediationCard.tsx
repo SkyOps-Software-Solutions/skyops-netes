@@ -209,6 +209,26 @@ export const IncidentRemediationCard: React.FC<IncidentRemediationCardProps> = (
       setActionLoading(true);
       setActionMessage(null);
       const proposedImage = customImage.trim() || remediation.parameters?.proposedImage;
+
+      try {
+        const res = await api.autoHealIncident(incident.id, { proposedImage });
+        setRemediation(res.remediation);
+        setActionMessage({
+          type: 'success',
+          text: `Auto-healing executed and verified on cluster "${res.remediation.clusterName || incident.clusterName}". Workload restored to Healthy.`
+        });
+        setIsEditingImage(false);
+        if (onRemediationUpdated) {
+          onRemediationUpdated(res.remediation);
+        }
+        if (onRefresh) {
+          onRefresh();
+        }
+        return;
+      } catch (autoErr) {
+        console.warn('Auto-heal primary direct execution falling back to approveRemediation:', autoErr);
+      }
+
       const res = await api.approveRemediation(incident.id, { proposedImage });
       setRemediation(res.remediation);
       setActionMessage({
@@ -736,34 +756,79 @@ export const IncidentRemediationCard: React.FC<IncidentRemediationCardProps> = (
                   ✓ HEALED
                 </div>
               ) : isVerifying ? (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled
-                  icon={<RefreshCw className="w-3.5 h-3.5 animate-spin text-purple-300" />}
-                  className="bg-purple-900/60 text-purple-200 border border-purple-700/60 font-mono font-bold text-xs cursor-not-allowed"
-                >
-                  VERIFYING FIX
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled
+                    icon={<RefreshCw className="w-3.5 h-3.5 animate-spin text-purple-300" />}
+                    className="bg-purple-900/60 text-purple-200 border border-purple-700/60 font-mono font-bold text-xs cursor-not-allowed"
+                  >
+                    VERIFYING FIX
+                  </Button>
+                  {canEdit && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handlePrimaryHealAction}
+                      disabled={actionLoading}
+                      icon={<Zap className="w-3.5 h-3.5 text-amber-300" />}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold text-xs shadow-md"
+                      title="Verify and complete auto-healing immediately"
+                    >
+                      {actionLoading ? 'Verifying...' : '⚡ COMPLETE AUTO-HEAL'}
+                    </Button>
+                  )}
+                </div>
               ) : isExecuting ? (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled
-                  icon={<RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-300" />}
-                  className="bg-cyan-900/60 text-cyan-200 border border-cyan-700/60 font-mono font-bold text-xs cursor-not-allowed"
-                >
-                  ⚡ HEALING IN PROGRESS
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled
+                    icon={<RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-300" />}
+                    className="bg-cyan-900/60 text-cyan-200 border border-cyan-700/60 font-mono font-bold text-xs cursor-not-allowed"
+                  >
+                    ⚡ HEALING IN PROGRESS
+                  </Button>
+                  {canEdit && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handlePrimaryHealAction}
+                      disabled={actionLoading}
+                      icon={<Zap className="w-3.5 h-3.5 text-amber-300" />}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold text-xs shadow-md"
+                      title="Force complete auto-healing and verify telemetry immediately"
+                    >
+                      {actionLoading ? 'Completing...' : '⚡ COMPLETE AUTO-HEAL'}
+                    </Button>
+                  )}
+                </div>
               ) : isQueued ? (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled
-                  className="bg-zinc-800 text-zinc-300 font-mono font-bold text-xs cursor-not-allowed"
-                >
-                  HEALING QUEUED
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled
+                    className="bg-zinc-800 text-zinc-300 font-mono font-bold text-xs cursor-not-allowed"
+                  >
+                    HEALING QUEUED
+                  </Button>
+                  {canEdit && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handlePrimaryHealAction}
+                      disabled={actionLoading}
+                      icon={<Zap className="w-3.5 h-3.5 text-amber-300" />}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold text-xs shadow-md"
+                      title="Execute auto-healing immediately"
+                    >
+                      {actionLoading ? 'Executing...' : '⚡ EXECUTE AUTO-HEAL'}
+                    </Button>
+                  )}
+                </div>
               ) : isAutonomousMode && remStatus === 'PROPOSED' && actionRisk === 'LOW' ? (
                 <Button
                   variant="primary"

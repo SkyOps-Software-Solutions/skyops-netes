@@ -381,7 +381,10 @@ const ResourceRelationshipTreeInner: React.FC<ResourceRelationshipTreeProps> = (
                         <div className="flex items-center gap-2 shrink-0">
                           <PodPhaseBadge phaseOrStatus={pod.status} restarts={totalRestarts} />
                           {onSelectResource && (
-                            <button className="px-2 py-0.5 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded font-mono">
+                            <button
+                              onClick={() => onSelectResource(pod)}
+                              className="px-2 py-0.5 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded font-mono cursor-pointer transition-colors"
+                            >
                               Inspect Pod →
                             </button>
                           )}

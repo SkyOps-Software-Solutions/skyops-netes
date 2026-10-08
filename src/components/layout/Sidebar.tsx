@@ -36,6 +36,7 @@ import { AGENT_VERSION } from '../../config/version';
 import { useAuth } from '../../context/AuthContext';
 import { BrandLogo } from '../common/BrandLogo';
 import { Modal } from '../common/UI';
+import { PWAInstallButton } from '../common/PWAInstallButton';
 
 export type NavigationTab =
   | 'overview'
@@ -419,7 +420,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Quick Cluster Registration Action */}
         {isCollapsed ? (
-          <div className="pt-4 flex justify-center">
+          <div className="pt-4 flex flex-col items-center gap-2">
             <button
               onClick={onOpenAddCluster}
               title="Connect Cluster"
@@ -427,9 +428,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <Plus className="w-4 h-4" />
             </button>
+            <PWAInstallButton className="w-10 h-10 p-0 justify-center" />
           </div>
         ) : (
-          <div className="pt-6 space-y-1">
+          <div className="pt-6 space-y-2">
             <div className="px-3 py-1 text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Quick Actions</div>
             <button
               onClick={onOpenAddCluster}
@@ -438,6 +440,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <Plus className="w-3.5 h-3.5 text-sky-400" />
               <span>Connect Cluster</span>
             </button>
+            <div className="px-1">
+              <PWAInstallButton className="w-full justify-center py-2" />
+            </div>
           </div>
         )}
       </div>

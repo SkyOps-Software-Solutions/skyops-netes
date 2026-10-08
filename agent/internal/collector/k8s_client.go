@@ -222,8 +222,9 @@ type K8sNodeList struct {
 type K8sNode struct {
 	Metadata K8sObjectMeta `json:"metadata"`
 	Spec     struct {
-		PodCIDR string `json:"podCIDR"`
-		Taints  []struct {
+		PodCIDR    string `json:"podCIDR"`
+		ProviderID string `json:"providerID,omitempty"`
+		Taints     []struct {
 			Key    string `json:"key"`
 			Value  string `json:"value"`
 			Effect string `json:"effect"`

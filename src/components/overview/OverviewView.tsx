@@ -14,6 +14,7 @@ import {
   HardDrive,
   Info,
   Layers,
+  Loader2,
   Plus,
   RefreshCw,
   Search,
@@ -68,6 +69,52 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
   const [clusterFilter, setClusterFilter] = useState<string>('all');
   const [activeIncidentTab, setActiveIncidentTab] = useState<'all' | 'critical' | 'high' | 'in_progress'>('all');
   const [inventorySearch, setInventorySearch] = useState('');
+  const [autoHealingAll, setAutoHealingAll] = useState(false);
+  const [healingIncidentId, setHealingIncidentId] = useState<string | null>(null);
+  const [overviewNotice, setOverviewNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const handleAutoHealAll = async () => {
+    try {
+      setAutoHealingAll(true);
+      setOverviewNotice(null);
+      const res = await api.autoHealAllIncidents(clusterFilter !== 'all' ? clusterFilter : undefined);
+      setOverviewNotice({
+        type: 'success',
+        message: res.message || `Auto-healed ${res.healed} of ${res.total} fleet incidents.`
+      });
+      onRefresh();
+    } catch (err: any) {
+      console.error('Failed to auto-heal fleet incidents:', err);
+      setOverviewNotice({
+        type: 'error',
+        message: err?.message || 'Failed to auto-heal fleet incidents'
+      });
+    } finally {
+      setAutoHealingAll(false);
+    }
+  };
+
+  const handleQuickAutoHeal = async (e: React.MouseEvent, incidentId: string) => {
+    e.stopPropagation();
+    try {
+      setHealingIncidentId(incidentId);
+      setOverviewNotice(null);
+      await api.autoHealIncident(incidentId);
+      setOverviewNotice({
+        type: 'success',
+        message: `Incident ${incidentId} auto-healed and verified.`
+      });
+      onRefresh();
+    } catch (err: any) {
+      console.error(`Failed to auto-heal incident ${incidentId}:`, err);
+      setOverviewNotice({
+        type: 'error',
+        message: err?.message || 'Failed to auto-heal incident'
+      });
+    } finally {
+      setHealingIncidentId(null);
+    }
+  };
 
   // Fetch all resources across clusters to populate live node, pod, and workload telemetry
   useEffect(() => {
@@ -293,6 +340,32 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
           </Button>
         </div>
       </div>
+
+      {/* Auto-Heal Fleet Notification */}
+      {overviewNotice && (
+        <div
+          className={`p-3 text-xs rounded-xl font-mono flex items-center justify-between border ${
+            overviewNotice.type === 'success'
+              ? 'bg-emerald-950/60 border-emerald-700/60 text-emerald-300'
+              : 'bg-rose-950/60 border-rose-800 text-rose-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {overviewNotice.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            )}
+            <span>{overviewNotice.message}</span>
+          </div>
+          <button
+            onClick={() => setOverviewNotice(null)}
+            className="text-zinc-400 hover:text-zinc-200 ml-3 cursor-pointer"
+          >
+            &times;
+          </button>
+        </div>
+      )}
 
       {/* Prominent Empty State if NO clusters exist */}
       {safeClusters.length === 0 && (
@@ -599,6 +672,19 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
               <AlertTriangle className="w-4 h-4 text-amber-400" />
               <span>Incident Radar ({displayedIncidents.length})</span>
             </h2>
+            {openIncidents.length > 0 && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleAutoHealAll}
+                disabled={autoHealingAll}
+                icon={<Zap className={`w-3.5 h-3.5 text-amber-300 ${autoHealingAll ? 'animate-bounce' : ''}`} />}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold text-xs shadow-xs"
+                title="Auto-heal all active incidents across clusters"
+              >
+                {autoHealingAll ? 'Healing Fleet...' : '⚡ Auto-Heal All'}
+              </Button>
+            )}
           </div>
 
           {/* Sub-tabs for incident filtering */}
@@ -672,14 +758,31 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
 
                   <div className="font-semibold text-zinc-200 truncate">{inc.title}</div>
 
-                  <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 truncate">
-                    <span className="text-zinc-500">cluster:</span>
-                    <span className="text-zinc-300">{inc.clusterName}</span>
-                    <span className="text-zinc-600">/</span>
-                    <span className="text-zinc-500">ns:</span>
-                    <span className="text-zinc-300">{inc.namespace}</span>
-                    <span className="text-zinc-600">/</span>
-                    <span className="text-zinc-300">{inc.resourceKind}/{inc.resourceName}</span>
+                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-800/40">
+                    <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 truncate">
+                      <span className="text-zinc-500">cluster:</span>
+                      <span className="text-zinc-300">{inc.clusterName}</span>
+                      <span className="text-zinc-600">/</span>
+                      <span className="text-zinc-500">ns:</span>
+                      <span className="text-zinc-300">{inc.namespace}</span>
+                      <span className="text-zinc-600">/</span>
+                      <span className="text-zinc-300">{inc.resourceKind}/{inc.resourceName}</span>
+                    </div>
+                    {inc.status !== 'RESOLVED' && inc.status !== 'CLOSED' && (
+                      <button
+                        onClick={(e) => handleQuickAutoHeal(e, inc.id)}
+                        disabled={healingIncidentId === inc.id}
+                        className="px-2 py-0.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 text-emerald-300 rounded text-[10px] transition-colors cursor-pointer flex items-center gap-1 font-mono font-bold shrink-0"
+                        title="Auto-heal this incident immediately"
+                      >
+                        {healingIncidentId === inc.id ? (
+                          <Loader2 className="w-2.5 h-2.5 animate-spin text-emerald-300" />
+                        ) : (
+                          <Zap className="w-2.5 h-2.5 text-amber-300" />
+                        )}
+                        <span>Auto-Heal</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

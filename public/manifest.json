@@ -1,0 +1,56 @@
+{
+  "id": "/",
+  "name": "SkyOps - Kubernetes Observability & Incident Management",
+  "short_name": "SkyOps",
+  "description": "Detect Kubernetes incidents, understand root causes with deterministic analysis, and automatically heal cluster workloads.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "theme_color": "#05070b",
+  "background_color": "#05070b",
+  "categories": ["utilities", "developer", "productivity"],
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Incident Triage",
+      "short_name": "Incidents",
+      "description": "Open active cluster incident triage",
+      "url": "/#incidents",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Fleet Radar",
+      "short_name": "Clusters",
+      "description": "View connected multi-cluster fleet",
+      "url": "/#clusters",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192" }]
+    }
+  ]
+}

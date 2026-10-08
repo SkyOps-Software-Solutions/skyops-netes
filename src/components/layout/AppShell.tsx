@@ -21,6 +21,7 @@ import { NavigationTab, Sidebar } from './Sidebar';
 import { Footer } from './Footer';
 import { DocTopic, KnowledgeBaseModal } from '../docs/KnowledgeBaseModal';
 import { BrandLogo } from '../common/BrandLogo';
+import { PWAInstallButton } from '../common/PWAInstallButton';
 
 interface AppShellProps {
   initialOpenAddCluster?: boolean;
@@ -274,6 +275,7 @@ export const AppShell: React.FC<AppShellProps> = ({
           </div>
 
           <div className="flex items-center gap-3 text-xs font-mono text-zinc-400">
+            <PWAInstallButton />
             <button
               id="topbar-docs-btn"
               onClick={() => handleOpenDoc('quickstart')}

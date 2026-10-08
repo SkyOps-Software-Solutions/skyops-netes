@@ -828,6 +828,38 @@ class ApiClient {
     return this.request<any>(`/api/v1/incidents/${incidentId}/remediation/audit`);
   }
 
+  async autoHealIncident(
+    incidentId: string,
+    options?: { actionType?: string; proposedImage?: string; reason?: string }
+  ): Promise<{ success: boolean; message: string; incident: Incident; remediation: StructuredRemediation; action?: RemediationAction }> {
+    return this.request<{ success: boolean; message: string; incident: Incident; remediation: StructuredRemediation; action?: RemediationAction }>(
+      `/api/v1/incidents/${incidentId}/auto-heal`,
+      {
+        method: 'POST',
+        body: JSON.stringify(options || {})
+      }
+    );
+  }
+
+  async autoHealCluster(clusterId: string): Promise<{ success: boolean; message: string; clusterId: string; total: number; healed: number; failed: number; incidents: Incident[] }> {
+    return this.request<{ success: boolean; message: string; clusterId: string; total: number; healed: number; failed: number; incidents: Incident[] }>(
+      `/api/v1/clusters/${clusterId}/auto-heal`,
+      {
+        method: 'POST'
+      }
+    );
+  }
+
+  async autoHealAllIncidents(clusterId?: string): Promise<{ success: boolean; message: string; total: number; healed: number; failed: number; incidents: Incident[] }> {
+    return this.request<{ success: boolean; message: string; total: number; healed: number; failed: number; incidents: Incident[] }>(
+      '/api/v1/incidents/auto-heal',
+      {
+        method: 'POST',
+        body: JSON.stringify({ clusterId })
+      }
+    );
+  }
+
   async explainArchitecture(payload: any): Promise<{ explanation: any }> {
     return this.request<{ explanation: any }>('/api/v1/architecture/explain', {
       method: 'POST',

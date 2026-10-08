@@ -84,6 +84,8 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [telemetryError, setTelemetryError] = useState<string | null>(null);
+  const [autoHealingCluster, setAutoHealingCluster] = useState(false);
+  const [quickHealingIncidentId, setQuickHealingIncidentId] = useState<string | null>(null);
 
   const fetchDetails = async (isBackground = false) => {
     try {
@@ -151,6 +153,38 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
       setActionError(err?.message || 'Failed to refresh cluster telemetry');
     } finally {
       setManualRefreshing(false);
+    }
+  };
+
+  const handleAutoHealCluster = async () => {
+    if (!cluster) return;
+    try {
+      setAutoHealingCluster(true);
+      setActionError(null);
+      const res = await api.autoHealCluster(cluster.id);
+      setActionSuccess(res.message || `Auto-healed ${res.healed} of ${res.total} incidents on ${cluster.displayName || cluster.name}.`);
+      await fetchDetails(false);
+    } catch (err: any) {
+      console.error('Failed to auto-heal cluster:', err);
+      setActionError(err?.message || 'Failed to auto-heal cluster incidents');
+    } finally {
+      setAutoHealingCluster(false);
+    }
+  };
+
+  const handleQuickAutoHealIncident = async (e: React.MouseEvent, incidentId: string) => {
+    e.stopPropagation();
+    try {
+      setQuickHealingIncidentId(incidentId);
+      setActionError(null);
+      await api.autoHealIncident(incidentId);
+      setActionSuccess(`Incident ${incidentId} auto-healed and verified successfully.`);
+      await fetchDetails(false);
+    } catch (err: any) {
+      console.error(`Failed to auto-heal incident ${incidentId}:`, err);
+      setActionError(err?.message || 'Failed to auto-heal incident');
+    } finally {
+      setQuickHealingIncidentId(null);
     }
   };
 
@@ -349,6 +383,20 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
         </div>
 
         <div className="flex items-center gap-2">
+          {openIncidents.length > 0 && (
+            <Button
+              id="cluster-auto-heal-btn"
+              variant="primary"
+              size="sm"
+              onClick={handleAutoHealCluster}
+              disabled={autoHealingCluster || loading}
+              icon={<Zap className={`w-3.5 h-3.5 text-amber-300 ${autoHealingCluster ? 'animate-bounce' : ''}`} />}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold shadow-md hover:shadow-emerald-500/20"
+              title="Automatically heal and resolve all active incidents on this cluster"
+            >
+              {autoHealingCluster ? 'Auto-Healing Cluster...' : '⚡ Auto-Heal Cluster Incidents'}
+            </Button>
+          )}
           <Button
             id="cluster-refresh-telemetry-btn"
             variant="outline"
@@ -755,16 +803,29 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
             </div>
           ) : openIncidents.length > 0 ? (
             <div className="p-5 rounded-xl bg-amber-950/20 border border-amber-900/40 space-y-4">
-              <div className="flex items-center justify-between border-b border-amber-900/40 pb-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-amber-900/40 pb-3 gap-2">
                 <div className="flex items-center gap-2 text-amber-300 font-bold">
                   <ShieldAlert className="w-4 h-4 text-amber-400 animate-pulse" />
                   <span>
                     ATTENTION REQUIRED: {openIncidents.length} Active Incident(s) Detected • Workloads Nominal
                   </span>
                 </div>
-                <span className="text-[11px] text-amber-400/80">
-                  {criticalIncidents.length > 0 ? `${criticalIncidents.length} Critical` : `${highIncidents.length} High`} priority
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] text-amber-400/80">
+                    {criticalIncidents.length > 0 ? `${criticalIncidents.length} Critical` : `${highIncidents.length} High`} priority
+                  </span>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleAutoHealCluster}
+                    disabled={autoHealingCluster}
+                    icon={<Zap className={`w-3.5 h-3.5 text-amber-300 ${autoHealingCluster ? 'animate-bounce' : ''}`} />}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold shadow-xs text-xs"
+                    title="Automatically heal all active incidents on this cluster"
+                  >
+                    {autoHealingCluster ? 'Healing...' : '⚡ Auto-Heal All'}
+                  </Button>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -789,14 +850,31 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
                           {inc.namespace || 'cluster-wide'} • {inc.resourceKind}/{inc.resourceName} • {inc.incidentType}
                         </div>
                       </div>
-                      {onSelectIncident && (
-                        <button
-                          onClick={() => onSelectIncident(inc.id)}
-                          className="px-2 py-1 text-[11px] rounded bg-zinc-900 text-zinc-200 border border-zinc-700 hover:bg-zinc-800 shrink-0"
-                        >
-                          View Incident →
-                        </button>
-                      )}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {inc.status !== 'RESOLVED' && inc.status !== 'CLOSED' && (
+                          <button
+                            onClick={(e) => handleQuickAutoHealIncident(e, inc.id)}
+                            disabled={quickHealingIncidentId === inc.id}
+                            className="px-2 py-1 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 text-emerald-300 rounded text-xs transition-colors cursor-pointer flex items-center gap-1 font-mono font-bold"
+                            title="Auto-heal this incident"
+                          >
+                            {quickHealingIncidentId === inc.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin text-emerald-300" />
+                            ) : (
+                              <Zap className="w-3 h-3 text-amber-300" />
+                            )}
+                            <span>Auto-Heal</span>
+                          </button>
+                        )}
+                        {onSelectIncident && (
+                          <button
+                            onClick={() => onSelectIncident(inc.id)}
+                            className="px-2 py-1 text-[11px] rounded bg-zinc-900 text-zinc-200 border border-zinc-700 hover:bg-zinc-800 shrink-0 cursor-pointer"
+                          >
+                            View Incident →
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -982,6 +1060,19 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
                 <AlertTriangle className="w-4 h-4 text-amber-400" />
                 Open Incidents ({incidents.length})
               </h3>
+              {openIncidents.length > 0 && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleAutoHealCluster}
+                  disabled={autoHealingCluster}
+                  icon={<Zap className={`w-3.5 h-3.5 text-amber-300 ${autoHealingCluster ? 'animate-bounce' : ''}`} />}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold shadow-xs text-xs"
+                  title="Automatically heal all open incidents on this cluster"
+                >
+                  {autoHealingCluster ? 'Auto-Healing...' : '⚡ Auto-Heal Cluster Incidents'}
+                </Button>
+              )}
             </div>
 
             {incidents.length === 0 ? (
@@ -1003,14 +1094,31 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
                         Opened {formatTimeAgo(inc.firstSeenAt || (inc as any).createdAt)}
                       </div>
                     </div>
-                    {onSelectIncident && (
-                      <button
-                        onClick={() => onSelectIncident(inc.id)}
-                        className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-sky-900/60 hover:text-sky-200 text-zinc-300 text-xs shrink-0 transition-colors"
-                      >
-                        Investigate Incident →
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {inc.status !== 'RESOLVED' && inc.status !== 'CLOSED' && (
+                        <button
+                          onClick={(e) => handleQuickAutoHealIncident(e, inc.id)}
+                          disabled={quickHealingIncidentId === inc.id}
+                          className="px-2 py-1 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 text-emerald-300 rounded text-xs transition-colors cursor-pointer flex items-center gap-1 font-mono font-bold"
+                          title="Auto-heal this incident immediately"
+                        >
+                          {quickHealingIncidentId === inc.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin text-emerald-300" />
+                          ) : (
+                            <Zap className="w-3 h-3 text-amber-300" />
+                          )}
+                          <span>Auto-Heal</span>
+                        </button>
+                      )}
+                      {onSelectIncident && (
+                        <button
+                          onClick={() => onSelectIncident(inc.id)}
+                          className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-sky-900/60 hover:text-sky-200 text-zinc-300 text-xs shrink-0 transition-colors cursor-pointer"
+                        >
+                          Investigate Incident →
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

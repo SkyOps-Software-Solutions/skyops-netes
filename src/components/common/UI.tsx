@@ -13,6 +13,7 @@ export const Button: React.FC<{
   type?: 'button' | 'submit' | 'reset';
   className?: string;
   icon?: React.ReactNode;
+  title?: string;
 }> = ({
   id,
   children,
@@ -23,7 +24,8 @@ export const Button: React.FC<{
   loading = false,
   type = 'button',
   className = '',
-  icon
+  icon,
+  title
 }) => {
   const base =
     'inline-flex items-center justify-center gap-2 font-medium transition-all active:scale-[0.985] rounded border cursor-pointer focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed';
@@ -47,6 +49,7 @@ export const Button: React.FC<{
     <button
       id={id}
       type={type}
+      title={title}
       onClick={onClick}
       disabled={disabled || loading}
       className={`${base} ${sizes[size]} ${variants[variant]} ${className}`}

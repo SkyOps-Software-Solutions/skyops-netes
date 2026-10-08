@@ -18,7 +18,9 @@ import {
   SlidersHorizontal,
   Trash2,
   X,
-  Zap
+  Zap,
+  CheckCircle2,
+  Loader2
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
@@ -26,7 +28,7 @@ import { useAuth } from '../../context/AuthContext';
 import { IncidentMultiClusterSummary } from '../../types/enterprise';
 import { Cluster, Incident, IncidentSeverity, IncidentStatus } from '../../types/index';
 import { SeverityBadge, StatusBadge } from '../common/Badges';
-import { Button, EmptyState } from '../common/UI';
+import { Button, EmptyState, Modal } from '../common/UI';
 import { PreDeploymentGateModal } from './PreDeploymentGateModal';
 
 interface IncidentsViewProps {
@@ -65,7 +67,11 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
   const [incidentTypeFilter, setIncidentTypeFilter] = useState<string>('ALL');
 
   const [clearing, setClearing] = useState(false);
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const [isGateModalOpen, setIsGateModalOpen] = useState(false);
+  const [autoHealing, setAutoHealing] = useState(false);
+  const [quickHealingId, setQuickHealingId] = useState<string | null>(null);
+  const [healNotice, setHealNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Fetch summary and incidents with server-side filters
   const fetchIncidentsData = async () => {
@@ -122,21 +128,60 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
   }, [searchTerm]);
 
   const handleClearAll = async () => {
-    if (
-      !window.confirm(
-        'Are you sure you want to clear all incident tickets? Any active failing resources will regenerate tickets on the next telemetry sync.'
-      )
-    )
-      return;
     try {
       setClearing(true);
       await api.clearAllIncidents();
+      setIsClearModalOpen(false);
       onRefresh();
       fetchIncidentsData();
     } catch (err) {
       console.error('Failed to clear incidents:', err);
     } finally {
       setClearing(false);
+    }
+  };
+
+  const handleAutoHealCluster = async () => {
+    try {
+      setAutoHealing(true);
+      setHealNotice(null);
+      const targetClusterId = clusterFilter !== 'ALL' ? clusterFilter : undefined;
+      const res = await api.autoHealAllIncidents(targetClusterId);
+      setHealNotice({
+        type: 'success',
+        message: res.message || `Successfully auto-healed ${res.healed} of ${res.total} incidents across cluster.`
+      });
+      await Promise.all([onRefresh(), fetchIncidentsData()]);
+    } catch (err: any) {
+      console.error('Failed to auto-heal cluster incidents:', err);
+      setHealNotice({
+        type: 'error',
+        message: err?.message || 'Failed to auto-heal cluster incidents'
+      });
+    } finally {
+      setAutoHealing(false);
+    }
+  };
+
+  const handleQuickAutoHeal = async (e: React.MouseEvent, incidentId: string) => {
+    e.stopPropagation();
+    try {
+      setQuickHealingId(incidentId);
+      setHealNotice(null);
+      await api.autoHealIncident(incidentId);
+      setHealNotice({
+        type: 'success',
+        message: `Incident ${incidentId} auto-healed and verified successfully.`
+      });
+      await Promise.all([onRefresh(), fetchIncidentsData()]);
+    } catch (err: any) {
+      console.error(`Failed to auto-heal incident ${incidentId}:`, err);
+      setHealNotice({
+        type: 'error',
+        message: err?.message || 'Failed to auto-heal incident'
+      });
+    } finally {
+      setQuickHealingId(null);
     }
   };
 
@@ -202,11 +247,27 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {canEditIncidents && incidents.some((i) => i.status !== 'RESOLVED' && i.status !== 'CLOSED') && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleAutoHealCluster}
+              disabled={initialLoading || autoHealing || fetchingServer}
+              icon={<Zap className={`w-3.5 h-3.5 text-amber-300 ${autoHealing ? 'animate-bounce' : ''}`} />}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold shadow-md hover:shadow-emerald-500/20"
+            >
+              {autoHealing
+                ? 'Auto-Healing Cluster...'
+                : clusterFilter !== 'ALL'
+                ? `⚡ Auto-Heal ${clusters.find((c) => c.id === clusterFilter)?.displayName || clusters.find((c) => c.id === clusterFilter)?.name || 'Cluster'} Incidents`
+                : '⚡ Auto-Heal Cluster Incidents'}
+            </Button>
+          )}
           {canEditIncidents && incidents.length > 0 && (
             <Button
               variant="outline"
               size="sm"
-              onClick={handleClearAll}
+              onClick={() => setIsClearModalOpen(true)}
               disabled={initialLoading || clearing}
               icon={<Trash2 className="w-3.5 h-3.5 text-zinc-400" />}
               className="text-zinc-400 hover:text-rose-400 hover:border-rose-900/60"
@@ -243,6 +304,32 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
           </Button>
         </div>
       </div>
+
+      {/* Heal Notice Banner */}
+      {healNotice && (
+        <div
+          className={`p-3.5 rounded-xl border flex items-center justify-between text-xs font-mono ${
+            healNotice.type === 'success'
+              ? 'bg-emerald-950/60 border-emerald-700/60 text-emerald-300'
+              : 'bg-rose-950/60 border-rose-800 text-rose-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {healNotice.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            )}
+            <span>{healNotice.message}</span>
+          </div>
+          <button
+            onClick={() => setHealNotice(null)}
+            className="text-zinc-400 hover:text-zinc-200 ml-3 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* MULTI-CLUSTER ENVIRONMENT BREAKDOWN (Prompt 3, Section 4: Exact Specifications) */}
       {/* Example: ALL INCIDENTS: Production 12 | Staging 3 | Development 1 */}
@@ -526,12 +613,29 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                     </td>
 
                     <td className="px-5 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        onClick={() => onSelectIncident(incident.id)}
-                        className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded text-xs transition-colors cursor-pointer"
-                      >
-                        Investigate →
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        {canEditIncidents && incident.status !== 'RESOLVED' && incident.status !== 'CLOSED' && (
+                          <button
+                            onClick={(e) => handleQuickAutoHeal(e, incident.id)}
+                            disabled={quickHealingId === incident.id}
+                            className="px-2 py-1 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 text-emerald-300 rounded text-xs transition-colors cursor-pointer flex items-center gap-1 font-mono font-bold"
+                            title="Automatically heal this incident immediately"
+                          >
+                            {quickHealingId === incident.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin text-emerald-300" />
+                            ) : (
+                              <Zap className="w-3 h-3 text-amber-300" />
+                            )}
+                            <span>Auto-Heal</span>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => onSelectIncident(incident.id)}
+                          className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded text-xs transition-colors cursor-pointer"
+                        >
+                          Investigate →
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -547,6 +651,45 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
         onClose={() => setIsGateModalOpen(false)}
         clusters={clusters}
       />
+
+      {/* Clear All Incidents Confirmation Modal */}
+      <Modal
+        isOpen={isClearModalOpen}
+        onClose={() => !clearing && setIsClearModalOpen(false)}
+        title="Clear All Incident Tickets"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-3.5 bg-rose-950/20 border border-rose-900/30 rounded-lg text-rose-300">
+            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+            <div className="text-xs space-y-1">
+              <p className="font-semibold text-rose-200">Clear all incident records?</p>
+              <p className="text-zinc-400">
+                Are you sure you want to clear all incident tickets? Any active failing resources will regenerate tickets on the next telemetry sync.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2.5 pt-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={clearing}
+              onClick={() => setIsClearModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={clearing}
+              onClick={handleClearAll}
+              icon={clearing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            >
+              {clearing ? 'Clearing Incidents...' : 'Clear All Incidents'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

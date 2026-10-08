@@ -320,7 +320,17 @@ export async function requireOrgMembership(
 ): Promise<void | Response> {
   if (!req.user) return res.status(401).json({ error: 'Authentication required' });
 
-  const requestedOrgId = (req.headers['x-org-id'] as string) || (req.query.orgId as string) || (req.body?.orgId as string);
+  const rawRequestedOrgId =
+    (req.headers['x-org-id'] as string) || (req.query.orgId as string) || (req.body?.orgId as string);
+  const requestedOrgId =
+    rawRequestedOrgId &&
+    rawRequestedOrgId !== 'undefined' &&
+    rawRequestedOrgId !== 'null' &&
+    rawRequestedOrgId !== 'org_default' &&
+    rawRequestedOrgId.trim() !== ''
+      ? rawRequestedOrgId.trim()
+      : undefined;
+
   let userOrgs = store.getOrganizationsForUser(req.user.id, req.user.email);
 
   if (userOrgs.length === 0) {
@@ -376,15 +386,18 @@ export async function requireOrgMembership(
     return next();
   }
 
-  // Resolve target organization by id, slug, or name
+  // Resolve target organization by stable canonical ID
   let targetOrg = requestedOrgId
-    ? userOrgs.find(
-        (o) =>
-          o.id === requestedOrgId ||
-          (o.slug && o.slug.toLowerCase() === requestedOrgId.toLowerCase()) ||
-          (o.name && o.name.toLowerCase() === requestedOrgId.toLowerCase())
-      )
+    ? userOrgs.find((o) => o.id === requestedOrgId)
     : userOrgs[0];
+
+  if (!targetOrg && requestedOrgId) {
+    // If not in userOrgs directly, check backend membership access for requestedOrgId
+    const accessCheck = store.checkUserOrgAccess(req.user.id, requestedOrgId, req.user.email);
+    if (accessCheck.hasAccess) {
+      targetOrg = store.getOrganization(requestedOrgId) || undefined;
+    }
+  }
 
   // For /api/v1/auth/session, or if no specific org was requested,
   // fall back to user's first valid organization for session establishment

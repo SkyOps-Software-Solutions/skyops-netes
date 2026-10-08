@@ -44,6 +44,7 @@ export type NavigationTab =
   | 'services'
   | 'clusters'
   | 'incidents'
+  | 'logs'
   | 'observability'
   | 'cost'
   | 'security'
@@ -115,6 +116,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <LayoutDashboard className="w-4 h-4" />
     },
     {
+      id: 'clusters',
+      label: 'Clusters & Fleets',
+      icon: <Boxes className="w-4 h-4" />
+    },
+    {
       id: 'infrastructure',
       label: 'Infrastructure',
       icon: <Server className="w-4 h-4" />
@@ -130,6 +136,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <AlertTriangle className="w-4 h-4" />,
       badge: openIncidentsCount,
       badgeColor: 'bg-red-500/20 text-red-300 border-red-500/30'
+    },
+    {
+      id: 'logs',
+      label: 'Logs',
+      icon: <Terminal className="w-4 h-4" />
     },
     {
       id: 'observability',

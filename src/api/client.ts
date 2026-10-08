@@ -1590,8 +1590,9 @@ class ApiClient {
   // ==========================================
   // ENTERPRISE SECURITY & GOVERNANCE
   // ==========================================
-  async getSecurityPosture(): Promise<{ posture: SecurityPostureOverview }> {
-    return this.request('/api/v1/security/posture');
+  async getSecurityPosture(clusterId?: string): Promise<{ posture: SecurityPostureOverview }> {
+    const query = clusterId && clusterId !== 'ALL' ? `?clusterId=${encodeURIComponent(clusterId)}` : '';
+    return this.request(`/api/v1/security/posture${query}`);
   }
 
   async getSecurityFindings(params?: { severity?: string; clusterId?: string }): Promise<{ findings: SecurityFinding[]; total: number }> {

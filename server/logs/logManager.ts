@@ -874,7 +874,7 @@ export class LogManager {
       data = JSON.stringify(records, null, 2);
     } else if (format === 'csv') {
       mimeType = 'text/csv';
-      const headers = ['Timestamp', 'Severity', 'Cluster', 'Namespace', 'Workload', 'Pod', 'Container', 'Message'];
+      const headers = ['timestamp', 'severity', 'cluster', 'namespace', 'workload', 'podName', 'container', 'message'];
       const rows = records.map((r) => [
         `"${r.timestamp}"`,
         `"${r.severity}"`,

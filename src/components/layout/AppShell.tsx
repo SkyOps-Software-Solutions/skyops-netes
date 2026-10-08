@@ -12,6 +12,7 @@ import { IncidentsView } from '../incidents/IncidentsView';
 import { OverviewView } from '../overview/OverviewView';
 import { InfrastructureView } from '../infrastructure/InfrastructureView';
 import { ServicesView } from '../services/ServicesView';
+import { LogsManagementView } from '../logs/LogsManagementView';
 import { LogNavigationIntent, ObservabilityHubView } from '../observability/ObservabilityHubView';
 import { CostIntelligenceView } from '../cost/CostIntelligenceView';
 import { SecurityPostureView } from '../security/SecurityPostureView';
@@ -170,7 +171,14 @@ export const AppShell: React.FC<AppShellProps> = ({
       namespace,
       name: podName
     });
-    setActiveTab('observability');
+    setActiveTab('logs');
+    try {
+      if (typeof window !== 'undefined') {
+        window.history.pushState({ tab: 'logs' }, '', '/logs');
+      }
+    } catch {
+      // safe fallback
+    }
   };
 
   const handleClearIncident = () => {
@@ -208,15 +216,26 @@ export const AppShell: React.FC<AppShellProps> = ({
     setActiveTab(tab);
     setSelectedClusterId(null);
     handleClearIncident();
-    // Clear any pending log navigation when navigating away from observability
-    if (tab !== 'observability') {
+    try {
+      if (typeof window !== 'undefined') {
+        if (tab === 'logs') {
+          window.history.pushState({ tab: 'logs' }, '', '/logs');
+        } else if (tab === 'incidents') {
+          window.history.pushState({ tab: 'incidents' }, '', '/incidents');
+        }
+      }
+    } catch {
+      // safe fallback
+    }
+    // Clear any pending log navigation when navigating away from observability or logs
+    if (tab !== 'observability' && tab !== 'logs') {
       setPendingLogIntent(null);
     }
   };
 
   // Direct navigation support on initial mount and browser back/forward
   useEffect(() => {
-    const resolveDirectIncidentRoute = () => {
+    const resolveDirectRoutes = () => {
       try {
         if (typeof window === 'undefined') return;
         const searchParams = new URLSearchParams(window.location.search);
@@ -229,15 +248,25 @@ export const AppShell: React.FC<AppShellProps> = ({
           setSelectedIncidentId(targetId);
           setSelectedClusterId(null);
           setActiveTab('incidents');
+          return;
+        }
+
+        const logsMatch = window.location.pathname.match(/^\/logs(?:\/([a-zA-Z0-9_-]+))?/i) ||
+          window.location.hash.match(/^#(?:|\/)logs(?:\/([a-zA-Z0-9_-]+))?/i);
+        if (logsMatch) {
+          setActiveTab('logs');
+          setSelectedClusterId(null);
+          setSelectedIncidentId(null);
+          return;
         }
       } catch {
         // safe fallback
       }
     };
 
-    resolveDirectIncidentRoute();
-    window.addEventListener('popstate', resolveDirectIncidentRoute);
-    return () => window.removeEventListener('popstate', resolveDirectIncidentRoute);
+    resolveDirectRoutes();
+    window.addEventListener('popstate', resolveDirectRoutes);
+    return () => window.removeEventListener('popstate', resolveDirectRoutes);
   }, []);
 
   const openIncidentsCount = incidents.filter(
@@ -308,10 +337,40 @@ export const AppShell: React.FC<AppShellProps> = ({
               onOpenAddCluster={() => setIsAddClusterOpen(true)}
               onRefresh={handleManualRefresh}
               loading={loading || isRefreshing}
+              onNavigateTab={handleTabChange}
             />
           )}
 
-          {(activeTab === 'infrastructure' || activeTab === 'clusters') && (
+          {activeTab === 'clusters' && (
+            <>
+              {selectedClusterId ? (
+                <ClusterDetailView
+                  clusterId={selectedClusterId}
+                  onBack={() => setSelectedClusterId(null)}
+                  onSelectIncident={handleSelectIncident}
+                  onDeleteCluster={async (id) => {
+                    await api.deleteCluster(id);
+                    setSelectedClusterId(null);
+                    fetchGlobalData(true);
+                  }}
+                />
+              ) : (
+                <ClustersView
+                  clusters={clusters}
+                  onSelectCluster={handleSelectCluster}
+                  onOpenAddCluster={() => setIsAddClusterOpen(true)}
+                  onDeleteCluster={async (id) => {
+                    await api.deleteCluster(id);
+                    fetchGlobalData(true);
+                  }}
+                  onRefresh={handleManualRefresh}
+                  loading={loading || isRefreshing}
+                />
+              )}
+            </>
+          )}
+
+          {activeTab === 'infrastructure' && (
             <>
               {selectedClusterId ? (
                 <ClusterDetailView
@@ -375,6 +434,9 @@ export const AppShell: React.FC<AppShellProps> = ({
                   incidentId={selectedIncidentId}
                   onBack={handleClearIncident}
                   onSelectCluster={handleSelectCluster}
+                  onOpenLogs={(clusterId, namespace, podOrWorkload) => {
+                    handleOpenLogs(clusterId, namespace, podOrWorkload);
+                  }}
                 />
               ) : (
                 <IncidentsView
@@ -388,6 +450,18 @@ export const AppShell: React.FC<AppShellProps> = ({
             </>
           )}
 
+          {activeTab === 'logs' && (
+            <LogsManagementView
+              clusters={clusters}
+              initialClusterId={pendingLogIntent?.clusterId || selectedClusterId || undefined}
+              initialNamespace={pendingLogIntent?.namespace}
+              initialPod={pendingLogIntent?.name}
+              initialWorkload={pendingLogIntent?.name}
+              onSelectIncident={handleSelectIncident}
+              onRefreshGlobal={handleManualRefresh}
+            />
+          )}
+
           {activeTab === 'observability' && (
             <ObservabilityHubView
               clusters={clusters}
@@ -398,11 +472,17 @@ export const AppShell: React.FC<AppShellProps> = ({
           )}
 
           {activeTab === 'cost' && (
-            <CostIntelligenceView />
+            <CostIntelligenceView
+              clusters={clusters}
+              onOpenAddCluster={() => setIsAddClusterOpen(true)}
+            />
           )}
 
           {activeTab === 'security' && (
-            <SecurityPostureView />
+            <SecurityPostureView
+              clusters={clusters}
+              onOpenAddCluster={() => setIsAddClusterOpen(true)}
+            />
           )}
 
           {activeTab === 'audit' && (

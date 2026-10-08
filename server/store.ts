@@ -7183,6 +7183,101 @@ export class DataStore {
     }
   }
 
+  /**
+   * Directly create or link an operational incident from logs or alert rules
+   */
+  public createIncident(
+    orgId: string,
+    clusterId: string,
+    data: {
+      clusterName?: string;
+      namespace?: string;
+      resourceKind?: string;
+      resourceName?: string;
+      incidentType?: string;
+      title: string;
+      severity?: IncidentSeverity;
+      workload?: string;
+      technicalDetails?: any;
+    }
+  ): Incident {
+    const cluster = this.clusters.get(clusterId);
+    const clusterName = data.clusterName || cluster?.name || 'Production Cluster';
+    const namespace = data.namespace || 'default';
+    const resourceKind = data.resourceKind || 'Deployment';
+    const resourceName = data.resourceName || data.workload || 'workload';
+    const incidentType = (data.incidentType as any) || 'CRASH_LOOP_BACKOFF';
+
+    const fingerprint = generateIncidentFingerprint(
+      clusterId || '',
+      namespace || 'default',
+      resourceKind || 'Deployment',
+      resourceName || 'workload',
+      incidentType || 'CRASH_LOOP_BACKOFF',
+      '',
+      'log_pattern'
+    );
+
+    // Deduplication check: return existing open incident if matches fingerprint or workload
+    const existing = Array.from(this.incidents.values()).find(
+      (inc) =>
+        inc.orgId === orgId &&
+        inc.clusterId === clusterId &&
+        (inc.fingerprint === fingerprint || (inc.resourceName === resourceName && inc.namespace === namespace)) &&
+        (inc.status === 'OPEN' || inc.status === 'ACKNOWLEDGED' || inc.status === 'IN_PROGRESS')
+    );
+
+    if (existing) {
+      existing.lastSeenAt = Date.now();
+      existing.updatedAt = Date.now();
+      this.persistIncident(existing, 'active-telemetry');
+      return existing;
+    }
+
+    const nextNum = this.incidentCounter++;
+    const incidentId = `SKY-${String(nextNum).padStart(4, '0')}`;
+
+    const newIncident: Incident = {
+      id: incidentId,
+      fingerprint,
+      orgId,
+      clusterId,
+      clusterName,
+      namespace,
+      resourceKind,
+      resourceName,
+      incidentType,
+      title: data.title,
+      severity: data.severity || 'HIGH',
+      confidence: 'HIGH',
+      status: 'OPEN',
+      occurrenceCount: 1,
+      firstSeenAt: Date.now(),
+      lastSeenAt: Date.now(),
+      technicalDetails: data.technicalDetails || {
+        reason: 'LogAlertPattern',
+        message: data.title
+      },
+      updatedAt: Date.now()
+    };
+
+    this.incidents.set(incidentId, newIncident);
+    this.incidentTimeline.set(incidentId, []);
+    this.incidentNotes.set(incidentId, []);
+
+    this.addTimelineEvent(incidentId, {
+      type: 'DETECTION',
+      actor: { type: 'SYSTEM', name: 'SkyOps Log Engine' },
+      description: `Incident created from log evidence: ${data.title}`
+    });
+
+    this.updateClusterIncidentCount(clusterId);
+    this.persistIncident(newIncident, 'detection');
+    this.dispatchIncidentNotifications(newIncident);
+
+    return newIncident;
+  }
+
   // --- Incident Queries & Mutations ---
   public getIncidents(
     orgId: string,

@@ -23,6 +23,7 @@ import {
   Info,
   Layers,
   Loader2,
+  Plus,
   RefreshCw,
   Search,
   Server,
@@ -33,7 +34,7 @@ import {
   TrendingUp,
   Zap
 } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -44,9 +45,18 @@ import {
   CostWasteItem,
   ResourceRightsizingRecommendation
 } from '../../types/enterprise';
+import { Cluster } from '../../types/index';
 import { Button, Modal } from '../common/UI';
 
-export const CostIntelligenceView: React.FC = () => {
+interface CostIntelligenceViewProps {
+  clusters?: Cluster[];
+  onOpenAddCluster?: () => void;
+}
+
+export const CostIntelligenceView: React.FC<CostIntelligenceViewProps> = ({
+  clusters = [],
+  onOpenAddCluster
+}) => {
   const { canApplyCostOptimization, isViewer } = useAuth();
   const [overview, setOverview] = useState<CostOverview | null>(null);
   const [allocation, setAllocation] = useState<CostAllocationBreakdown | null>(null);
@@ -56,8 +66,11 @@ export const CostIntelligenceView: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Active filter by cluster
+  const [selectedClusterFilter, setSelectedClusterFilter] = useState<string>('ALL');
+
   // Allocation active tab
-  const [activeAllocTab, setActiveAllocTab] = useState<'cluster' | 'namespace' | 'workload' | 'team'>('namespace');
+  const [activeAllocTab, setActiveAllocTab] = useState<'cluster' | 'namespace' | 'workload' | 'team'>('workload');
   const [allocSearch, setAllocSearch] = useState('');
 
   // Rightsizing modal state
@@ -114,6 +127,22 @@ export const CostIntelligenceView: React.FC = () => {
     }
   };
 
+  // Filter recommendations by cluster if chosen
+  const filteredRecommendations = useMemo(() => {
+    if (selectedClusterFilter === 'ALL') return recommendations;
+    return recommendations.filter(
+      (r) => r.clusterId === selectedClusterFilter || r.clusterName === selectedClusterFilter
+    );
+  }, [recommendations, selectedClusterFilter]);
+
+  // Filter waste by cluster
+  const filteredWasteItems = useMemo(() => {
+    if (selectedClusterFilter === 'ALL') return wasteItems;
+    return wasteItems.filter(
+      (w) => w.clusterId === selectedClusterFilter || w.clusterName === selectedClusterFilter
+    );
+  }, [wasteItems, selectedClusterFilter]);
+
   const currentAllocationList: CostAllocationItem[] = allocation
     ? activeAllocTab === 'cluster'
       ? allocation.byCluster
@@ -124,17 +153,71 @@ export const CostIntelligenceView: React.FC = () => {
       : allocation.byTeam
     : [];
 
-  const filteredAllocationList = currentAllocationList.filter((item) =>
-    item.name.toLowerCase().includes(allocSearch.toLowerCase()) ||
-    (item.clusterName && item.clusterName.toLowerCase().includes(allocSearch.toLowerCase())) ||
-    (item.namespace && item.namespace.toLowerCase().includes(allocSearch.toLowerCase()))
-  );
+  const filteredAllocationList = currentAllocationList.filter((item) => {
+    if (selectedClusterFilter !== 'ALL' && item.clusterName && item.clusterName !== selectedClusterFilter) {
+      return false;
+    }
+    const q = allocSearch.toLowerCase();
+    return (
+      item.name.toLowerCase().includes(q) ||
+      (item.clusterName && item.clusterName.toLowerCase().includes(q)) ||
+      (item.namespace && item.namespace.toLowerCase().includes(q))
+    );
+  });
 
   if (loading && !overview) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3 text-zinc-400 font-mono text-xs">
         <Loader2 className="w-6 h-6 animate-spin text-sky-400" />
         <span>Aggregating Kubernetes Cloud Cost Telemetry...</span>
+      </div>
+    );
+  }
+
+  // 0-Clusters clean empty state
+  if (clusters.length === 0 && (!overview || overview.estimatedMonthlyCostUsd === 0) && recommendations.length === 0) {
+    return (
+      <div className="p-8 max-w-7xl mx-auto space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800/80 pb-5">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400">
+              <DollarSign className="w-5 h-5" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-zinc-100 font-mono">
+                Kubernetes Cost & Rightsizing
+              </h1>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Real compute usage vs requested allocations to eliminate cloud over-spend.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-16 text-center rounded-2xl bg-zinc-900/40 border border-zinc-800 space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-sky-950/60 border border-sky-800/80 flex items-center justify-center text-sky-400 mx-auto">
+            <Coins className="w-7 h-7" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="font-mono text-base font-bold text-zinc-100">
+              No Kubernetes Clusters Connected
+            </h3>
+            <p className="text-xs text-zinc-400 max-w-md mx-auto leading-relaxed">
+              Connect a cluster to view actual monthly compute run-rates, CPU/memory waste ratios, and 1-click safe rightsizing recommendations grounded in live telemetry.
+            </p>
+          </div>
+          {onOpenAddCluster && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={onOpenAddCluster}
+              icon={<Plus className="w-3.5 h-3.5" />}
+              className="font-mono text-xs px-5 bg-sky-600 hover:bg-sky-500 text-white"
+            >
+              Connect Cluster
+            </Button>
+          )}
+        </div>
       </div>
     );
   }
@@ -163,6 +246,24 @@ export const CostIntelligenceView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          {clusters.length > 0 && (
+            <div className="flex items-center gap-1.5 text-xs text-zinc-400 bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1">
+              <Server className="w-3.5 h-3.5 text-zinc-500" />
+              <select
+                value={selectedClusterFilter}
+                onChange={(e) => setSelectedClusterFilter(e.target.value)}
+                className="bg-transparent text-zinc-200 focus:outline-none text-xs font-mono cursor-pointer pr-1"
+              >
+                <option value="ALL" className="bg-zinc-900">All Clusters ({clusters.length})</option>
+                {clusters.map((c) => (
+                  <option key={c.id} value={c.id} className="bg-zinc-900">
+                    {c.displayName || c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <Button
             variant="outline"
             size="sm"
@@ -340,11 +441,11 @@ export const CostIntelligenceView: React.FC = () => {
             </p>
           </div>
           <span className="text-[11px] font-mono px-2.5 py-1 rounded bg-zinc-800/80 text-zinc-300 border border-zinc-700/60">
-            {recommendations.length} Active Recommendations
+            {filteredRecommendations.length} Active Recommendations
           </span>
         </div>
 
-        {recommendations.length === 0 ? (
+        {filteredRecommendations.length === 0 ? (
           <div className="p-8 rounded-xl bg-zinc-900/40 border border-zinc-800 text-center space-y-2">
             <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
             <p className="text-sm font-semibold text-zinc-200">No Over-Provisioned Workloads Detected</p>
@@ -354,7 +455,7 @@ export const CostIntelligenceView: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {recommendations.map((rec) => (
+            {filteredRecommendations.map((rec) => (
               <div
                 key={rec.id}
                 className={`p-5 rounded-xl border flex flex-col justify-between transition-all ${
@@ -453,7 +554,7 @@ export const CostIntelligenceView: React.FC = () => {
           Cost Waste Detection
         </h2>
 
-        {wasteItems.length === 0 ? (
+        {filteredWasteItems.length === 0 ? (
           <div className="p-8 rounded-xl bg-zinc-900/40 border border-zinc-800 text-center space-y-2">
             <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
             <p className="text-sm font-semibold text-zinc-200">Zero Resource Waste Detected</p>
@@ -463,7 +564,7 @@ export const CostIntelligenceView: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {wasteItems.map((item) => (
+            {filteredWasteItems.map((item) => (
               <div
                 key={item.id}
                 className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800 flex items-start justify-between gap-4"

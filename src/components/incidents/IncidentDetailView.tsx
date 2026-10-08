@@ -75,12 +75,14 @@ interface IncidentDetailViewProps {
   incidentId: string;
   onBack: () => void;
   onSelectCluster?: (clusterId: string) => void;
+  onOpenLogs?: (clusterId: string, namespace: string, targetName: string) => void;
 }
 
 export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
   incidentId,
   onBack,
-  onSelectCluster
+  onSelectCluster,
+  onOpenLogs
 }) => {
   const { canEditIncidents, members } = useAuth();
   const [incident, setIncident] = useState<Incident | null>(null);
@@ -631,20 +633,33 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
         </h1>
 
         {/* Resource · Namespace · Cluster */}
-        <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-zinc-400">
-          <strong className="text-zinc-200 font-semibold">
-            {incident.resourceKind}/{incident.resourceName}
-          </strong>
-          <span className="text-zinc-600">·</span>
-          <span>{incident.namespace}</span>
-          <span className="text-zinc-600">·</span>
-          <span
-            onClick={() => onSelectCluster && onSelectCluster(incident.clusterId)}
-            className="hover:text-zinc-200 cursor-pointer"
-            title="Cluster"
-          >
-            {incident.clusterName}
-          </span>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono text-zinc-400">
+          <div className="flex flex-wrap items-center gap-2">
+            <strong className="text-zinc-200 font-semibold">
+              {incident.resourceKind}/{incident.resourceName}
+            </strong>
+            <span className="text-zinc-600">·</span>
+            <span>{incident.namespace}</span>
+            <span className="text-zinc-600">·</span>
+            <span
+              onClick={() => onSelectCluster && onSelectCluster(incident.clusterId)}
+              className="hover:text-zinc-200 cursor-pointer"
+              title="Cluster"
+            >
+              {incident.clusterName}
+            </span>
+          </div>
+
+          {onOpenLogs && (
+            <button
+              onClick={() => onOpenLogs(incident.clusterId, incident.namespace, incident.resourceName)}
+              className="px-2.5 py-1 rounded bg-sky-950/60 hover:bg-sky-900 text-sky-300 border border-sky-800 text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Investigate correlating logs in Logs Explorer"
+            >
+              <Terminal className="w-3.5 h-3.5" />
+              <span>Open Logs Explorer →</span>
+            </button>
+          )}
         </div>
 
         {/* Detected / Occurred Section */}
@@ -1097,6 +1112,18 @@ export const IncidentDetailView: React.FC<IncidentDetailViewProps> = ({
                   <pre className="text-zinc-200 whitespace-pre-wrap break-words leading-relaxed font-mono text-[11px]">
                     {tech.message}
                   </pre>
+                </div>
+              )}
+
+              {onOpenLogs && (
+                <div className="pt-2 flex justify-end">
+                  <button
+                    onClick={() => onOpenLogs(incident.clusterId, incident.namespace, incident.resourceName)}
+                    className="px-3 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-xs font-mono flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <Terminal className="w-3.5 h-3.5" />
+                    <span>Investigate Correlated Container Logs in Logs Explorer →</span>
+                  </button>
                 </div>
               )}
             </div>

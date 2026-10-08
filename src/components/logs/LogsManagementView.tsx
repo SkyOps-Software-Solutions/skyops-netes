@@ -99,10 +99,38 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
   const [selectedWorkload, setSelectedWorkload] = useState<string>(initialWorkload || 'all');
   const [selectedPodName, setSelectedPodName] = useState<string>(initialPod || 'all');
   const [selectedContainer, setSelectedContainer] = useState<string>('all');
+  const [selectedNodeName, setSelectedNodeName] = useState<string>('all');
   const [selectedSeverity, setSelectedSeverity] = useState<LogSeverity | 'ALL' | 'ERRORS_ONLY' | 'WARNINGS_AND_ERRORS'>('ALL');
   const [timeRange, setTimeRange] = useState<string>('1h');
   const [searchQuery, setSearchQuery] = useState<string>(initialSearch || '');
   const [viewPrevious, setViewPrevious] = useState<boolean>(false);
+
+  // Sync sub-tab in browser URL for /logs/explorer, /logs/live, /logs/alerts, /logs/collection
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const pathMatch = window.location.pathname.match(/\/logs\/(explorer|live|alerts|collection)/i);
+        if (pathMatch && pathMatch[1]) {
+          setActiveTab(pathMatch[1].toLowerCase() as MainLogsTab);
+        }
+      }
+    } catch {
+      // safe fallback
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined' && window.location.pathname.startsWith('/logs')) {
+        const target = `/logs/${activeTab}`;
+        if (window.location.pathname !== target) {
+          window.history.replaceState({ tab: 'logs', subTab: activeTab }, '', target);
+        }
+      }
+    } catch {
+      // safe fallback
+    }
+  }, [activeTab]);
 
   // Log Records & Pagination
   const [logs, setLogs] = useState<LogRecord[]>([]);
@@ -203,20 +231,148 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
     }
   };
 
-  // Load log records
+  // Available filter values derived from workloads and logs
+  const availableNamespaces = useMemo(() => {
+    const set = new Set<string>();
+    workloads.forEach((w) => { if (w.namespace) set.add(w.namespace); });
+    logs.forEach((l) => { if (l.namespace) set.add(l.namespace); });
+    if (set.size === 0) {
+      set.add('production');
+      set.add('payments');
+      set.add('security');
+    }
+    return Array.from(set).sort();
+  }, [workloads, logs]);
+
+  const availableWorkloads = useMemo(() => {
+    const set = new Set<string>();
+    workloads.forEach((w) => {
+      if (selectedNamespace === 'all' || w.namespace === selectedNamespace) {
+        set.add(w.workload);
+      }
+    });
+    logs.forEach((l) => {
+      if ((selectedNamespace === 'all' || l.namespace === selectedNamespace) && l.workload) {
+        set.add(l.workload);
+      }
+    });
+    return Array.from(set).sort();
+  }, [workloads, logs, selectedNamespace]);
+
+  const availablePods = useMemo(() => {
+    const set = new Set<string>();
+    workloads.forEach((w) => {
+      if (selectedWorkload === 'all' || w.workload === selectedWorkload) {
+        w.pods?.forEach((p) => set.add(p.name));
+      }
+    });
+    logs.forEach((l) => {
+      if ((selectedWorkload === 'all' || l.workload === selectedWorkload) && l.podName) {
+        set.add(l.podName);
+      }
+    });
+    return Array.from(set).sort();
+  }, [workloads, logs, selectedWorkload]);
+
+  const availableContainers = useMemo(() => {
+    const set = new Set<string>();
+    logs.forEach((l) => {
+      if (l.container) set.add(l.container);
+    });
+    if (set.size === 0) {
+      set.add('app');
+      set.add('sidecar');
+    }
+    return Array.from(set).sort();
+  }, [logs]);
+
+  const availableNodes = useMemo(() => {
+    const set = new Set<string>();
+    workloads.forEach((w) => {
+      w.pods?.forEach((p) => { if (p.nodeName) set.add(p.nodeName); });
+    });
+    logs.forEach((l) => {
+      if (l.nodeName) set.add(l.nodeName);
+    });
+    if (set.size === 0) {
+      set.add('k8s-node-worker-01');
+      set.add('k8s-node-worker-02');
+      set.add('k8s-node-worker-03');
+    }
+    return Array.from(set).sort();
+  }, [workloads, logs]);
+
+  const crashLoopPod = useMemo(() => {
+    for (const wl of workloads) {
+      for (const p of wl.pods) {
+        if (p.status?.toLowerCase().includes('crash') || p.restarts >= 2) {
+          return { ...p, workload: wl.workload, namespace: wl.namespace };
+        }
+      }
+    }
+    return null;
+  }, [workloads]);
+
+  // Load log records with structured filter parser support
   const loadLogs = async () => {
     if (!selectedClusterId) return;
     try {
       setLoadingLogs(true);
       const now = Date.now();
+
+      let effectiveSearch = searchQuery;
+      let effectiveSeverity = selectedSeverity;
+      let effectiveNamespace = selectedNamespace !== 'all' ? selectedNamespace : undefined;
+      let effectiveWorkload = selectedWorkload !== 'all' ? selectedWorkload : undefined;
+      let effectivePodName = selectedPodName !== 'all' ? selectedPodName : undefined;
+      let effectiveContainer = selectedContainer !== 'all' ? selectedContainer : undefined;
+      let effectiveNodeName = selectedNodeName !== 'all' ? selectedNodeName : undefined;
+
+      // Support simple structured filters where practical:
+      // severity:error, namespace:payments, workload:checkout-api, pod:xyz, node:worker-01, container:app
+      const sevMatch = searchQuery.match(/\bseverity:(\w+)/i);
+      if (sevMatch) {
+        const s = sevMatch[1].toUpperCase();
+        if (['FATAL', 'ERROR', 'WARN', 'INFO', 'DEBUG'].includes(s)) {
+          effectiveSeverity = s as LogSeverity;
+        }
+        effectiveSearch = effectiveSearch.replace(sevMatch[0], '').trim();
+      }
+      const nsMatch = searchQuery.match(/\bnamespace:([\w-]+)/i);
+      if (nsMatch) {
+        effectiveNamespace = nsMatch[1];
+        effectiveSearch = effectiveSearch.replace(nsMatch[0], '').trim();
+      }
+      const wlMatch = searchQuery.match(/\bworkload:([\w-]+)/i);
+      if (wlMatch) {
+        effectiveWorkload = wlMatch[1];
+        effectiveSearch = effectiveSearch.replace(wlMatch[0], '').trim();
+      }
+      const podMatch = searchQuery.match(/\bpod:([\w-]+)/i);
+      if (podMatch) {
+        effectivePodName = podMatch[1];
+        effectiveSearch = effectiveSearch.replace(podMatch[0], '').trim();
+      }
+      const nodeMatch = searchQuery.match(/\bnode:([\w-]+)/i);
+      if (nodeMatch) {
+        effectiveNodeName = nodeMatch[1];
+        effectiveSearch = effectiveSearch.replace(nodeMatch[0], '').trim();
+      }
+      const ctrMatch = searchQuery.match(/\bcontainer:([\w-]+)/i);
+      if (ctrMatch) {
+        effectiveContainer = ctrMatch[1];
+        effectiveSearch = effectiveSearch.replace(ctrMatch[0], '').trim();
+      }
+
       const res = await api.searchLogs({
         clusterId: selectedClusterId,
-        namespace: selectedNamespace,
-        workload: selectedWorkload,
-        podName: selectedPodName,
-        container: selectedContainer,
-        severity: selectedSeverity,
-        search: searchQuery,
+        namespace: effectiveNamespace,
+        workload: effectiveWorkload,
+        podName: effectivePodName,
+        container: effectiveContainer,
+        nodeName: effectiveNodeName,
+        severity: effectiveSeverity,
+        search: effectiveSearch,
         startTimeMs: now - timeRangeMs,
         endTimeMs: now,
         previous: viewPrevious,
@@ -286,7 +442,17 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
     if (activeTab === 'explorer') {
       loadLogs();
     }
-  }, [selectedNamespace, selectedWorkload, selectedPodName, selectedContainer, selectedSeverity, timeRange, viewPrevious]);
+  }, [
+    selectedNamespace,
+    selectedWorkload,
+    selectedPodName,
+    selectedContainer,
+    selectedNodeName,
+    selectedSeverity,
+    timeRange,
+    viewPrevious,
+    searchQuery
+  ]);
 
   // Live Streaming poller
   useEffect(() => {
@@ -872,9 +1038,17 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder='Search logs (e.g. connection refused, timeout, OOMKilled, severity:error, workload:checkout-api)...'
-                    className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-sky-500"
+                    placeholder='Search logs... (e.g. connection refused, timeout, OOMKilled, severity:error, namespace:payments, workload:checkout-api)'
+                    className="w-full pl-9 pr-8 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-sky-500"
                   />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
 
                 {/* Saved Searches Dropdown */}
@@ -894,7 +1068,7 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
                             if (s.severity) setSelectedSeverity(s.severity as any);
                             showToast(`Loaded saved query: ${s.name}`);
                           }}
-                          className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 text-zinc-200 truncate"
+                          className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 text-zinc-200 truncate cursor-pointer"
                         >
                           {s.name}
                         </button>
@@ -913,19 +1087,112 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
                 </Button>
               </div>
 
-              {/* Structured Filter Pills */}
-              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+              {/* Quick Query Example Chips */}
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-zinc-400">
+                <span className="text-zinc-500 text-[10px] uppercase font-bold mr-1">Examples:</span>
+                {[
+                  'connection refused',
+                  'timeout',
+                  'OOMKilled',
+                  'panic',
+                  'authentication failed',
+                  'severity:error',
+                  'namespace:payments',
+                  'workload:checkout-api'
+                ].map((chip) => (
+                  <button
+                    key={chip}
+                    onClick={() => {
+                      setSearchQuery(chip);
+                      showToast(`Applied search query: ${chip}`);
+                    }}
+                    className="px-2 py-0.5 rounded bg-zinc-950 hover:bg-zinc-800 border border-zinc-800/80 hover:border-zinc-700 text-zinc-300 transition-colors cursor-pointer"
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+
+              {/* Top-Level Filter Selectors: Namespace, Workload, Pod, Container, Node, Severity */}
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-800/60 text-xs">
+                {/* Namespace filter */}
+                <select
+                  aria-label="Filter namespace"
+                  value={selectedNamespace}
+                  onChange={(e) => {
+                    setSelectedNamespace(e.target.value);
+                    setSelectedWorkload('all');
+                    setSelectedPodName('all');
+                  }}
+                  className="px-2.5 py-1 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 focus:outline-none"
+                >
+                  <option value="all">Namespace: All</option>
+                  {availableNamespaces.map((ns) => (
+                    <option key={ns} value={ns}>
+                      Namespace: {ns}
+                    </option>
+                  ))}
+                </select>
+
                 {/* Workload filter */}
                 <select
                   aria-label="Filter workload"
                   value={selectedWorkload}
-                  onChange={(e) => setSelectedWorkload(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedWorkload(e.target.value);
+                    setSelectedPodName('all');
+                  }}
                   className="px-2.5 py-1 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 focus:outline-none"
                 >
                   <option value="all">Workload: All</option>
-                  {workloads.map((w) => (
-                    <option key={w.workload} value={w.workload}>
-                      Workload: {w.workload}
+                  {availableWorkloads.map((w) => (
+                    <option key={w} value={w}>
+                      Workload: {w}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Pod filter */}
+                <select
+                  aria-label="Filter pod"
+                  value={selectedPodName}
+                  onChange={(e) => setSelectedPodName(e.target.value)}
+                  className="px-2.5 py-1 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 focus:outline-none"
+                >
+                  <option value="all">Pod: All</option>
+                  {availablePods.map((p) => (
+                    <option key={p} value={p}>
+                      Pod: {p}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Container filter */}
+                <select
+                  aria-label="Filter container"
+                  value={selectedContainer}
+                  onChange={(e) => setSelectedContainer(e.target.value)}
+                  className="px-2.5 py-1 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 focus:outline-none"
+                >
+                  <option value="all">Container: All</option>
+                  {availableContainers.map((c) => (
+                    <option key={c} value={c}>
+                      Container: {c}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Node filter */}
+                <select
+                  aria-label="Filter node"
+                  value={selectedNodeName}
+                  onChange={(e) => setSelectedNodeName(e.target.value)}
+                  className="px-2.5 py-1 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 focus:outline-none"
+                >
+                  <option value="all">Node: All</option>
+                  {availableNodes.map((n) => (
+                    <option key={n} value={n}>
+                      Node: {n}
                     </option>
                   ))}
                 </select>
@@ -962,23 +1229,74 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
                 </button>
 
                 {/* Active Filter Clear */}
-                {(selectedWorkload !== 'all' || selectedNamespace !== 'all' || selectedSeverity !== 'ALL' || searchQuery || viewPrevious) && (
+                {(selectedWorkload !== 'all' || selectedNamespace !== 'all' || selectedPodName !== 'all' || selectedContainer !== 'all' || selectedNodeName !== 'all' || selectedSeverity !== 'ALL' || searchQuery || viewPrevious) && (
                   <button
                     onClick={() => {
                       setSelectedWorkload('all');
                       setSelectedNamespace('all');
+                      setSelectedPodName('all');
+                      setSelectedContainer('all');
+                      setSelectedNodeName('all');
                       setSelectedSeverity('ALL');
                       setSearchQuery('');
                       setViewPrevious(false);
                       showToast('Reset all filters');
                     }}
-                    className="text-zinc-400 hover:text-zinc-200 text-xs flex items-center gap-1 underline ml-auto"
+                    className="text-zinc-400 hover:text-zinc-200 text-xs flex items-center gap-1 underline ml-auto cursor-pointer"
                   >
                     Clear Filters
                   </button>
                 )}
               </div>
             </div>
+
+            {/* Section 9: Prominent Previous Crash Logs Banner for CrashLoopBackOff */}
+            {crashLoopPod && (
+              <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono animate-fade-in">
+                <div className="flex items-center gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <div>
+                    <span className="font-bold text-rose-200">Pod {crashLoopPod.name} is {crashLoopPod.status}</span>
+                    <span className="text-zinc-400 ml-2">• Restarts: <strong className="text-rose-400">{crashLoopPod.restarts}</strong></span>
+                    <span className="text-zinc-500 ml-2">({crashLoopPod.workload} in {crashLoopPod.namespace})</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => {
+                      setSelectedWorkload(crashLoopPod.workload);
+                      setSelectedNamespace(crashLoopPod.namespace);
+                      setSelectedPodName(crashLoopPod.name);
+                      setViewPrevious(false);
+                      showToast(`Viewing current live logs for ${crashLoopPod.name}`);
+                    }}
+                    className={`px-3 py-1.5 rounded text-xs transition-colors cursor-pointer ${
+                      !viewPrevious && selectedPodName === crashLoopPod.name
+                        ? 'bg-zinc-800 text-white font-bold border border-zinc-700'
+                        : 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800 border border-zinc-800'
+                    }`}
+                  >
+                    View Current Logs
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedWorkload(crashLoopPod.workload);
+                      setSelectedNamespace(crashLoopPod.namespace);
+                      setSelectedPodName(crashLoopPod.name);
+                      setViewPrevious(true);
+                      showToast(`Switched to previous container logs for ${crashLoopPod.name}`);
+                    }}
+                    className={`px-3 py-1.5 rounded text-xs transition-colors cursor-pointer ${
+                      viewPrevious && selectedPodName === crashLoopPod.name
+                        ? 'bg-rose-600 text-white font-bold shadow-sm'
+                        : 'bg-rose-950/80 text-rose-300 hover:bg-rose-900 border border-rose-700'
+                    }`}
+                  >
+                    View Previous Container Logs
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Log Stream Viewer */}
             <div className="rounded-xl border border-zinc-800 bg-[#090b10] overflow-hidden flex flex-col font-mono text-xs shadow-2xl">
@@ -1131,10 +1449,10 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
                 {selectedWorkload !== 'all' && <span className="text-sky-400">• Workload: {selectedWorkload}</span>}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => setIsLiveStreaming(!isLiveStreaming)}
-                  className={`px-3 py-1.5 rounded-lg border flex items-center gap-1.5 font-bold cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-lg border flex items-center gap-1.5 font-bold cursor-pointer text-xs ${
                     isLiveStreaming
                       ? 'bg-amber-950 text-amber-300 border-amber-700'
                       : 'bg-emerald-950 text-emerald-300 border-emerald-700'
@@ -1146,14 +1464,14 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
 
                 <button
                   onClick={() => setLiveLogs([])}
-                  className="px-3 py-1.5 rounded-lg border border-zinc-800 hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 cursor-pointer"
+                  className="px-3 py-1.5 rounded-lg border border-zinc-800 hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 cursor-pointer text-xs"
                 >
                   Clear
                 </button>
 
                 <button
                   onClick={() => setAutoScroll(!autoScroll)}
-                  className={`px-3 py-1.5 rounded-lg border cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-lg border cursor-pointer text-xs ${
                     autoScroll
                       ? 'bg-sky-950 text-sky-300 border-sky-800 font-bold'
                       : 'bg-zinc-900 text-zinc-400 border-zinc-800'
@@ -1162,17 +1480,39 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
                   Auto-Scroll: {autoScroll ? 'ON' : 'OFF'}
                 </button>
 
-                {/* Filter toggle */}
-                <select
-                  aria-label="Filter live severity"
-                  value={selectedSeverity}
-                  onChange={(e) => setSelectedSeverity(e.target.value as any)}
-                  className="px-2.5 py-1.5 rounded bg-zinc-950 border border-zinc-800 text-zinc-200 focus:outline-none"
-                >
-                  <option value="ALL">All Levels</option>
-                  <option value="WARNINGS_AND_ERRORS">Warn + Errors</option>
-                  <option value="ERRORS_ONLY">Errors Only</option>
-                </select>
+                {/* Filter toggle pills matching Section 8 */}
+                <div className="flex items-center gap-1 bg-zinc-950 border border-zinc-800 rounded-lg p-0.5 text-xs">
+                  <button
+                    onClick={() => setSelectedSeverity('ALL')}
+                    className={`px-2 py-1 rounded transition-colors cursor-pointer ${
+                      selectedSeverity === 'ALL'
+                        ? 'bg-zinc-800 text-white font-bold'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    All
+                  </button>
+                  <button
+                    onClick={() => setSelectedSeverity('WARNINGS_AND_ERRORS')}
+                    className={`px-2 py-1 rounded transition-colors cursor-pointer ${
+                      selectedSeverity === 'WARNINGS_AND_ERRORS'
+                        ? 'bg-amber-950 text-amber-300 font-bold border border-amber-800'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    Warnings + errors
+                  </button>
+                  <button
+                    onClick={() => setSelectedSeverity('ERRORS_ONLY')}
+                    className={`px-2 py-1 rounded transition-colors cursor-pointer ${
+                      selectedSeverity === 'ERRORS_ONLY'
+                        ? 'bg-rose-950 text-rose-300 font-bold border border-rose-800'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    Errors only
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1190,9 +1530,11 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
               ) : (
                 liveLogs.map((log) => (
                   <div key={log.id} className="flex flex-col sm:flex-row sm:items-baseline gap-2 py-0.5 hover:bg-zinc-900/60 px-1 rounded">
-                    <span className="text-zinc-500 text-[10px] shrink-0">{log.timestamp.split('T')[1]?.replace('Z', '')}</span>
+                    <span className="text-zinc-500 text-[10px] shrink-0 font-mono">
+                      {log.timestamp.split('T')[1]?.replace('Z', '') || log.timestamp}
+                    </span>
                     <span
-                      className={`text-[9px] font-bold px-1.5 py-0.2 rounded border shrink-0 ${
+                      className={`text-[9px] font-bold px-1.5 py-0.2 rounded border shrink-0 font-mono ${
                         log.severity === 'ERROR' || log.severity === 'FATAL'
                           ? 'bg-rose-950 text-rose-300 border-rose-800'
                           : log.severity === 'WARN'
@@ -1202,7 +1544,8 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
                     >
                       {log.severity}
                     </span>
-                    <span className="text-zinc-400 text-[11px] shrink-0">[{log.podName}]</span>
+                    <span className="text-zinc-400 text-[11px] shrink-0 font-mono">[{log.podName}]</span>
+                    <span className="text-zinc-500 text-[10px] shrink-0 font-mono">[{log.container || 'main'}]</span>
                     <span className="text-zinc-200 break-all">{log.message}</span>
                   </div>
                 ))

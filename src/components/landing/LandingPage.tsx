@@ -13,9 +13,10 @@ import { BrandLogo } from '../common/BrandLogo';
 interface LandingPageProps {
   onSignIn: () => void;
   onSignUp: () => void;
+  onExploreDemo?: () => void;
 }
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) => {
+export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, onExploreDemo }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const hudRef = useRef<HTMLDivElement | null>(null);
   const pinRef = useRef<HTMLDivElement | null>(null);

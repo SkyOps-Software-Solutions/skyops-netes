@@ -52,6 +52,7 @@ interface OverviewViewProps {
   onOpenAddCluster: () => void;
   onRefresh: () => void;
   loading: boolean;
+  onNavigateTab?: (tab: any) => void;
 }
 
 const OverviewViewContent: React.FC<OverviewViewProps> = ({

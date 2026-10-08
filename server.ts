@@ -3391,7 +3391,8 @@ app.get('/api/v1/cost/savings', requireUserAuth, requireOrgMembership, requirePe
 // ENTERPRISE SECURITY & GOVERNANCE ROUTES
 // ==========================================
 app.get('/api/v1/security/posture', requireUserAuth, requireOrgMembership, requirePermission('security.read'), (req: AuthenticatedUserRequest, res) => {
-  const posture = SecurityEngine.getSecurityPostureOverview(req.orgId!);
+  const { clusterId } = req.query;
+  const posture = SecurityEngine.getSecurityPostureOverview(req.orgId!, clusterId as string | undefined);
   res.json({ posture });
 });
 
@@ -3457,6 +3458,7 @@ app.post('/api/v1/security/findings/:id/remediate', requireUserAuth, requireOrgM
     }
   });
 
+  SecurityEngine.markFindingResolved(req.orgId!, finding.id);
   finding.status = 'RESOLVED';
   res.json({ success: true, message: `Security remediation executed for ${finding.resourceName}. Verified configuration applied.`, finding });
 });

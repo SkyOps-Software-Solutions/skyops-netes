@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import https from 'https';
 import { store } from './store';
-import { Role } from '../src/types/index';
+import { Role, Organization } from '../src/types/index';
 import { config, isProduction } from './config';
 import fallbackConfig from './firebaseAppletConfig';
 
@@ -375,28 +375,43 @@ export async function requireOrgMembership(
     }
 
     if (userOrgs.length === 0) {
-      // Auto-bootstrap an isolated personal workspace for a newly authenticated user.
-      const userWorkspaceName = req.user.name ? `${req.user.name.split(' ')[0]}'s Workspace` : 'Primary Workspace';
-      const newOrg = store.createOrganization(userWorkspaceName, req.user.id, req.user.email, req.user.name);
-      userOrgs = [newOrg];
+      const isSessionEndpoint = req.path === '/api/v1/auth/session' || req.originalUrl?.includes('/api/v1/auth/session');
+      if (isSessionEndpoint) {
+        // Auto-bootstrap an isolated personal workspace for a newly authenticated user during session creation.
+        const userWorkspaceName = req.user.name ? `${req.user.name.split(' ')[0]}'s Workspace` : 'Primary Workspace';
+        const newOrg = store.createOrganization(userWorkspaceName, req.user.id, req.user.email, req.user.name);
+        userOrgs = [newOrg];
+      } else {
+        return res.status(403).json({
+          error: 'Organization membership required',
+          code: 'ORG_MEMBERSHIP_REQUIRED',
+          message: 'You are not a member of any organization. Complete onboarding or create an organization first.'
+        });
+      }
     }
   }
 
   // Resolve target organization by stable canonical ID
-  let targetOrg = requestedOrgId
-    ? userOrgs.find((o) => o.id === requestedOrgId || o.slug === requestedOrgId)
-    : userOrgs[0];
-
-  if (!targetOrg && requestedOrgId) {
-    // Check backend membership access for requestedOrgId
-    const accessCheck = store.checkUserOrgAccess(req.user.id, requestedOrgId, req.user.email);
-    if (accessCheck.hasAccess) {
-      targetOrg = store.getOrganization(requestedOrgId) || undefined;
+  let targetOrg: Organization | undefined;
+  if (requestedOrgId) {
+    targetOrg = userOrgs.find((o) => o.id === requestedOrgId || o.slug === requestedOrgId);
+    if (!targetOrg) {
+      const accessCheck = store.checkUserOrgAccess(req.user.id, requestedOrgId, req.user.email);
+      if (accessCheck.hasAccess) {
+        targetOrg = store.getOrganization(requestedOrgId) || undefined;
+      }
     }
-  }
-
-  // If requested organization is invalid or inaccessible, fall back to user's first valid organization
-  if (!targetOrg && userOrgs.length > 0) {
+    // Explicit requestedOrgId was not accessible to this user: reject with 403 (never fall back across tenant boundary)
+    if (!targetOrg) {
+      return res.status(403).json({
+        error: 'Forbidden: You do not have access to this organization',
+        code: 'ORG_ACCESS_DENIED',
+        requestedOrgId: requestedOrgId,
+        availableOrgs: userOrgs.map((o) => ({ id: o.id, name: o.name, slug: o.slug })),
+        message: 'You are not an authorized member of this organization.'
+      });
+    }
+  } else {
     targetOrg = userOrgs[0];
   }
 

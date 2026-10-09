@@ -1698,31 +1698,33 @@ export class LogManager {
     }
 
     // Group 5: DEPLOYMENTS / CHANGES
-    const recentDeployments = deployments.filter((d) => {
-      const depTime = d.deployedAt || d.createdAt || 0;
+    const recentDeployments = deployments.filter((d: any) => {
+      const depWorkload = d.workload || d.name || '';
+      const depTime = d.deployedAt || d.createdAt || d.startedAt || 0;
       return (
         depTime >= windowStartMs &&
         depTime <= windowEndMs &&
-        (d.workload.toLowerCase() === targetWorkload.toLowerCase() ||
-          connectedServices.has(d.workload) ||
-          dependencies.has(d.workload))
+        (depWorkload.toLowerCase() === targetWorkload.toLowerCase() ||
+          connectedServices.has(depWorkload) ||
+          dependencies.has(depWorkload))
       );
     });
 
     const deploymentItems: RelatedLogItem[] = [];
-    for (const dep of recentDeployments) {
-      const depLogs = clusterLogs.filter((l) => l.workload.toLowerCase() === dep.workload.toLowerCase());
+    for (const dep of recentDeployments as any[]) {
+      const depWorkload = dep.workload || dep.name || '';
+      const depLogs = clusterLogs.filter((l) => l.workload.toLowerCase() === depWorkload.toLowerCase());
       deploymentItems.push({
-        id: `deploy-${dep.id || dep.workload}`,
+        id: `deploy-${dep.id || depWorkload}`,
         category: 'DEPLOYMENT_CHANGE',
         resourceKind: 'Deployment',
-        resourceName: `${dep.workload}:${dep.revision || dep.imageTag || 'vLatest'}`,
+        resourceName: `${depWorkload}:${dep.revision || dep.imageTag || 'vLatest'}`,
         namespace: dep.namespace || clusterNamespace,
         relevanceScore: 94,
         relevanceReasons: [
           `Rollout of revision ${dep.revision || 'current'} occurred during investigation window`,
-          `Image: ${dep.imageTag || dep.containers?.[0]?.image || 'latest'}`,
-          `Deployed ${Math.round(Math.abs((dep.deployedAt || incidentTimestamp) - incidentTimestamp) / 60000)}m relative to incident onset`
+          `Image: ${dep.imageTag || dep.image || dep.containers?.[0]?.image || 'latest'}`,
+          `Deployed ${Math.round(Math.abs(((dep.deployedAt || dep.startedAt || incidentTimestamp) - incidentTimestamp)) / 60000)}m relative to incident onset`
         ],
         errorCount: depLogs.filter((l) => l.severity === 'ERROR').length,
         warningCount: depLogs.filter((l) => l.severity === 'WARN').length,
@@ -1735,11 +1737,11 @@ export class LogManager {
           podName: r.podName,
           container: r.container
         })),
-        relationshipDescription: `Deployment update ${dep.workload} (${dep.revision || 'vLatest'}) rollout in ${dep.namespace}`,
+        relationshipDescription: `Deployment update ${depWorkload} (${dep.revision || 'vLatest'}) rollout in ${dep.namespace}`,
         deepLinkFilter: {
           clusterId,
           namespace: dep.namespace,
-          workload: dep.workload,
+          workload: depWorkload,
           startTimeMs: windowStartMs,
           endTimeMs: windowEndMs
         }
@@ -1777,21 +1779,22 @@ export class LogManager {
     });
 
     // Add Deployments
-    for (const d of recentDeployments) {
-      const depTime = d.deployedAt || d.createdAt || incidentTimestamp - 10 * 60 * 1000;
+    for (const d of recentDeployments as any[]) {
+      const depWorkload = d.workload || d.name || 'deployment';
+      const depTime = d.deployedAt || d.createdAt || d.startedAt || incidentTimestamp - 10 * 60 * 1000;
       const diffMs = depTime - incidentTimestamp;
       const diffMins = Math.round(Math.abs(diffMs) / 60000);
       timelineEvents.push({
-        id: `timeline-dep-${d.id || d.workload}`,
+        id: `timeline-dep-${d.id || depWorkload}`,
         timestamp: depTime,
         timeFormatted: new Date(depTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
         relativeOffset: diffMs < 0 ? `-${diffMins}m before onset` : `+${diffMins}m after onset`,
         type: 'DEPLOYMENT',
-        source: `${d.workload}:${d.revision || d.imageTag || 'latest'}`,
-        headline: `Deployment Rolled Out: ${d.workload}`,
-        detail: `Revision ${d.revision || 'vLatest'} deployed with image "${d.imageTag || 'latest'}"`,
+        source: `${depWorkload}:${d.revision || d.imageTag || d.image || 'latest'}`,
+        headline: `Deployment Rolled Out: ${depWorkload}`,
+        detail: `Revision ${d.revision || 'vLatest'} deployed with image "${d.imageTag || d.image || 'latest'}"`,
         resourceKind: 'Deployment',
-        resourceName: d.workload,
+        resourceName: depWorkload,
         namespace: d.namespace,
         severity: 'INFO',
         isKeyEvidence: true
@@ -1906,12 +1909,13 @@ export class LogManager {
     let stepNum = 1;
     // Step 1: Recent deployment or trigger
     if (recentDeployments.length > 0) {
-      const dep = recentDeployments[0];
-      supportingEvidence.push(`Failure started following rollout of ${dep.workload} (${dep.revision || 'vLatest'})`);
+      const dep: any = recentDeployments[0];
+      const depWorkload = dep.workload || dep.name || 'deployment';
+      supportingEvidence.push(`Failure started following rollout of ${depWorkload} (${dep.revision || 'vLatest'})`);
       connectedChain.push({
         step: stepNum++,
-        actor: dep.workload,
-        observation: `Deployment rollout (${dep.revision || dep.imageTag || 'vLatest'}) applied to cluster`,
+        actor: depWorkload,
+        observation: `Deployment rollout (${dep.revision || dep.imageTag || dep.image || 'vLatest'}) applied to cluster`,
         offsetSeconds: 0,
         transitionText: 'triggered upstream configuration changes'
       });

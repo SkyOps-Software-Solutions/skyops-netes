@@ -274,10 +274,6 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
     logs.forEach((l) => {
       if (l.container) set.add(l.container);
     });
-    if (set.size === 0) {
-      set.add('app');
-      set.add('sidecar');
-    }
     return Array.from(set).sort();
   }, [logs]);
 
@@ -289,11 +285,6 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
     logs.forEach((l) => {
       if (l.nodeName) set.add(l.nodeName);
     });
-    if (set.size === 0) {
-      set.add('k8s-node-worker-01');
-      set.add('k8s-node-worker-02');
-      set.add('k8s-node-worker-03');
-    }
     return Array.from(set).sort();
   }, [workloads, logs]);
 
@@ -1450,11 +1441,28 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
             <div className="p-3.5 rounded-xl bg-zinc-900/40 border border-zinc-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-3">
                 <span className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${isLiveStreaming ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-600'}`} />
-                  <strong>{isLiveStreaming ? 'Streaming Live' : 'Streaming Paused'}</strong>
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      selectedCluster?.agentStatus !== 'CONNECTED'
+                        ? 'bg-rose-500'
+                        : isLiveStreaming
+                        ? 'bg-emerald-400 animate-pulse'
+                        : 'bg-zinc-600'
+                    }`}
+                  />
+                  <strong>
+                    {selectedCluster?.agentStatus !== 'CONNECTED'
+                      ? 'Agent Disconnected'
+                      : isLiveStreaming
+                      ? 'Streaming Live'
+                      : 'Streaming Paused'}
+                  </strong>
                 </span>
                 <span className="text-zinc-600">|</span>
                 <span className="text-zinc-400">Cluster: {selectedCluster?.name}</span>
+                {selectedCluster?.agentStatus !== 'CONNECTED' && (
+                  <span className="text-rose-400 font-sans">• Agent offline: reconnect cluster agent to stream logs</span>
+                )}
                 {selectedWorkload !== 'all' && <span className="text-sky-400">• Workload: {selectedWorkload}</span>}
               </div>
 

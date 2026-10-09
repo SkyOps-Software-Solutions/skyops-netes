@@ -65,6 +65,18 @@ import {
   RoleCapabilitySummary,
   EnterpriseAuditRecord
 } from '../types/index';
+import {
+  DeploymentLogComparison,
+  ErrorSpike,
+  LogAlertRule,
+  LogAlertTriggerEvent,
+  LogCollectionRule,
+  LogOverviewStats,
+  LogQueryFilter,
+  LogSearchResult,
+  SavedLogSearch,
+  WorkloadLogSummary
+} from '../types/logs';
 
 /**
  * Normalizes and validates cluster resources API responses.

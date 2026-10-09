@@ -408,6 +408,13 @@ export class SecurityEngine {
     });
   }
 
+  private static resolvedFindingIds: Set<string> = new Set();
+
+  public static markFindingResolved(orgId: string, findingId: string): boolean {
+    this.resolvedFindingIds.add(findingId);
+    return true;
+  }
+
   /**
    * Get High-Level Security Posture Overview (Critical, High, Medium, Low breakdown)
    */

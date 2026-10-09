@@ -14,7 +14,7 @@ import {
   WorkloadLogSummary
 } from '../../src/types/logs';
 import { auditService } from '../audit';
-import { redactSensitiveLogData } from '../logs';
+import { parseLogLines, redactSensitiveLogData } from '../logs';
 import { store } from '../store';
 import { webhookService } from '../integrations/webhooks';
 
@@ -344,171 +344,266 @@ export class LogManager {
 
   // --- Real Kubernetes Workload & Operational Log Engine ---
 
-  /**
-   * Generates or fetches rich operational logs for a given cluster & org.
-   * Leverages real pod states, crash loop counters, and incidents so logs correlate directly with Kubernetes events.
-   */
-  public async getOrGenerateClusterLogs(orgId: string, clusterId?: string): Promise<LogRecord[]> {
-    let records = this.collectedLogs.get(orgId);
-    if (records && records.length > 0) {
-      if (clusterId) {
-        return records.filter((r) => r.clusterId === clusterId);
-      }
-      return records;
+  public ingestLogRecords(orgId: string, records: LogRecord[]) {
+    if (!records || !records.length) return;
+    let current = this.collectedLogs.get(orgId) || [];
+    current.push(...records);
+    // Sort chronologically (newest first)
+    current.sort((a, b) => b.timestampMs - a.timestampMs);
+    // Keep reasonable bounded buffer (e.g. 10000 records per org)
+    if (current.length > 10000) {
+      current = current.slice(0, 10000);
     }
-
-    // Auto-bootstrap seed logs based on active cluster resources and incidents
-    records = this.bootstrapClusterLogs(orgId);
-    this.collectedLogs.set(orgId, records);
-
-    if (clusterId) {
-      return records.filter((r) => r.clusterId === clusterId);
-    }
-    return records;
+    this.collectedLogs.set(orgId, current);
   }
 
-  private bootstrapClusterLogs(orgId: string): LogRecord[] {
-    const clusters = store.getClusters(orgId);
-    const records: LogRecord[] = [];
-    const now = Date.now();
+  public inferSeverity(msg: string): LogSeverity {
+    if (!msg) return 'INFO';
+    const lower = msg.toLowerCase();
+    if (lower.includes('fatal') || lower.includes('panic:') || lower.includes('oomkilled') || lower.includes('exitcode=137')) {
+      return 'FATAL';
+    }
+    if (
+      lower.includes('error') ||
+      lower.includes('exception') ||
+      lower.includes('failed') ||
+      lower.includes('failure') ||
+      lower.includes('connection refused') ||
+      lower.includes('timed out') ||
+      lower.includes('timeout') ||
+      lower.includes('crashloop') ||
+      lower.includes('err ') ||
+      lower.includes('[err]') ||
+      lower.includes('level=error') ||
+      lower.includes('"level":"error"')
+    ) {
+      return 'ERROR';
+    }
+    if (lower.includes('warn') || lower.includes('warning') || lower.includes('level=warn') || lower.includes('"level":"warn"')) {
+      return 'WARN';
+    }
+    if (lower.includes('debug') || lower.includes('trace') || lower.includes('level=debug') || lower.includes('"level":"debug"')) {
+      return 'DEBUG';
+    }
+    return 'INFO';
+  }
 
-    for (const cluster of clusters) {
-      const resources = store.getClusterResources(cluster.id, orgId);
-      const pods = resources.filter((r) => r.kind === 'Pod');
-      const deployments = resources.filter((r) => r.kind === 'Deployment');
+  public resolveWorkloadNameForPod(
+    pod: any,
+    deployments: any[] = [],
+    statefulSets: any[] = [],
+    daemonSets: any[] = []
+  ): string {
+    // 1. OwnerReferences
+    if (pod.ownerReferences && pod.ownerReferences.length > 0) {
+      const owner = pod.ownerReferences[0];
+      if (owner.kind === 'ReplicaSet') {
+        const rsName = owner.name;
+        const matchingDep = deployments.find((d) => d.namespace === pod.namespace && rsName.startsWith(d.name));
+        if (matchingDep) return matchingDep.name;
+        return rsName.replace(/-[a-f0-9]{8,10}$/, '');
+      }
+      if (owner.kind === 'StatefulSet' || owner.kind === 'DaemonSet' || owner.kind === 'Job') {
+        return owner.name;
+      }
+    }
 
-      // Typical workloads
-      const workloadNames = deployments.length
-        ? deployments.map((d) => d.name)
-        : ['checkout-api', 'payment-api', 'orders-worker', 'auth-service', 'inventory-db-proxy'];
+    // 2. Labels
+    if (pod.labels) {
+      if (pod.labels['app.kubernetes.io/name']) return pod.labels['app.kubernetes.io/name'];
+      if (pod.labels['app']) return pod.labels['app'];
+      if (pod.labels['k8s-app']) return pod.labels['k8s-app'];
+    }
 
-      // Generate realistic logs across past 4 hours
-      for (const workload of workloadNames) {
-        const ns = workload.includes('payment') ? 'payments' : workload.includes('auth') ? 'security' : 'production';
-        const matchingPods = pods.filter((p) => p.name.startsWith(workload) || p.namespace === ns);
+    // 3. Clean pod name
+    return pod.name.replace(/-[a-f0-9]{8,10}-[a-z0-9]{5}$/, '').replace(/-[a-z0-9]{5}$/, '');
+  }
 
-        const podList = matchingPods.length
-          ? matchingPods.map((p) => ({
-              name: p.name,
-              node: p.nodeName || 'node-worker-01',
-              restarts: p.containers?.[0]?.restartCount || 0,
-              status: p.status || 'Running',
-              container: p.containers?.[0]?.name || 'main'
-            }))
-          : [
-              { name: `${workload}-7d8f-abc`, node: 'k8s-node-worker-01', restarts: 3, status: 'Running', container: 'app' },
-              { name: `${workload}-7d8f-def`, node: 'k8s-node-worker-02', restarts: 2, status: 'Running', container: 'app' },
-              { name: `${workload}-7d8f-ghi`, node: 'k8s-node-worker-03', restarts: 0, status: 'Running', container: 'app' }
-            ];
+  public resolveWorkloadKindForPod(
+    pod: any,
+    deployments: any[] = [],
+    statefulSets: any[] = [],
+    daemonSets: any[] = []
+  ): string {
+    if (pod.ownerReferences && pod.ownerReferences.length > 0) {
+      const owner = pod.ownerReferences[0];
+      if (owner.kind === 'ReplicaSet') return 'Deployment';
+      if (owner.kind === 'StatefulSet') return 'StatefulSet';
+      if (owner.kind === 'DaemonSet') return 'DaemonSet';
+      if (owner.kind === 'Job') return 'Job';
+    }
+    return 'Deployment';
+  }
 
-        // Is this workload in an error spike? (e.g. payment-api or checkout-api)
-        const isSpiking = workload.includes('payment') || workload.includes('checkout');
-        const spikeStartMs = now - 22 * 60 * 1000; // started 22 mins ago
+  /**
+   * Synchronizes actual Kubernetes logs from cached on-demand requests and Pod container buffers.
+   * Real clusters receive ONLY real logs without synthetic generation.
+   */
+  public syncClusterPodLogs(orgId: string, clusterId: string): void {
+    const cachedLogs = store.getCachedPodLogsForCluster(clusterId);
+    const resources = store.getClusterResources(clusterId, orgId);
+    const pods = resources.filter((r) => r.kind === 'Pod');
+    const deployments = resources.filter((r) => r.kind === 'Deployment');
+    const statefulSets = resources.filter((r) => r.kind === 'StatefulSet');
+    const daemonSets = resources.filter((r) => r.kind === 'DaemonSet');
 
-        for (const pod of podList) {
-          // Generate 25-45 chronological logs per pod
-          const logCount = isSpiking ? 40 : 20;
-          for (let i = 0; i < logCount; i++) {
-            const timeOffsetMs = Math.floor(Math.random() * (4 * 3600 * 1000));
-            const logTimestamp = now - timeOffsetMs;
-            const isDuringSpike = isSpiking && logTimestamp >= spikeStartMs;
+    const newRecords: LogRecord[] = [];
+    const existing = this.collectedLogs.get(orgId) || [];
+    const existingIds = new Set(existing.map((r) => r.id));
 
-            let severity: LogSeverity = 'INFO';
-            let message = '';
+    // Ingest cached on-demand logs from agent / API
+    for (const item of cachedLogs) {
+      const matchingPod = pods.find((p) => p.name === item.podName && p.namespace === item.namespace);
+      const workload = matchingPod ? this.resolveWorkloadNameForPod(matchingPod, deployments, statefulSets, daemonSets) : item.podName;
+      const nodeName = matchingPod?.nodeName || 'unknown-node';
 
-            if (isDuringSpike) {
-              const roll = Math.random();
-              if (roll < 0.65) {
-                severity = 'ERROR';
-                const errors = [
-                  `Redis connection refused at redis-master.production.svc.cluster.local:6379`,
-                  `Payment gateway timeout after 5000ms: endpoint https://api.payments.internal/v2/charge failed`,
-                  `Upstream connection reset by peer (502 Bad Gateway) during checkout processing`,
-                  `Unhandled rejection in worker: Database connection pool exhausted (max 50 connections reached)`,
-                  `panic: runtime error: invalid memory address or nil pointer dereference`
-                ];
-                message = errors[Math.floor(Math.random() * errors.length)];
-              } else if (roll < 0.85) {
-                severity = 'WARN';
-                message = `HTTP request latency degradation: p99 exceeds 1850ms on /v1/checkout/process`;
-              } else {
-                severity = 'INFO';
-                message = `Processing checkout payload for transaction Tx-${crypto.randomBytes(4).toString('hex')}`;
-              }
-            } else {
-              const normalRoll = Math.random();
-              if (normalRoll < 0.08) {
-                severity = 'ERROR';
-                message = `Transient connection timeout to metrics endpoint`;
-              } else if (normalRoll < 0.25) {
-                severity = 'WARN';
-                message = `Slow database query detected: SELECT * FROM idempotency_keys took 312ms`;
-              } else if (normalRoll < 0.85) {
-                severity = 'INFO';
-                const infos = [
-                  `Starting HTTP server on port 8080 (readiness: OK, liveness: OK)`,
-                  `Health probe /healthz returned 200 OK`,
-                  `Synchronized token cache: 142 active credentials verified`,
-                  `Batch order consumer processed 18 records in 24ms`,
-                  `TLS handshake completed successfully with cipher TLS_AES_256_GCM_SHA384`
-                ];
-                message = infos[Math.floor(Math.random() * infos.length)];
-              } else {
-                severity = 'DEBUG';
-                message = `Dispatched goroutine worker pool id=${Math.floor(Math.random() * 8)}`;
-              }
+      const parsedLines = parseLogLines(item.logs);
+      for (let i = 0; i < parsedLines.length; i++) {
+        const line = parsedLines[i];
+        const recordId = `log-${clusterId.slice(0, 8)}-${item.namespace}-${item.podName}-${item.container}-${item.previous ? 'prev' : 'curr'}-${i}`;
+        if (existingIds.has(recordId)) continue;
+
+        let timestampMs = item.updatedAt;
+        if (line.timestamp) {
+          const parsedMs = Date.parse(line.timestamp);
+          if (!isNaN(parsedMs)) timestampMs = parsedMs;
+        }
+
+        const sev = this.inferSeverity(line.message);
+        newRecords.push({
+          id: recordId,
+          clusterId,
+          clusterName: matchingPod?.clusterName || 'Kubernetes Cluster',
+          namespace: item.namespace,
+          workload,
+          podName: item.podName,
+          container: item.container,
+          nodeName,
+          severity: sev,
+          timestamp: new Date(timestampMs).toISOString(),
+          timestampMs,
+          message: line.message,
+          raw: line.raw,
+          isRedacted: line.raw.includes('[REDACTED'),
+          isPrevious: item.previous
+        });
+      }
+    }
+
+    // Ingest diagnostic logs attached to Pod container objects
+    for (const pod of pods) {
+      const workload = this.resolveWorkloadNameForPod(pod, deployments, statefulSets, daemonSets);
+      for (const container of pod.containers || []) {
+        if (container.logs && typeof container.logs === 'string' && container.logs.trim().length > 0) {
+          const parsedLines = parseLogLines(container.logs);
+          for (let i = 0; i < parsedLines.length; i++) {
+            const line = parsedLines[i];
+            const recordId = `diag-${clusterId.slice(0, 8)}-${pod.namespace}-${pod.name}-${container.name}-${i}`;
+            if (existingIds.has(recordId)) continue;
+
+            let timestampMs = pod.createdAt || Date.now();
+            if (line.timestamp) {
+              const parsedMs = Date.parse(line.timestamp);
+              if (!isNaN(parsedMs)) timestampMs = parsedMs;
             }
 
-            const iso = new Date(logTimestamp).toISOString();
-            const redacted = redactSensitiveLogData(message);
-
-            records.push({
-              id: `log-${cluster.id.substring(0, 4)}-${crypto.randomBytes(6).toString('hex')}`,
-              clusterId: cluster.id,
-              clusterName: cluster.name,
-              namespace: ns,
+            const sev = this.inferSeverity(line.message);
+            newRecords.push({
+              id: recordId,
+              clusterId,
+              clusterName: pod.clusterName || 'Kubernetes Cluster',
+              namespace: pod.namespace,
               workload,
               podName: pod.name,
-              container: pod.container,
-              nodeName: pod.node,
-              severity,
-              timestamp: iso,
-              timestampMs: logTimestamp,
-              message: redacted,
-              raw: `${iso} ${severity} [${pod.name}:${pod.container}] ${redacted}`,
-              isRedacted: redacted !== message,
+              container: container.name,
+              nodeName: pod.nodeName || 'unknown-node',
+              severity: sev,
+              timestamp: new Date(timestampMs).toISOString(),
+              timestampMs,
+              message: line.message,
+              raw: line.raw,
+              isRedacted: line.raw.includes('[REDACTED'),
               isPrevious: false
             });
-
-            // If pod has restarts > 0, inject some crash logs for previous container
-            if (pod.restarts > 0 && i < 5) {
-              const prevIso = new Date(spikeStartMs - 15 * 60 * 1000 - i * 60000).toISOString();
-              const crashMsg = `fatal error: out of memory (killed process 1) [OOMKilled exitCode=137]`;
-              records.push({
-                id: `log-prev-${crypto.randomBytes(6).toString('hex')}`,
-                clusterId: cluster.id,
-                clusterName: cluster.name,
-                namespace: ns,
-                workload,
-                podName: pod.name,
-                container: pod.container,
-                nodeName: pod.node,
-                severity: 'FATAL',
-                timestamp: prevIso,
-                timestampMs: spikeStartMs - 15 * 60 * 1000 - i * 60000,
-                message: crashMsg,
-                raw: `${prevIso} FATAL [${pod.name}:${pod.container}] (previous) ${crashMsg}`,
-                isRedacted: false,
-                isPrevious: true
-              });
-            }
           }
         }
       }
     }
 
-    // Sort descending by timestamp
-    records.sort((a, b) => b.timestampMs - a.timestampMs);
+    if (newRecords.length > 0) {
+      this.ingestLogRecords(orgId, newRecords);
+    }
+  }
+
+  /**
+   * Generates demo fixture logs ONLY when explicitly requested for isolated demo sandboxes or tests.
+   * Real clusters NEVER execute this.
+   */
+  public seedDemoLogs(orgId: string, clusterId: string, options: { workload?: string; isSpike?: boolean } = {}): LogRecord[] {
+    const cluster = store.getCluster(clusterId, orgId) || { id: clusterId, name: 'Demo Cluster' };
+    const workload = options.workload || 'demo-service';
+    const now = Date.now();
+    const records: LogRecord[] = [];
+    const count = options.isSpike ? 30 : 15;
+
+    for (let i = 0; i < count; i++) {
+      const timeMs = now - (count - i) * 60000;
+      const isErr = options.isSpike && i >= count - 10;
+      const severity: LogSeverity = isErr ? 'ERROR' : 'INFO';
+      const msg = isErr
+        ? 'Connection timed out connecting to database backend'
+        : `Service health check probe status 200 OK`;
+      records.push({
+        id: `demo-${clusterId.slice(0, 4)}-${i}`,
+        clusterId,
+        clusterName: cluster.name,
+        namespace: 'demo',
+        workload,
+        podName: `${workload}-pod-${i % 3}`,
+        container: 'main',
+        nodeName: 'demo-node-01',
+        severity,
+        timestamp: new Date(timeMs).toISOString(),
+        timestampMs: timeMs,
+        message: msg,
+        raw: `${new Date(timeMs).toISOString()} ${severity} [${workload}-pod-${i % 3}:main] ${msg}`,
+        isRedacted: false,
+        isPrevious: false
+      });
+    }
+
+    this.ingestLogRecords(orgId, records);
+    return records;
+  }
+
+  /**
+   * Retrieves operational logs for a given cluster & org.
+   * In production mode, returns strictly observed and ingested Kubernetes logs.
+   * Never fabricates synthetic workloads or error spikes.
+   */
+  public async getOrGenerateClusterLogs(orgId: string, clusterId?: string): Promise<LogRecord[]> {
+    if (clusterId) {
+      this.syncClusterPodLogs(orgId, clusterId);
+    } else {
+      const clusters = store.getClusters(orgId);
+      for (const cl of clusters) {
+        this.syncClusterPodLogs(orgId, cl.id);
+      }
+    }
+
+    let records = this.collectedLogs.get(orgId) || [];
+    if (clusterId) {
+      records = records.filter((r) => r.clusterId === clusterId);
+    }
+
+    // Check if cluster is explicitly flagged as a demo sandbox
+    if (!records.length && clusterId) {
+      const cluster = store.getCluster(clusterId, orgId);
+      if (cluster && (cluster as any).isDemo) {
+        records = this.seedDemoLogs(orgId, clusterId);
+      }
+    }
+
     return records;
   }
 
@@ -531,6 +626,9 @@ export class LogManager {
     let parsedSeverity: string | null = null;
     let parsedNamespace: string | null = null;
     let parsedWorkload: string | null = null;
+    let parsedPod: string | null = null;
+    let parsedContainer: string | null = null;
+    let parsedNode: string | null = null;
 
     if (rawSearchTerm) {
       const sevMatch = rawSearchTerm.match(/severity:(\w+)/i);
@@ -547,6 +645,21 @@ export class LogManager {
       if (wlMatch) {
         parsedWorkload = wlMatch[1].toLowerCase();
         rawSearchTerm = rawSearchTerm.replace(wlMatch[0], '').trim();
+      }
+      const podMatch = rawSearchTerm.match(/pod:([\w-]+)/i);
+      if (podMatch) {
+        parsedPod = podMatch[1].toLowerCase();
+        rawSearchTerm = rawSearchTerm.replace(podMatch[0], '').trim();
+      }
+      const containerMatch = rawSearchTerm.match(/container:([\w-]+)/i);
+      if (containerMatch) {
+        parsedContainer = containerMatch[1].toLowerCase();
+        rawSearchTerm = rawSearchTerm.replace(containerMatch[0], '').trim();
+      }
+      const nodeMatch = rawSearchTerm.match(/node:([\w-]+)/i);
+      if (nodeMatch) {
+        parsedNode = nodeMatch[1].toLowerCase();
+        rawSearchTerm = rawSearchTerm.replace(nodeMatch[0], '').trim();
       }
     }
 
@@ -565,13 +678,16 @@ export class LogManager {
       if (targetWl && targetWl !== 'all' && r.workload.toLowerCase() !== targetWl.toLowerCase()) return false;
 
       // Pod filter
-      if (filter.podName && filter.podName !== 'all' && r.podName.toLowerCase() !== filter.podName.toLowerCase()) return false;
+      const targetPod = parsedPod || filter.podName;
+      if (targetPod && targetPod !== 'all' && r.podName.toLowerCase() !== targetPod.toLowerCase()) return false;
 
       // Container filter
-      if (filter.container && filter.container !== 'all' && r.container.toLowerCase() !== filter.container.toLowerCase()) return false;
+      const targetContainer = parsedContainer || filter.container;
+      if (targetContainer && targetContainer !== 'all' && r.container.toLowerCase() !== targetContainer.toLowerCase()) return false;
 
       // Node filter
-      if (filter.nodeName && filter.nodeName !== 'all' && r.nodeName && r.nodeName.toLowerCase() !== filter.nodeName.toLowerCase()) return false;
+      const targetNode = parsedNode || filter.nodeName;
+      if (targetNode && targetNode !== 'all' && r.nodeName && r.nodeName.toLowerCase() !== targetNode.toLowerCase()) return false;
 
       // Previous container logs filter
       if (filter.previous !== undefined && r.isPrevious !== filter.previous) return false;
@@ -628,15 +744,65 @@ export class LogManager {
 
   public async getWorkloadSummaries(orgId: string, clusterId?: string, namespace?: string): Promise<WorkloadLogSummary[]> {
     const logs = await this.getOrGenerateClusterLogs(orgId, clusterId);
+    
+    // Find target clusters
+    const clusters = store.getClusters(orgId).filter((c) => !clusterId || c.id === clusterId);
+    if (!clusters.length) return [];
+
     const workloadsMap = new Map<string, {
       workload: string;
       namespace: string;
+      kind: string;
       pods: Map<string, { name: string; errors: number; warnings: number; restarts: number; status: string; node?: string }>;
       totalLogs: number;
       errors: number;
       warnings: number;
     }>();
 
+    // 1. Populate real workloads and pods from actual synchronized Kubernetes resources
+    for (const cluster of clusters) {
+      const resources = store.getClusterResources(cluster.id, orgId);
+      const pods = resources.filter((r) => r.kind === 'Pod');
+      const deployments = resources.filter((r) => r.kind === 'Deployment');
+      const daemonSets = resources.filter((r) => r.kind === 'DaemonSet');
+      const statefulSets = resources.filter((r) => r.kind === 'StatefulSet');
+
+      for (const pod of pods) {
+        if (namespace && namespace !== 'all' && pod.namespace.toLowerCase() !== namespace.toLowerCase()) {
+          continue;
+        }
+
+        const wlName = this.resolveWorkloadNameForPod(pod, deployments, statefulSets, daemonSets);
+        const wlKind = this.resolveWorkloadKindForPod(pod, deployments, statefulSets, daemonSets);
+        const key = `${pod.namespace}/${wlName}`;
+
+        let item = workloadsMap.get(key);
+        if (!item) {
+          item = {
+            workload: wlName,
+            namespace: pod.namespace,
+            kind: wlKind,
+            pods: new Map(),
+            totalLogs: 0,
+            errors: 0,
+            warnings: 0
+          };
+          workloadsMap.set(key, item);
+        }
+
+        const restarts = pod.containers?.reduce((acc: number, c: any) => acc + (c.restartCount || 0), 0) || 0;
+        item.pods.set(pod.name, {
+          name: pod.name,
+          errors: 0,
+          warnings: 0,
+          restarts,
+          status: pod.status || 'Running',
+          node: pod.nodeName
+        });
+      }
+    }
+
+    // 2. Cross-reference real collected logs
     for (const log of logs) {
       if (clusterId && log.clusterId !== clusterId) continue;
       if (namespace && namespace !== 'all' && log.namespace.toLowerCase() !== namespace.toLowerCase()) continue;
@@ -647,6 +813,7 @@ export class LogManager {
         item = {
           workload: log.workload,
           namespace: log.namespace,
+          kind: 'Deployment',
           pods: new Map(),
           totalLogs: 0,
           errors: 0,
@@ -656,8 +823,10 @@ export class LogManager {
       }
 
       item.totalLogs++;
-      if (log.severity === 'ERROR' || log.severity === 'FATAL') item.errors++;
-      if (log.severity === 'WARN') item.warnings++;
+      const isError = log.severity === 'ERROR' || log.severity === 'FATAL';
+      const isWarn = log.severity === 'WARN';
+      if (isError) item.errors++;
+      if (isWarn) item.warnings++;
 
       let podItem = item.pods.get(log.podName);
       if (!podItem) {
@@ -672,26 +841,26 @@ export class LogManager {
         item.pods.set(log.podName, podItem);
       }
 
-      if (log.severity === 'ERROR' || log.severity === 'FATAL') podItem.errors++;
-      if (log.severity === 'WARN') podItem.warnings++;
+      if (isError) podItem.errors++;
+      if (isWarn) podItem.warnings++;
     }
 
     const summaries: WorkloadLogSummary[] = [];
     for (const item of workloadsMap.values()) {
-      const podList = Array.from(item.pods.values()).sort((a, b) => b.errors - a.errors);
+      const podList = Array.from(item.pods.values()).sort((a, b) => b.errors - a.errors || b.restarts - a.restarts);
       summaries.push({
         workload: item.workload,
         namespace: item.namespace,
-        kind: 'Deployment',
+        kind: item.kind,
         podCount: podList.length,
-        logsPerMinute: Math.max(12, Math.round(item.totalLogs / 15)),
+        logsPerMinute: item.totalLogs > 0 ? Math.max(1, Math.round(item.totalLogs / 15)) : 0,
         errorCount: item.errors,
         warningCount: item.warnings,
         pods: podList
       });
     }
 
-    return summaries.sort((a, b) => b.errorCount - a.errorCount);
+    return summaries.sort((a, b) => b.errorCount - a.errorCount || b.warningCount - a.warningCount);
   }
 
   // --- Operational Overview Stats ---
@@ -703,97 +872,293 @@ export class LogManager {
     let warnings = 0;
     let bytes = 0;
 
+    const now = Date.now();
+    const currentWindowStart = now - 60 * 60 * 1000; // past 1 hour
+    const previousWindowStart = now - 2 * 60 * 60 * 1000; // 1 to 2 hours ago
+
+    let currentErrors = 0;
+    let previousErrors = 0;
+    let currentWarnings = 0;
+    let previousWarnings = 0;
+
     for (const l of logs) {
       totalLines++;
-      bytes += l.raw.length;
-      if (l.severity === 'ERROR' || l.severity === 'FATAL') errors++;
-      if (l.severity === 'WARN') warnings++;
+      bytes += l.raw ? l.raw.length : (l.message?.length || 0);
+      const isErr = l.severity === 'ERROR' || l.severity === 'FATAL';
+      const isWarn = l.severity === 'WARN';
+
+      if (isErr) {
+        errors++;
+        if (l.timestampMs >= currentWindowStart) currentErrors++;
+        else if (l.timestampMs >= previousWindowStart && l.timestampMs < currentWindowStart) previousErrors++;
+      }
+      if (isWarn) {
+        warnings++;
+        if (l.timestampMs >= currentWindowStart) currentWarnings++;
+        else if (l.timestampMs >= previousWindowStart && l.timestampMs < currentWindowStart) previousWarnings++;
+      }
     }
 
-    const alerts = this.getAlertRules(orgId).filter((r) => r.enabled);
-    const volumeMb = Math.round((bytes / (1024 * 1024)) * 10) / 10 || 18.4;
-    const todayGb = Math.round((volumeMb / 1024) * 100) / 100 || 1.8;
-    const projectedGb = Math.round(todayGb * 30 * 10) / 10 || 54.0;
+    const alerts = this.getAlertRules(orgId).filter((r) => r.enabled && (!r.clusterId || r.clusterId === clusterId));
+    const volumeMb = Math.round((bytes / (1024 * 1024)) * 10) / 10;
+    const todayGb = Math.round((volumeMb / 1024) * 100) / 100;
+    const projectedGb = Math.round(todayGb * 30 * 10) / 10;
+
+    let errorChangePercent = 0;
+    if (previousErrors > 0) {
+      errorChangePercent = Math.round(((currentErrors - previousErrors) / previousErrors) * 100);
+    } else if (currentErrors > 0) {
+      errorChangePercent = 100;
+    }
+
+    let warningChangePercent = 0;
+    if (previousWarnings > 0) {
+      warningChangePercent = Math.round(((currentWarnings - previousWarnings) / previousWarnings) * 100);
+    } else if (currentWarnings > 0) {
+      warningChangePercent = 100;
+    }
 
     return {
       totalVolumeMb: volumeMb,
       totalLogLines: totalLines,
       errorCount: errors,
-      errorChangePercent: 340, // +340% increase indicating incident spike
+      errorChangePercent,
       warningCount: warnings,
-      warningChangePercent: 21,
-      activeAlertsCount: alerts.length || 3,
+      warningChangePercent,
+      activeAlertsCount: alerts.length,
       todayIngestionGb: todayGb,
       projectedMonthlyGb: projectedGb,
-      storageUsedGb: Math.round(todayGb * 7 * 10) / 10 || 12.6,
+      storageUsedGb: Math.round(todayGb * 7 * 10) / 10,
       storageLimitGb: 50.0,
       retentionDays: 14,
-      storageDaysRemaining: 5,
-      costOptimizationRecommendation:
-        'DEBUG logs from development and monitoring namespaces represent 68% of ingestion volume. Reducing retention to 7 days on non-prod namespaces can save ~24 GB/month.'
+      storageDaysRemaining: todayGb > 0 ? Math.max(1, Math.round((50.0 - todayGb) / todayGb)) : 30,
+      costOptimizationRecommendation: totalLines > 0
+        ? 'Filter or sample high-volume non-prod namespaces to minimize ingestion cost.'
+        : 'Connect cluster agent to begin live operational log collection.'
     };
   }
 
-  // --- Error Spike Detection & What Changed Correlation ---
+  // --- Evidence-Based Error Spike Detection ---
+
+  public normalizeErrorPattern(msg: string): string {
+    if (!msg) return 'Unknown error';
+    return msg
+      .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<UUID>')
+      .replace(/\b0x[0-9a-f]+\b/gi, '<HEX>')
+      .replace(/\b[0-9a-f]{16,}\b/gi, '<HASH>')
+      .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?\b/g, '<IP>')
+      .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?/g, '<TIME>')
+      .trim();
+  }
 
   public async detectErrorSpikes(orgId: string, clusterId?: string): Promise<ErrorSpike[]> {
+    const logs = await this.getOrGenerateClusterLogs(orgId, clusterId);
+    if (!logs.length) {
+      return [];
+    }
+
     const now = Date.now();
+    // Current detection window: past 20 minutes
+    const currentWindowDurationMs = 20 * 60 * 1000;
+    const currentWindowStart = now - currentWindowDurationMs;
+    // Comparable baseline window: preceding 60 minutes
+    const baselineWindowDurationMs = 60 * 60 * 1000;
+    const baselineWindowStart = currentWindowStart - baselineWindowDurationMs;
+
+    const errorLogs = logs.filter((l) => l.severity === 'ERROR' || l.severity === 'FATAL');
+    if (!errorLogs.length) {
+      return [];
+    }
+
+    // Group error observations by cluster, namespace, and workload
+    const workloadErrors = new Map<string, {
+      clusterId: string;
+      namespace: string;
+      workload: string;
+      currentRecords: LogRecord[];
+      baselineRecords: LogRecord[];
+    }>();
+
+    for (const log of errorLogs) {
+      if (log.timestampMs < baselineWindowStart) continue;
+
+      const key = `${log.clusterId}:${log.namespace}:${log.workload}`;
+      let entry = workloadErrors.get(key);
+      if (!entry) {
+        entry = {
+          clusterId: log.clusterId,
+          namespace: log.namespace,
+          workload: log.workload,
+          currentRecords: [],
+          baselineRecords: []
+        };
+        workloadErrors.set(key, entry);
+      }
+
+      if (log.timestampMs >= currentWindowStart) {
+        entry.currentRecords.push(log);
+      } else {
+        entry.baselineRecords.push(log);
+      }
+    }
+
     const spikes: ErrorSpike[] = [];
+    const minSampleSize = 5; // Minimum observed errors in current window to constitute a spike
+    const spikeThresholdMultiplier = 2.5; // Minimum 2.5x rate increase
 
-    // Detect error spike on payment-api / checkout-api
-    const clusters = store.getClusters(orgId);
-    const targetCluster = (clusterId ? clusters.find((c) => c.id === clusterId) : clusters[0]) || {
-      id: 'cluster-prod-01',
-      name: 'Production Cluster'
-    };
+    const existingIncidents = store.getIncidents(orgId);
+    const clusterResources = clusterId ? store.getClusterResources(clusterId, orgId) : [];
 
-    spikes.push({
-      id: `spike-${crypto.randomBytes(4).toString('hex')}`,
-      clusterId: targetCluster.id,
-      namespace: 'payments',
-      workload: 'payment-api',
-      normalRatePerHour: 28,
-      currentRatePerHour: 1680,
-      multiplier: 60, // 60x spike
-      spikeStartedAt: now - 22 * 60 * 1000, // 22 minutes ago
-      detectedAt: now - 18 * 60 * 1000,
-      topErrorPattern: 'Redis connection refused at redis-master.production.svc.cluster.local:6379',
-      affectedPodsCount: 3,
-      relatedDeployment: {
-        workload: 'payment-api',
-        revision: 'v42',
-        deployedAt: now - 26 * 60 * 1000, // 26 minutes ago (4 mins before spike!)
-        imageTag: 'registry.internal/payments/api:v42-redis-tls',
-        description: 'Rollout of payment-api deployment (revision 42) with updated Redis TLS configuration',
-        confidence: 'HIGH'
-      },
-      relatedIncidentId: 'INC-1042'
-    });
+    for (const entry of workloadErrors.values()) {
+      const currentCount = entry.currentRecords.length;
+      if (currentCount < minSampleSize) {
+        continue;
+      }
+
+      const baselineCount = entry.baselineRecords.length;
+      const currentRatePerHour = Math.round((currentCount / (currentWindowDurationMs / 3600000)));
+      const baselineRatePerHour = Math.round((baselineCount / (baselineWindowDurationMs / 3600000)));
+
+      let multiplier = 1;
+      let isSpike = false;
+
+      if (baselineRatePerHour > 0) {
+        multiplier = Math.round((currentRatePerHour / baselineRatePerHour) * 10) / 10;
+        if (multiplier >= spikeThresholdMultiplier) {
+          isSpike = true;
+        }
+      } else {
+        multiplier = Math.max(5, currentCount);
+        isSpike = true;
+      }
+
+      if (!isSpike) {
+        continue;
+      }
+
+      // Identify repeated error patterns using actual messages
+      const patternCounts = new Map<string, { pattern: string; count: number; sample: string }>();
+      for (const rec of entry.currentRecords) {
+        const normalized = this.normalizeErrorPattern(rec.message);
+        const existing = patternCounts.get(normalized);
+        if (existing) {
+          existing.count++;
+        } else {
+          patternCounts.set(normalized, { pattern: normalized, count: 1, sample: rec.message });
+        }
+      }
+
+      const sortedPatterns = Array.from(patternCounts.values()).sort((a, b) => b.count - a.count);
+      const topPattern = sortedPatterns[0]?.sample || entry.currentRecords[0].message;
+
+      // Real start timestamp = earliest error record in current window
+      const earliestTimestamp = entry.currentRecords.reduce(
+        (min, r) => Math.min(min, r.timestampMs),
+        entry.currentRecords[0].timestampMs
+      );
+
+      // Associated affected pods
+      const affectedPods = new Set(entry.currentRecords.map((r) => r.podName));
+
+      // Deduplication: link to existing incident if already tracked
+      const relatedIncident = existingIncidents.find(
+        (inc) =>
+          inc.clusterId === entry.clusterId &&
+          inc.namespace === entry.namespace &&
+          (inc.resourceName === entry.workload || (inc as any).workload === entry.workload) &&
+          (inc.status === 'OPEN' || inc.status === 'IN_PROGRESS' || inc.status === 'ACKNOWLEDGED')
+      );
+
+      // Correlate with real Deployments/ReplicaSets in the cluster if available
+      let relatedDeployment: ErrorSpike['relatedDeployment'] | undefined;
+      const targetClusterResources = store.getClusterResources(entry.clusterId, orgId);
+      const matchingDep = targetClusterResources.find(
+        (r) => r.kind === 'Deployment' && r.name === entry.workload && r.namespace === entry.namespace
+      );
+      if (matchingDep) {
+        const image = matchingDep.containers?.[0]?.image;
+        const rev = (matchingDep.annotations && matchingDep.annotations['deployment.kubernetes.io/revision']) || '1';
+        relatedDeployment = {
+          workload: entry.workload,
+          revision: `v${rev}`,
+          deployedAt: matchingDep.createdAt || earliestTimestamp - 5 * 60 * 1000,
+          imageTag: image || `${entry.workload}:latest`,
+          description: `Rollout of ${entry.workload} (revision ${rev}) in ${entry.namespace}`,
+          confidence: 'HIGH'
+        };
+      }
+
+      spikes.push({
+        id: `spike-${crypto.randomBytes(4).toString('hex')}`,
+        clusterId: entry.clusterId,
+        namespace: entry.namespace,
+        workload: entry.workload,
+        normalRatePerHour: baselineRatePerHour,
+        currentRatePerHour,
+        multiplier,
+        spikeStartedAt: earliestTimestamp,
+        detectedAt: now,
+        topErrorPattern: topPattern,
+        affectedPodsCount: affectedPods.size,
+        relatedDeployment,
+        relatedIncidentId: relatedIncident?.id
+      });
+    }
 
     return spikes;
   }
 
-  // --- Deployment Comparison ---
+  // --- Real Deployment Comparison ---
 
   public async compareDeployments(
     orgId: string,
     workload: string,
     namespace = 'production'
   ): Promise<DeploymentLogComparison> {
+    const logs = await this.getOrGenerateClusterLogs(orgId);
+    const wlLogs = logs.filter(
+      (l) => l.workload === workload && (!namespace || namespace === 'all' || l.namespace === namespace)
+    );
+
+    const now = Date.now();
+    const recentWindowStart = now - 30 * 60 * 1000; // past 30m
+    const baselineWindowStart = now - 60 * 60 * 1000; // 30m to 60m ago
+
+    let currentErrors = 0;
+    let previousErrors = 0;
+    const newPatterns: string[] = [];
+
+    for (const l of wlLogs) {
+      if (l.severity === 'ERROR' || l.severity === 'FATAL') {
+        if (l.timestampMs >= recentWindowStart) {
+          currentErrors++;
+          if (newPatterns.length < 3 && !newPatterns.includes(l.message)) {
+            newPatterns.push(l.message);
+          }
+        } else if (l.timestampMs >= baselineWindowStart && l.timestampMs < recentWindowStart) {
+          previousErrors++;
+        }
+      }
+    }
+
+    const regressionDetected = currentErrors >= 5 && (previousErrors === 0 || currentErrors > previousErrors * 2);
+    const verdict = regressionDetected
+      ? `Regression detected on ${workload}: error volume elevated (${currentErrors} errors in post-deployment window vs ${previousErrors} in baseline window).`
+      : currentErrors === 0 && previousErrors === 0
+      ? `No error regressions detected for ${workload}. Service running stably across recent deployment window.`
+      : `Error volume remains within baseline expectations (${currentErrors} current vs ${previousErrors} prior).`;
+
     return {
       workload,
       namespace,
-      currentRevision: 'v42',
-      previousRevision: 'v41',
-      currentErrors: 1842,
-      previousErrors: 32,
-      newErrorPatterns: [
-        'Redis connection refused at redis-master.production.svc.cluster.local:6379',
-        'Payment gateway timeout after 5000ms: endpoint https://api.payments.internal/v2/charge failed'
-      ],
-      regressionDetected: true,
-      verdict: 'High confidence regression: 57x error increase detected immediately following v42 deployment rollout.',
-      confidence: 'HIGH',
+      currentRevision: 'current',
+      previousRevision: 'prior',
+      currentErrors,
+      previousErrors,
+      newErrorPatterns: newPatterns,
+      regressionDetected,
+      verdict,
+      confidence: regressionDetected ? 'HIGH' : 'LOW',
       timeWindowDescription: 'Comparing 30m window post-rollout vs 30m baseline pre-rollout'
     };
   }
@@ -815,6 +1180,18 @@ export class LogManager {
   ) {
     const cluster = store.getCluster(clusterId, orgId);
     const clusterName = cluster?.name || 'Production Cluster';
+
+    // Deduplication: prevent duplicate incident tickets if pattern or workload already actively tracked
+    const existing = store.getIncidents(orgId).find(
+      (inc) =>
+        inc.clusterId === clusterId &&
+        inc.namespace === data.namespace &&
+        (inc.resourceName === data.workload || (inc as any).workload === data.workload) &&
+        (inc.status === 'OPEN' || inc.status === 'IN_PROGRESS' || inc.status === 'ACKNOWLEDGED')
+    );
+    if (existing) {
+      return existing;
+    }
 
     const title = `Log Alert: Error spike in ${data.workload} (${data.errorPattern.substring(0, 60)})`;
     const incident = store.createIncident(orgId, clusterId, {

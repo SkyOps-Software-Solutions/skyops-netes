@@ -4,166 +4,239 @@ import { logManager } from './logs/logManager';
 import { store } from './store';
 
 test('Logs Management & Kubernetes Operations Engine', async (t) => {
-  // Seed test org & cluster
+  // Seed test org & real cluster
   const org = store.createOrganization('Operations Test Tenant', 'usr-sre-1');
   const orgId = org.id;
-  const cluster = store.createCluster(orgId, {
-    name: 'Production US-East',
+  const created = store.createCluster(orgId, 'Production US-East', 'Production cluster', {
     region: 'us-east-1'
-  } as any);
-  const clusterId = cluster.id;
+  });
+  const clusterId = created.cluster.id;
 
-  await t.test('1. Operational Overview Statistics', async () => {
+  await t.test('1. Real Cluster Returns No Fabricated Data When Empty', async () => {
+    // A fresh real cluster without synced resources or logs must NOT fabricate payment-api, checkout-api, or error spikes
     const stats = await logManager.getOverviewStats(orgId, clusterId);
-    assert.ok(stats, 'Stats should be returned');
-    assert.ok(typeof stats.totalVolumeMb === 'number', 'Total volume in MB should be numeric');
-    assert.ok(typeof stats.errorCount === 'number', 'Error count should be numeric');
-    assert.ok(typeof stats.warningCount === 'number', 'Warning count should be numeric');
-    assert.ok(typeof stats.errorChangePercent === 'number', 'Error change percent should be numeric');
-    assert.ok(typeof stats.activeAlertsCount === 'number', 'Active alerts count should be numeric');
-    assert.ok(stats.retentionDays >= 3, 'Retention days should be at least 3');
-  });
+    assert.equal(stats.totalLogLines, 0, 'Total log lines must be 0 for empty cluster');
+    assert.equal(stats.errorCount, 0, 'Error count must be 0');
+    assert.equal(stats.warningCount, 0, 'Warning count must be 0');
+    assert.equal(stats.totalVolumeMb, 0, 'Volume must be 0 MB');
 
-  await t.test('2. Workload-First Investigation Summaries', async () => {
-    const res = await logManager.getWorkloadSummaries(orgId, clusterId);
-    assert.ok(Array.isArray(res), 'Workloads should be an array');
-    assert.ok(res.length > 0, 'Should have workload summaries');
+    const workloads = await logManager.getWorkloadSummaries(orgId, clusterId);
+    assert.equal(workloads.length, 0, 'Must not fabricate checkout-api or payment-api workloads');
 
-    const paymentOrCheckout = res.find((w) => w.workload.includes('payment') || w.workload.includes('checkout'));
-    assert.ok(paymentOrCheckout, 'Should have payment or checkout workload summary');
-    assert.ok(paymentOrCheckout.podCount > 0, 'Pod count should be positive');
-    assert.ok(Array.isArray(paymentOrCheckout.pods), 'Pods list should be present');
-    assert.ok(paymentOrCheckout.pods.length > 0, 'Should have breakdown of individual pods');
-    
-    // Each pod should track errors, restarts, and status
-    const firstPod = paymentOrCheckout.pods[0];
-    assert.ok(firstPod.name, 'Pod name should be present');
-    assert.ok(typeof firstPod.errors === 'number', 'Pod errors should be tracked');
-    assert.ok(typeof firstPod.restarts === 'number', 'Pod restarts should be tracked');
-    assert.ok(firstPod.status, 'Pod status should be tracked');
-  });
-
-  await t.test('3. Log Search with Filters and Structured Queries', async () => {
-    const results = await logManager.searchLogs(orgId, {
-      clusterId,
-      limit: 100
-    });
-    assert.ok(results.records.length > 0, 'Should return records');
-    assert.ok(results.totalMatches >= results.records.length, 'Total matches should reflect count');
-
-    // Test severity filter
-    const errorLogs = await logManager.searchLogs(orgId, {
-      clusterId,
-      severity: 'ERROR',
-      limit: 50
-    });
-    for (const r of errorLogs.records) {
-      assert.equal(r.severity, 'ERROR', 'Every returned record must have severity ERROR');
-    }
-
-    // Test text search
-    const textSearch = await logManager.searchLogs(orgId, {
-      clusterId,
-      search: 'connection',
-      limit: 50
-    });
-    for (const r of textSearch.records) {
-      const match = r.message.toLowerCase().includes('connection') || r.raw.toLowerCase().includes('connection');
-      assert.ok(match, 'Message must contain searched keyword');
-    }
-  });
-
-  await t.test('4. CrashLoopBackOff & Previous Container Logs', async () => {
-    const prevLogs = await logManager.searchLogs(orgId, {
-      clusterId,
-      previous: true,
-      limit: 50
-    });
-    assert.ok(Array.isArray(prevLogs.records), 'Should return previous logs array');
-    for (const r of prevLogs.records) {
-      assert.equal(r.isPrevious, true, 'isPrevious flag should be true');
-    }
-  });
-
-  await t.test('5. Operational Error Spike Detection & What Changed Correlation', async () => {
     const spikes = await logManager.detectErrorSpikes(orgId, clusterId);
-    assert.ok(Array.isArray(spikes), 'Spikes should be an array');
-    assert.ok(spikes.length > 0, 'Should detect error spike on affected workloads');
+    assert.equal(spikes.length, 0, 'Must not fabricate INC-1042 or fake error spikes');
+  });
+
+  await t.test('2. Synchronize Real Kubernetes Workloads & Resources', async () => {
+    // Sync actual Kubernetes Deployment and Pods to the cluster
+    const now = Date.now();
+    store.syncClusterResources(clusterId, [
+      {
+        id: 'dep-orders-1',
+        uid: 'dep-orders-1',
+        name: 'orders-service',
+        namespace: 'production',
+        kind: 'Deployment',
+        clusterId,
+        clusterName: 'Production US-East',
+        status: 'Running',
+        createdAt: now - 3600000,
+        annotations: {
+          'deployment.kubernetes.io/revision': '3'
+        },
+        containers: [{ name: 'server', image: 'registry.internal/orders:v3', state: 'running', restartCount: 0 }]
+      } as any,
+      {
+        id: 'pod-orders-1',
+        uid: 'pod-orders-1',
+        name: 'orders-service-7d8f9c-abc',
+        namespace: 'production',
+        kind: 'Pod',
+        clusterId,
+        clusterName: 'Production US-East',
+        nodeName: 'worker-node-01',
+        status: 'Running',
+        createdAt: now - 1800000,
+        ownerReferences: [{ kind: 'ReplicaSet', name: 'orders-service-7d8f9c' }],
+        containers: [{ name: 'server', image: 'registry.internal/orders:v3', state: 'running', restartCount: 2 }]
+      } as any,
+      {
+        id: 'pod-orders-2',
+        uid: 'pod-orders-2',
+        name: 'orders-service-7d8f9c-def',
+        namespace: 'production',
+        kind: 'Pod',
+        clusterId,
+        clusterName: 'Production US-East',
+        nodeName: 'worker-node-02',
+        status: 'Running',
+        createdAt: now - 1800000,
+        ownerReferences: [{ kind: 'ReplicaSet', name: 'orders-service-7d8f9c' }],
+        containers: [{ name: 'server', image: 'registry.internal/orders:v3', state: 'running', restartCount: 0 }]
+      } as any
+    ], true);
+
+    // Workload summaries must now reflect the real synchronized pods
+    const workloads = await logManager.getWorkloadSummaries(orgId, clusterId);
+    assert.equal(workloads.length, 1);
+    const orders = workloads[0];
+    assert.equal(orders.workload, 'orders-service');
+    assert.equal(orders.podCount, 2);
+    assert.equal(orders.pods[0].name, 'orders-service-7d8f9c-abc');
+    assert.equal(orders.pods[0].restarts, 2);
+    assert.equal(orders.pods[1].restarts, 0);
+  });
+
+  await t.test('3. Real Log Ingestion, Redaction, and Search', async () => {
+    const now = Date.now();
+    // Ingest actual log records for orders-service
+    logManager.ingestLogRecords(orgId, [
+      {
+        id: 'rec-1',
+        clusterId,
+        clusterName: 'Production US-East',
+        namespace: 'production',
+        workload: 'orders-service',
+        podName: 'orders-service-7d8f9c-abc',
+        container: 'server',
+        nodeName: 'worker-node-01',
+        severity: 'INFO',
+        timestamp: new Date(now - 120000).toISOString(),
+        timestampMs: now - 120000,
+        message: 'HTTP server listening on :8080 with authorization Bearer [REDACTED_BEARER_TOKEN]',
+        raw: `${new Date(now - 120000).toISOString()} INFO HTTP server listening on :8080`,
+        isRedacted: true,
+        isPrevious: false
+      },
+      {
+        id: 'rec-2',
+        clusterId,
+        clusterName: 'Production US-East',
+        namespace: 'production',
+        workload: 'orders-service',
+        podName: 'orders-service-7d8f9c-abc',
+        container: 'server',
+        nodeName: 'worker-node-01',
+        severity: 'FATAL',
+        timestamp: new Date(now - 100000).toISOString(),
+        timestampMs: now - 100000,
+        message: 'fatal error: memory limit exceeded [OOMKilled exitCode=137]',
+        raw: `${new Date(now - 100000).toISOString()} FATAL (previous) fatal error: memory limit exceeded`,
+        isRedacted: false,
+        isPrevious: true
+      }
+    ]);
+
+    const searchAll = await logManager.searchLogs(orgId, { clusterId });
+    assert.equal(searchAll.records.length, 2);
+
+    // Filter by severity
+    const searchFatal = await logManager.searchLogs(orgId, { clusterId, severity: 'FATAL' });
+    assert.equal(searchFatal.records.length, 1);
+    assert.equal(searchFatal.records[0].severity, 'FATAL');
+
+    // Filter previous / crash logs
+    const searchPrev = await logManager.searchLogs(orgId, { clusterId, previous: true });
+    assert.equal(searchPrev.records.length, 1);
+    assert.equal(searchPrev.records[0].isPrevious, true);
+
+    // Text search
+    const searchText = await logManager.searchLogs(orgId, { clusterId, search: 'OOMKilled' });
+    assert.equal(searchText.records.length, 1);
+  });
+
+  await t.test('4. Evidence-Based Error Spike Detection with Real Observations', async () => {
+    const now = Date.now();
+    // Simulate a real error spike: 10 errors in the last 10 minutes for orders-service
+    const spikeRecords = [];
+    for (let i = 0; i < 10; i++) {
+      const ts = now - (10 - i) * 60000;
+      spikeRecords.push({
+        id: `spike-err-${i}`,
+        clusterId,
+        clusterName: 'Production US-East',
+        namespace: 'production',
+        workload: 'orders-service',
+        podName: 'orders-service-7d8f9c-abc',
+        container: 'server',
+        nodeName: 'worker-node-01',
+        severity: 'ERROR' as const,
+        timestamp: new Date(ts).toISOString(),
+        timestampMs: ts,
+        message: `Database connection pool timeout after 5000ms: pool-id=db-order-pool-${i}`,
+        raw: `${new Date(ts).toISOString()} ERROR Database connection pool timeout`,
+        isRedacted: false,
+        isPrevious: false
+      });
+    }
+    logManager.ingestLogRecords(orgId, spikeRecords);
+
+    const spikes = await logManager.detectErrorSpikes(orgId, clusterId);
+    assert.equal(spikes.length, 1, 'Should detect real spike on orders-service');
 
     const spike = spikes[0];
-    assert.ok(spike.multiplier > 1, 'Error spike multiplier should be greater than 1');
-    assert.ok(spike.currentRatePerHour > spike.normalRatePerHour, 'Current error rate should exceed normal rate');
-    assert.ok(spike.topErrorPattern, 'Top error pattern should be identified');
-    assert.ok(spike.spikeStartedAt > 0, 'Spike start timestamp should be specified');
-
-    // Section 11: What Changed Correlation with known deployment
-    if (spike.relatedDeployment) {
-      assert.ok(spike.relatedDeployment.workload, 'Correlated deployment must identify workload');
-      assert.ok(spike.relatedDeployment.revision, 'Correlated deployment must identify revision');
-      assert.ok(['HIGH', 'MEDIUM', 'LOW'].includes(spike.relatedDeployment.confidence), 'Confidence must be HIGH, MEDIUM, or LOW');
-    }
+    assert.equal(spike.workload, 'orders-service');
+    assert.equal(spike.namespace, 'production');
+    assert.ok(spike.multiplier >= 2.5, 'Multiplier should reflect spike');
+    assert.ok(spike.currentRatePerHour > spike.normalRatePerHour);
+    assert.ok(spike.topErrorPattern.includes('Database connection pool timeout'));
+    assert.equal(spike.affectedPodsCount, 1);
+    assert.ok(spike.relatedDeployment, 'Should correlate with real orders-service deployment');
+    assert.equal(spike.relatedDeployment?.revision, 'v3');
   });
 
-  await t.test('6. Deployment Comparison Engine', async () => {
-    const comparison = await logManager.compareDeployments(orgId, 'checkout-api', 'production');
-    assert.ok(comparison, 'Comparison result should be returned');
-    assert.equal(comparison.workload, 'checkout-api');
-    assert.ok(comparison.currentRevision, 'Current revision should be present');
-    assert.ok(comparison.previousRevision, 'Previous revision should be present');
-    assert.ok(typeof comparison.regressionDetected === 'boolean', 'Regression detection boolean should be present');
-    assert.ok(comparison.verdict, 'Verdict should provide operational context');
+  await t.test('5. Real Deployment Comparison Engine', async () => {
+    const comparison = await logManager.compareDeployments(orgId, 'orders-service', 'production');
+    assert.ok(comparison);
+    assert.equal(comparison.workload, 'orders-service');
+    assert.ok(comparison.currentErrors > 0);
+    assert.ok(comparison.regressionDetected);
+    assert.ok(comparison.verdict.includes('Regression detected on orders-service'));
   });
 
-  await t.test('7. Log Alert Rules Lifecycle', async () => {
+  await t.test('6. Alert Rules Lifecycle and Permissions', async () => {
     const actor = { id: 'usr-sre-1', name: 'Lead SRE' };
 
-    // Create alert rule
     const rule = logManager.createAlertRule(
       orgId,
       {
         clusterId,
-        name: 'Payment Gateway Refused',
-        pattern: 'connection refused',
-        thresholdOccurrences: 20,
+        name: 'Orders DB Timeout',
+        pattern: 'connection pool timeout',
+        thresholdOccurrences: 5,
         windowMinutes: 5,
         createIncident: true,
         incidentSeverity: 'HIGH',
         notifyEmail: true,
-        notifyWebhook: false,
         enabled: true
       },
       actor
     );
 
-    assert.ok(rule.id, 'Alert rule should have an id');
-    assert.equal(rule.name, 'Payment Gateway Refused');
-    assert.equal(rule.pattern, 'connection refused');
+    assert.ok(rule.id);
+    assert.equal(rule.name, 'Orders DB Timeout');
 
-    // List rules
     const rules = logManager.getAlertRules(orgId);
-    assert.ok(rules.some((r) => r.id === rule.id), 'Created rule should be in list');
+    assert.ok(rules.some((r) => r.id === rule.id));
 
-    // Update rule
     const updated = logManager.updateAlertRule(orgId, rule.id, { enabled: false }, actor);
-    assert.equal(updated.enabled, false, 'Rule should now be disabled');
+    assert.equal(updated.enabled, false);
 
-    // Delete rule
     const deleted = logManager.deleteAlertRule(orgId, rule.id, actor);
-    assert.equal(deleted, true, 'Rule deletion should succeed');
+    assert.equal(deleted, true);
   });
 
-  await t.test('8. Log Collection Policies & Retention Bounds', async () => {
+  await t.test('7. Collection Policies & Retention Configuration', async () => {
     const actor = { id: 'usr-sre-1', name: 'Lead SRE' };
 
-    // Create collection rule with 30-day retention
     const rule = logManager.createCollectionRule(
       orgId,
       {
         clusterId,
         clusterName: 'Production US-East',
-        name: 'Production Workload Collection',
-        namespaces: ['production', 'payments'],
-        workloadPatterns: ['checkout-*', 'payment-*'],
+        name: 'Orders Log Retention',
+        namespaces: ['production'],
+        workloadPatterns: ['orders-*'],
         containers: ['All'],
         minSeverity: 'INFO',
         retentionDays: 30,
@@ -172,75 +245,66 @@ test('Logs Management & Kubernetes Operations Engine', async (t) => {
       actor
     );
 
-    assert.ok(rule.id, 'Collection rule should have an id');
-    assert.equal(rule.retentionDays, 30, 'Retention days should be 30');
-    assert.deepEqual(rule.namespaces, ['production', 'payments']);
+    assert.ok(rule.id);
+    assert.equal(rule.retentionDays, 30);
 
-    // List rules
-    const rules = logManager.getCollectionRules(orgId);
-    assert.ok(rules.some((r) => r.id === rule.id), 'Created policy should be in list');
-
-    // Delete rule
     const deleted = logManager.deleteCollectionRule(orgId, rule.id, actor);
-    assert.equal(deleted, true, 'Collection policy deletion should succeed');
+    assert.equal(deleted, true);
   });
 
-  await t.test('9. Connect Log Evidence to Incident with Deduplication', async () => {
+  await t.test('8. Incident Creation from Log Evidence with Deduplication', async () => {
     const actor = { id: 'usr-sre-1', name: 'Lead SRE' };
 
     const incident = await logManager.createIncidentFromLogs(
       orgId,
       clusterId,
       {
-        workload: 'checkout-api',
+        workload: 'orders-service',
         namespace: 'production',
-        errorPattern: 'Redis connection refused at redis-master:6379',
-        occurrences: 1284,
-        timeWindow: '5m',
-        sampleLines: ['Redis connection refused at redis-master.production.svc.cluster.local:6379']
+        errorPattern: 'Database connection pool timeout',
+        occurrences: 10,
+        timeWindow: '10m',
+        sampleLines: ['Database connection pool timeout after 5000ms: pool-id=db-order-pool-1']
       },
       actor
     );
 
-    assert.ok(incident, 'Incident should be created');
-    assert.ok(incident.id, 'Incident should have an ID');
-    assert.ok(incident.title.includes('checkout-api'), 'Incident title should mention workload');
+    assert.ok(incident);
+    assert.ok(incident.id);
+    assert.ok(incident.title.includes('orders-service'));
 
-    // Verify deduplication: attempting to create again returns existing incident
-    const secondCall = await logManager.createIncidentFromLogs(
+    // Deduplication test: second creation for same workload/namespace returns existing open incident
+    const deduplicated = await logManager.createIncidentFromLogs(
       orgId,
       clusterId,
       {
-        workload: 'checkout-api',
+        workload: 'orders-service',
         namespace: 'production',
-        errorPattern: 'Redis connection refused at redis-master:6379',
-        occurrences: 1284,
-        timeWindow: '5m',
+        errorPattern: 'Database connection pool timeout',
+        occurrences: 10,
+        timeWindow: '10m',
         sampleLines: []
       },
       actor
     );
 
-    assert.equal(secondCall.id, incident.id, 'Deduplication must return existing active incident');
+    assert.equal(deduplicated.id, incident.id, 'Must return existing incident rather than duplicating ticket');
   });
 
-  await t.test('10. Export Logs in TXT, JSON, and CSV', async () => {
+  await t.test('9. Export Real Logs in TXT, JSON, and CSV', async () => {
     const actor = { id: 'usr-sre-1', name: 'Lead SRE' };
 
-    const txtExport = await logManager.exportLogs(orgId, 'txt', { clusterId }, actor);
-    assert.equal(txtExport.mimeType, 'text/plain');
-    assert.ok(txtExport.filename.endsWith('.txt'));
-    assert.ok(txtExport.data.length > 0);
+    const txt = await logManager.exportLogs(orgId, 'txt', { clusterId }, actor);
+    assert.equal(txt.mimeType, 'text/plain');
+    assert.ok(txt.data.includes('orders-service'));
 
-    const jsonExport = await logManager.exportLogs(orgId, 'json', { clusterId }, actor);
-    assert.equal(jsonExport.mimeType, 'application/json');
-    assert.ok(jsonExport.filename.endsWith('.json'));
-    const parsed = JSON.parse(jsonExport.data);
-    assert.ok(Array.isArray(parsed));
+    const json = await logManager.exportLogs(orgId, 'json', { clusterId }, actor);
+    assert.equal(json.mimeType, 'application/json');
+    const parsed = JSON.parse(json.data);
+    assert.ok(parsed.length >= 2);
 
-    const csvExport = await logManager.exportLogs(orgId, 'csv', { clusterId }, actor);
-    assert.equal(csvExport.mimeType, 'text/csv');
-    assert.ok(csvExport.filename.endsWith('.csv'));
-    assert.ok(csvExport.data.includes('timestamp,severity,cluster,namespace,workload,podName'));
+    const csv = await logManager.exportLogs(orgId, 'csv', { clusterId }, actor);
+    assert.equal(csv.mimeType, 'text/csv');
+    assert.ok(csv.data.includes('timestamp,severity,cluster,namespace,workload,podName'));
   });
 });

@@ -6942,6 +6942,44 @@ export class DataStore {
     }
   }
 
+  public getCachedPodLogsForCluster(clusterId: string): Array<{
+    namespace: string;
+    podName: string;
+    container: string;
+    previous: boolean;
+    logs: string;
+    source?: string;
+    updatedAt: number;
+  }> {
+    const results: Array<{
+      namespace: string;
+      podName: string;
+      container: string;
+      previous: boolean;
+      logs: string;
+      source?: string;
+      updatedAt: number;
+    }> = [];
+    const prefix = `${clusterId}:`;
+    for (const [key, value] of this.podLogsCache.entries()) {
+      if (key.startsWith(prefix) && value.logs) {
+        const parts = key.split(':');
+        if (parts.length >= 5) {
+          results.push({
+            namespace: parts[1],
+            podName: parts[2],
+            container: parts[3],
+            previous: parts[4] === 'prev',
+            logs: value.logs,
+            source: value.source,
+            updatedAt: value.updatedAt
+          });
+        }
+      }
+    }
+    return results;
+  }
+
   // --- Deterministic Incident Engine & Deduplication ---
   public evaluateResourceObservation(
     orgId: string,

@@ -144,7 +144,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'observability',
-      label: 'Observability',
+      label: 'Metrics & Telemetry',
       icon: <Radio className="w-4 h-4" />
     },
     {

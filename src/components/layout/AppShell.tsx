@@ -479,10 +479,7 @@ export const AppShell: React.FC<AppShellProps> = ({
           )}
 
           {activeTab === 'security' && (
-            <SecurityPostureView
-              clusters={clusters}
-              onOpenAddCluster={() => setIsAddClusterOpen(true)}
-            />
+            <SecurityPostureView />
           )}
 
           {activeTab === 'audit' && (

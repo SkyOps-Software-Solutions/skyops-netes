@@ -169,7 +169,7 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
 
   // Create Incident from Logs modal state
   const [showCreateIncidentModal, setShowCreateIncidentModal] = useState(false);
-  const [incidentWorkload, setIncidentWorkload] = useState('payment-api');
+  const [incidentWorkload, setIncidentWorkload] = useState(initialWorkload || '');
   const [incidentPattern, setIncidentPattern] = useState('');
   const [incidentCreating, setIncidentCreating] = useState(false);
 
@@ -231,16 +231,11 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
     }
   };
 
-  // Available filter values derived from workloads and logs
+  // Available filter values derived from real workloads and logs
   const availableNamespaces = useMemo(() => {
     const set = new Set<string>();
     workloads.forEach((w) => { if (w.namespace) set.add(w.namespace); });
     logs.forEach((l) => { if (l.namespace) set.add(l.namespace); });
-    if (set.size === 0) {
-      set.add('production');
-      set.add('payments');
-      set.add('security');
-    }
     return Array.from(set).sort();
   }, [workloads, logs]);
 
@@ -744,12 +739,12 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
             <div className="text-[11px] text-zinc-400 uppercase tracking-wider flex items-center justify-between">
               <span>Errors</span>
               <span className="text-rose-400 text-xs font-bold flex items-center">
-                <ArrowUp className="w-3 h-3 mr-0.5" />
-                {stats?.errorChangePercent || 340}%
+                {(stats?.errorChangePercent ?? 0) > 0 && <ArrowUp className="w-3 h-3 mr-0.5" />}
+                {stats?.errorChangePercent ?? 0}%
               </span>
             </div>
             <div className="text-2xl font-bold text-rose-400 mt-1">
-              {(stats?.errorCount || 1284).toLocaleString()}
+              {(stats?.errorCount ?? 0).toLocaleString()}
             </div>
             <div className="text-[10px] text-zinc-500 mt-0.5">vs previous window</div>
           </div>
@@ -758,12 +753,12 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
             <div className="text-[11px] text-zinc-400 uppercase tracking-wider flex items-center justify-between">
               <span>Warnings</span>
               <span className="text-amber-400 text-xs font-bold flex items-center">
-                <ArrowUp className="w-3 h-3 mr-0.5" />
-                {stats?.warningChangePercent || 21}%
+                {(stats?.warningChangePercent ?? 0) > 0 && <ArrowUp className="w-3 h-3 mr-0.5" />}
+                {stats?.warningChangePercent ?? 0}%
               </span>
             </div>
             <div className="text-2xl font-bold text-amber-400 mt-1">
-              {(stats?.warningCount || 327).toLocaleString()}
+              {(stats?.warningCount ?? 0).toLocaleString()}
             </div>
             <div className="text-[10px] text-zinc-500 mt-0.5">vs previous window</div>
           </div>
@@ -771,17 +766,17 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
           <div className="p-3.5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 font-mono">
             <div className="text-[11px] text-zinc-400 uppercase tracking-wider">Log Volume</div>
             <div className="text-2xl font-bold text-zinc-100 mt-1">
-              {stats?.totalVolumeMb || 18.4} MB
+              {stats?.totalVolumeMb ?? 0} MB
             </div>
             <div className="text-[10px] text-zinc-500 mt-0.5">
-              Today: {stats?.todayIngestionGb || 1.8} GB
+              Today: {stats?.todayIngestionGb ?? 0} GB
             </div>
           </div>
 
           <div className="p-3.5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 font-mono">
             <div className="text-[11px] text-zinc-400 uppercase tracking-wider">Active Alerts</div>
             <div className="text-2xl font-bold text-sky-400 mt-1">
-              {stats?.activeAlertsCount || 3}
+              {stats?.activeAlertsCount ?? 0}
             </div>
             <div className="text-[10px] text-zinc-500 mt-0.5">monitoring workloads</div>
           </div>
@@ -790,23 +785,23 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
             <div className="text-[11px] text-zinc-400 uppercase tracking-wider flex items-center justify-between">
               <span>Storage Usage</span>
               <span className="text-xs text-zinc-300 font-bold">
-                {stats?.storageUsedGb || 12.6} / {stats?.storageLimitGb || 50} GB
+                {stats?.storageUsedGb ?? 0} / {stats?.storageLimitGb ?? 50} GB
               </span>
             </div>
             <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden my-2">
               <div
                 className="bg-sky-500 h-full rounded-full"
-                style={{ width: `${Math.round(((stats?.storageUsedGb || 12.6) / (stats?.storageLimitGb || 50)) * 100)}%` }}
+                style={{ width: `${Math.min(100, Math.round(((stats?.storageUsedGb ?? 0) / (stats?.storageLimitGb || 50)) * 100))}%` }}
               />
             </div>
             <div className="text-[10px] text-zinc-400 truncate">
-              ~{stats?.storageDaysRemaining || 5} days remaining at rate
+              ~{stats?.storageDaysRemaining ?? 0} days remaining at rate
             </div>
           </div>
         </div>
 
         {/* Section 10 & 11: Error Spike Detection & "What Changed" Correlation */}
-        {errorSpikes.length > 0 && (
+        {errorSpikes.length > 0 ? (
           <div className="p-4 rounded-xl bg-rose-950/20 border border-rose-800/50 font-mono space-y-3">
             {errorSpikes.map((spike) => (
               <div key={spike.id} className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -840,7 +835,7 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
                         </span>
                       </div>
                       <p className="text-[11px] text-zinc-400">
-                        {spike.relatedDeployment.description} 4 minutes prior to error spike onset.
+                        {spike.relatedDeployment.description} prior to error spike onset.
                       </p>
                     </div>
                   )}
@@ -854,7 +849,7 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
                     onClick={() => {
                       setSelectedWorkload(spike.workload);
                       setSelectedNamespace(spike.namespace);
-                      setSearchQuery(spike.topErrorPattern.split(' ')[0] || 'Redis');
+                      setSearchQuery(spike.topErrorPattern.split(' ')[0] || '');
                       setActiveTab('explorer');
                       showToast(`Filtered Explorer to ${spike.workload} error spike window`);
                     }}
@@ -900,6 +895,20 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
               </div>
             ))}
           </div>
+        ) : (
+          <div className="p-3.5 rounded-xl bg-zinc-900/40 border border-zinc-800/70 font-mono text-xs flex items-center justify-between">
+            <div className="flex items-center gap-2 text-zinc-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              <span>
+                {(stats?.errorCount ?? 0) > 0 || (stats?.totalLogLines ?? 0) > 0
+                  ? 'No error spike detected in the selected time range.'
+                  : 'Not enough historical data to establish an error-rate baseline.'}
+              </span>
+            </div>
+            <span className="text-[11px] text-zinc-500">
+              Evaluated across active workload error rates
+            </span>
+          </div>
         )}
 
         {/* Section 6: Workload-First Investigation Panel */}
@@ -924,9 +933,9 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
                   className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none"
                 >
                   <option value="all">All Namespaces</option>
-                  <option value="production">production</option>
-                  <option value="payments">payments</option>
-                  <option value="security">security</option>
+                  {availableNamespaces.map((ns) => (
+                    <option key={ns} value={ns}>{ns}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -2190,7 +2199,7 @@ export const LogsManagementView: React.FC<LogsManagementViewProps> = ({
 
           <div className="p-3 bg-zinc-900 rounded border border-zinc-800 text-zinc-400 text-[11px] space-y-1">
             <div>Cluster: <strong className="text-zinc-200">{selectedCluster?.name}</strong></div>
-            <div>Evidence Attached: <span className="text-emerald-400 font-bold">1,284 matching log lines</span></div>
+            <div>Evidence Attached: <span className="text-emerald-400 font-bold">{totalMatches || logs.length || 0} matching log lines</span></div>
             <div>Deduplication: Prevents duplicate incident creation if pattern already tracked.</div>
           </div>
 

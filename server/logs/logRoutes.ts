@@ -99,12 +99,12 @@ const CreateAlertRuleSchema = z.object({
   minSeverity: z.enum(['FATAL', 'ERROR', 'WARN', 'INFO', 'DEBUG']).optional(),
   thresholdOccurrences: z.number().int().min(1),
   windowMinutes: z.number().int().min(1),
-  createIncident: z.boolean().optional(),
+  createIncident: z.boolean().default(false),
   incidentSeverity: z.enum(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']).optional(),
   notifyEmail: z.boolean().optional(),
   notifyWebhook: z.boolean().optional(),
   webhookUrl: z.string().url().optional(),
-  enabled: z.boolean().optional()
+  enabled: z.boolean().default(true)
 });
 
 logRouter.post('/alerts', requireUserAuth, requireOrgMembership, requirePermission('policy.manage'), (req: AuthenticatedUserRequest, res: Response) => {

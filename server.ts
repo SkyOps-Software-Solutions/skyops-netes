@@ -3391,8 +3391,7 @@ app.get('/api/v1/cost/savings', requireUserAuth, requireOrgMembership, requirePe
 // ENTERPRISE SECURITY & GOVERNANCE ROUTES
 // ==========================================
 app.get('/api/v1/security/posture', requireUserAuth, requireOrgMembership, requirePermission('security.read'), (req: AuthenticatedUserRequest, res) => {
-  const { clusterId } = req.query;
-  const posture = SecurityEngine.getSecurityPostureOverview(req.orgId!, clusterId as string | undefined);
+  const posture = SecurityEngine.getSecurityPostureOverview(req.orgId!);
   res.json({ posture });
 });
 

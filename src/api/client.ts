@@ -75,7 +75,8 @@ import {
   LogQueryFilter,
   LogSearchResult,
   SavedLogSearch,
-  WorkloadLogSummary
+  WorkloadLogSummary,
+  IncidentSmartLogsReport
 } from '../types/logs';
 
 /**
@@ -765,6 +766,27 @@ class ApiClient {
       body: JSON.stringify({ workload, namespace })
     });
   }
+
+  async getIncidentSmartLogs(
+    incidentId: string,
+    options?: {
+      preMinutes?: number;
+      postMinutes?: number;
+      maxEntries?: number;
+      maxWorkloads?: number;
+      maxDependencies?: number;
+    }
+  ): Promise<{ report: IncidentSmartLogsReport }> {
+    const params = new URLSearchParams();
+    if (options?.preMinutes) params.set('preMinutes', String(options.preMinutes));
+    if (options?.postMinutes) params.set('postMinutes', String(options.postMinutes));
+    if (options?.maxEntries) params.set('maxEntries', String(options.maxEntries));
+    if (options?.maxWorkloads) params.set('maxWorkloads', String(options.maxWorkloads));
+    if (options?.maxDependencies) params.set('maxDependencies', String(options.maxDependencies));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request<{ report: IncidentSmartLogsReport }>(`/api/v1/logs/smart-logs/${encodeURIComponent(incidentId)}${qs}`);
+  }
+
 
   async getLogAlertRules(): Promise<LogAlertRule[]> {
     const data = await this.request<{ rules: LogAlertRule[] }>('/api/v1/logs/alerts');

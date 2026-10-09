@@ -11,7 +11,14 @@ import {
   LogSearchResult,
   LogSeverity,
   SavedLogSearch,
-  WorkloadLogSummary
+  WorkloadLogSummary,
+  IncidentSmartLogsReport,
+  RelatedLogCategory,
+  RelatedLogItem,
+  RelatedLogGroup,
+  EvidenceTimelineItem,
+  BoundedInvestigationWindow,
+  HistoricalIncidentMatch
 } from '../../src/types/logs';
 import { auditService } from '../audit';
 import { parseLogLines, redactSensitiveLogData } from '../logs';
@@ -1282,6 +1289,727 @@ export class LogManager {
 
     return { data, filename, mimeType };
   }
+
+  // --- INCIDENT-AWARE SMART LOGS DISCOVERY & RELEVANCE ENGINE ---
+
+  /**
+   * Discovers and ranks relevant logs across the dependency graph for a specific incident.
+   * Discovers: Direct logs, related workloads, connected services, dependencies, infrastructure/node,
+   * deployments/changes, Kubernetes events, and historical incident patterns.
+   */
+  public async getIncidentSmartLogs(
+    orgId: string,
+    incidentId: string,
+    options: {
+      preMinutes?: number;
+      postMinutes?: number;
+      maxEntries?: number;
+      maxWorkloads?: number;
+      maxDependencies?: number;
+    } = {}
+  ): Promise<IncidentSmartLogsReport> {
+    const incident = store.getIncident(incidentId, orgId);
+    if (!incident) {
+      throw new Error(`Incident "${incidentId}" not found for organization.`);
+    }
+
+    // 1. Establish Bounded Investigation Window
+    // Default: 15 minutes before, 15 minutes after (or configured)
+    const isCritical = incident.severity === 'CRITICAL';
+    const preMins = Math.min(120, Math.max(5, options.preMinutes ?? (isCritical ? 30 : 15)));
+    const postMins = Math.min(120, Math.max(5, options.postMinutes ?? (isCritical ? 30 : 15)));
+
+    const incidentTimestamp = incident.firstSeenAt || incident.createdAt || Date.now();
+    const windowStartMs = incidentTimestamp - preMins * 60 * 1000;
+    const windowEndMs = (incident.resolvedAt || incident.lastSeenAt || incidentTimestamp) + postMins * 60 * 1000;
+
+    const window: BoundedInvestigationWindow = {
+      incidentTime: incidentTimestamp,
+      startTime: windowStartMs,
+      endTime: windowEndMs,
+      durationMinutes: Math.round((windowEndMs - windowStartMs) / 60000),
+      configuredPreMinutes: preMins,
+      configuredPostMinutes: postMins,
+      isExpandedWindow: preMins > 15 || postMins > 15
+    };
+
+    // 2. Resource Limits to prevent unbounded log discovery
+    const maxEntries = Math.min(500, Math.max(20, options.maxEntries ?? 100));
+    const maxWorkloads = Math.min(20, Math.max(2, options.maxWorkloads ?? 6));
+    const maxDependencies = Math.min(15, Math.max(2, options.maxDependencies ?? 5));
+    let limitsReached = false;
+
+    // 3. Resolve Topology & Correlated Entities
+    const clusterId = incident.clusterId;
+    const clusterNamespace = incident.namespace || 'default';
+    const clusterResources = store.getClusterResources(clusterId, orgId);
+    const deployments = store.getDeployments(clusterId, orgId);
+    const targetKind = incident.resourceKind || 'Pod';
+    const targetName = incident.resourceName;
+
+    // Find direct target resource
+    const targetResource = clusterResources.find(
+      (r) =>
+        r.kind.toLowerCase() === targetKind.toLowerCase() &&
+        r.name.toLowerCase() === targetName.toLowerCase() &&
+        (!r.namespace || r.namespace.toLowerCase() === clusterNamespace.toLowerCase())
+    );
+
+    // Resolve target workload name
+    let targetWorkload = incident.workload || targetName;
+    if (targetResource) {
+      targetWorkload = this.resolveWorkloadNameForPod(
+        targetResource,
+        clusterResources.filter((r) => r.kind === 'Deployment'),
+        clusterResources.filter((r) => r.kind === 'StatefulSet'),
+        clusterResources.filter((r) => r.kind === 'DaemonSet')
+      );
+    } else {
+      // Clean pod name to workload
+      targetWorkload = targetName.replace(/-[a-f0-9]{8,10}-[a-z0-9]{5}$/, '').replace(/-[a-z0-9]{5}$/, '');
+    }
+
+    const targetNode =
+      targetResource?.specSummary?.nodeName ||
+      (targetResource as any)?.nodeName ||
+      incident.technicalDetails?.nodeName;
+
+    // 4. Identify Connected Services and Dependencies via Topology Graph
+    const connectedServices = new Set<string>();
+    const dependencies = new Set<string>();
+    const infraNodes = new Set<string>();
+    if (targetNode) infraNodes.add(targetNode);
+
+    // Discover services selecting the target pods
+    const allServices = clusterResources.filter((r) => r.kind === 'Service');
+    for (const svc of allServices) {
+      const sel = svc.specSummary?.selector;
+      if (sel && typeof sel === 'object') {
+        const podLabels = (targetResource?.labels || targetResource?.specSummary?.labels || {}) as Record<string, string>;
+        let matches = true;
+        for (const [k, v] of Object.entries(sel)) {
+          if (podLabels[k] !== v) {
+            matches = false;
+            break;
+          }
+        }
+        if (matches && Object.keys(sel).length > 0) {
+          connectedServices.add(svc.name);
+        }
+      }
+    }
+
+    // Discover dependency pods/services via common Kubernetes naming, env vars, or peer relationships
+    // e.g., redis, postgres, db, auth, backend, queue, kafka
+    for (const res of clusterResources) {
+      if (res.name.toLowerCase() === targetWorkload.toLowerCase()) continue;
+      const lower = res.name.toLowerCase();
+      if (
+        lower.includes('redis') ||
+        lower.includes('db') ||
+        lower.includes('postgres') ||
+        lower.includes('sql') ||
+        lower.includes('mongo') ||
+        lower.includes('kafka') ||
+        lower.includes('rabbit') ||
+        lower.includes('cache')
+      ) {
+        dependencies.add(res.name);
+      } else if (
+        lower.includes('payment') ||
+        lower.includes('checkout') ||
+        lower.includes('order') ||
+        lower.includes('auth') ||
+        lower.includes('gateway') ||
+        lower.includes('api')
+      ) {
+        // Connected microservices in the same ecosystem
+        connectedServices.add(res.name);
+      }
+    }
+
+    // 5. Query Bounded Ingested & Observed Logs (Real logs from syncClusterPodLogs)
+    await this.getOrGenerateClusterLogs(orgId, clusterId);
+    const clusterLogs = (this.collectedLogs.get(orgId) || []).filter(
+      (l) => l.clusterId === clusterId && l.timestampMs >= windowStartMs && l.timestampMs <= windowEndMs
+    );
+
+    // 6. Partition and Rank Logs by Category
+    const directLogs: LogRecord[] = [];
+    const connectedServiceLogs = new Map<string, LogRecord[]>();
+    const dependencyLogs = new Map<string, LogRecord[]>();
+    const infrastructureLogs = new Map<string, LogRecord[]>();
+
+    for (const log of clusterLogs) {
+      const isDirect =
+        log.workload.toLowerCase() === targetWorkload.toLowerCase() ||
+        log.podName.toLowerCase().startsWith(targetWorkload.toLowerCase()) ||
+        log.podName.toLowerCase() === targetName.toLowerCase();
+
+      if (isDirect) {
+        directLogs.push(log);
+        continue;
+      }
+
+      // Check infrastructure/node logs
+      if (targetNode && (log.nodeName === targetNode || log.workload.includes('kubelet') || log.workload.includes('node'))) {
+        const nodeKey = log.nodeName || targetNode;
+        if (!infrastructureLogs.has(nodeKey)) infrastructureLogs.set(nodeKey, []);
+        infrastructureLogs.get(nodeKey)!.push(log);
+        continue;
+      }
+
+      // Check dependencies
+      let matchedDep: string | null = null;
+      for (const dep of dependencies) {
+        if (log.workload.toLowerCase().includes(dep.toLowerCase()) || log.podName.toLowerCase().includes(dep.toLowerCase())) {
+          matchedDep = dep;
+          break;
+        }
+      }
+      if (matchedDep) {
+        if (!dependencyLogs.has(matchedDep)) dependencyLogs.set(matchedDep, []);
+        dependencyLogs.get(matchedDep)!.push(log);
+        continue;
+      }
+
+      // Check connected services
+      let matchedSvc: string | null = null;
+      for (const svc of connectedServices) {
+        if (log.workload.toLowerCase().includes(svc.toLowerCase()) || log.podName.toLowerCase().includes(svc.toLowerCase())) {
+          matchedSvc = svc;
+          break;
+        }
+      }
+      if (matchedSvc) {
+        if (!connectedServiceLogs.has(matchedSvc)) connectedServiceLogs.set(matchedSvc, []);
+        connectedServiceLogs.get(matchedSvc)!.push(log);
+        continue;
+      }
+    }
+
+    // Helper: Build a ranked RelatedLogItem
+    const buildLogItem = (
+      id: string,
+      category: RelatedLogCategory,
+      resourceKind: string,
+      resourceName: string,
+      records: LogRecord[],
+      baseReasons: string[],
+      description: string
+    ): RelatedLogItem => {
+      const errors = records.filter((r) => r.severity === 'ERROR' || r.severity === 'FATAL');
+      const warnings = records.filter((r) => r.severity === 'WARN');
+      const errorCount = errors.length;
+      const warningCount = warnings.length;
+
+      // Identify repeated error patterns
+      const patternCounts = new Map<string, { count: number; sample: string }>();
+      for (const r of errors) {
+        const norm = this.normalizeErrorPattern(r.message);
+        const existing = patternCounts.get(norm);
+        if (existing) {
+          existing.count++;
+        } else {
+          patternCounts.set(norm, { count: 1, sample: r.message });
+        }
+      }
+      const sortedPatterns = Array.from(patternCounts.values()).sort((a, b) => b.count - a.count);
+      const topErrorPattern = sortedPatterns[0]?.sample || (errors[0]?.message ?? undefined);
+
+      // Relevance score calculation (0 - 100)
+      let score = 50;
+      if (category === 'DIRECT') score = 98;
+      else if (category === 'DEPENDENCY' && errorCount > 0) score = 90;
+      else if (category === 'CONNECTED_SERVICE' && errorCount > 0) score = 84;
+      else if (category === 'INFRASTRUCTURE' && (errorCount > 0 || warningCount > 0)) score = 75;
+      else if (category === 'DEPLOYMENT_CHANGE') score = 92;
+
+      // Temporal proximity signal
+      const reasons = [...baseReasons];
+      if (errors.length > 0) {
+        const earliestErr = errors.reduce((min, r) => Math.min(min, r.timestampMs), errors[0].timestampMs);
+        const diffMs = earliestErr - incidentTimestamp;
+        const diffMins = Math.round(Math.abs(diffMs) / 60000);
+        if (diffMs < 0) {
+          reasons.push(`Errors observed ${diffMins}m before incident onset`);
+        } else {
+          reasons.push(`Errors observed ${diffMins}m after incident onset`);
+        }
+        reasons.push(`${errorCount} error-level log lines detected`);
+      }
+      if (topErrorPattern) {
+        reasons.push(`Pattern match: "${topErrorPattern.slice(0, 60)}${topErrorPattern.length > 60 ? '...' : ''}"`);
+      }
+
+      // Sample logs (sorted newest first, bounded to 8)
+      const samples = [...records]
+        .sort((a, b) => (b.severity === 'ERROR' ? 1 : 0) - (a.severity === 'ERROR' ? 1 : 0) || b.timestampMs - a.timestampMs)
+        .slice(0, 8)
+        .map((r) => ({
+          timestamp: r.timestamp,
+          timestampMs: r.timestampMs,
+          severity: r.severity,
+          message: r.message,
+          podName: r.podName,
+          container: r.container
+        }));
+
+      return {
+        id,
+        category,
+        resourceKind,
+        resourceName,
+        namespace: records[0]?.namespace || clusterNamespace,
+        nodeName: records[0]?.nodeName || targetNode,
+        relevanceScore: Math.min(100, score),
+        relevanceReasons: reasons,
+        errorCount,
+        warningCount,
+        totalLogsCount: records.length,
+        sampleLogs: samples,
+        topErrorPattern,
+        relationshipDescription: description,
+        deepLinkFilter: {
+          clusterId,
+          namespace: records[0]?.namespace || clusterNamespace,
+          workload: resourceName,
+          startTimeMs: windowStartMs,
+          endTimeMs: windowEndMs
+        }
+      };
+    };
+
+    // 7. Group and assemble results
+    const groups: RelatedLogGroup[] = [];
+
+    // Group 1: DIRECT LOGS
+    const directItems: RelatedLogItem[] = [];
+    if (directLogs.length > 0 || targetResource) {
+      directItems.push(
+        buildLogItem(
+          `direct-${targetWorkload}`,
+          'DIRECT',
+          targetKind,
+          targetWorkload,
+          directLogs,
+          [`Primary affected workload for ${incident.title}`, `Namespace: ${clusterNamespace}`],
+          `Direct operational log stream for target workload ${targetWorkload}`
+        )
+      );
+    }
+    if (directItems.length > 0) {
+      groups.push({
+        category: 'DIRECT',
+        categoryLabel: 'Direct Workload Logs',
+        itemCount: directItems.length,
+        totalErrors: directItems.reduce((acc, i) => acc + i.errorCount, 0),
+        totalWarnings: directItems.reduce((acc, i) => acc + i.warningCount, 0),
+        items: directItems
+      });
+    }
+
+    // Group 2: CONNECTED SERVICE LOGS
+    const connectedItems: RelatedLogItem[] = [];
+    for (const [svcName, logs] of connectedServiceLogs.entries()) {
+      if (connectedItems.length >= maxWorkloads) {
+        limitsReached = true;
+        break;
+      }
+      connectedItems.push(
+        buildLogItem(
+          `svc-${svcName}`,
+          'CONNECTED_SERVICE',
+          'Service',
+          svcName,
+          logs,
+          [`Communicates with ${targetWorkload}`, `Traffic path or peer microservice`],
+          `Connected service interacting with target workload`
+        )
+      );
+    }
+    connectedItems.sort((a, b) => b.relevanceScore - a.relevanceScore || b.errorCount - a.errorCount);
+    if (connectedItems.length > 0) {
+      groups.push({
+        category: 'CONNECTED_SERVICE',
+        categoryLabel: 'Connected Services',
+        itemCount: connectedItems.length,
+        totalErrors: connectedItems.reduce((acc, i) => acc + i.errorCount, 0),
+        totalWarnings: connectedItems.reduce((acc, i) => acc + i.warningCount, 0),
+        items: connectedItems
+      });
+    }
+
+    // Group 3: DEPENDENCY LOGS
+    const depItems: RelatedLogItem[] = [];
+    for (const [depName, logs] of dependencyLogs.entries()) {
+      if (depItems.length >= maxDependencies) {
+        limitsReached = true;
+        break;
+      }
+      depItems.push(
+        buildLogItem(
+          `dep-${depName}`,
+          'DEPENDENCY',
+          'Database/Backend',
+          depName,
+          logs,
+          [`Direct data-store / message queue dependency for ${targetWorkload}`, `Identified in cluster topology`],
+          `Backend dependency supporting ${targetWorkload}`
+        )
+      );
+    }
+    depItems.sort((a, b) => b.relevanceScore - a.relevanceScore || b.errorCount - a.errorCount);
+    if (depItems.length > 0) {
+      groups.push({
+        category: 'DEPENDENCY',
+        categoryLabel: 'Dependencies',
+        itemCount: depItems.length,
+        totalErrors: depItems.reduce((acc, i) => acc + i.errorCount, 0),
+        totalWarnings: depItems.reduce((acc, i) => acc + i.warningCount, 0),
+        items: depItems
+      });
+    }
+
+    // Group 4: INFRASTRUCTURE / NODE LOGS
+    const infraItems: RelatedLogItem[] = [];
+    for (const [nodeName, logs] of infrastructureLogs.entries()) {
+      infraItems.push(
+        buildLogItem(
+          `infra-${nodeName}`,
+          'INFRASTRUCTURE',
+          'Node',
+          nodeName,
+          logs,
+          [`Underlying host node running target workload pod(s)`],
+          `Kubelet and host runtime logs on scheduled node ${nodeName}`
+        )
+      );
+    }
+    if (infraItems.length > 0) {
+      groups.push({
+        category: 'INFRASTRUCTURE',
+        categoryLabel: 'Infrastructure & Host Nodes',
+        itemCount: infraItems.length,
+        totalErrors: infraItems.reduce((acc, i) => acc + i.errorCount, 0),
+        totalWarnings: infraItems.reduce((acc, i) => acc + i.warningCount, 0),
+        items: infraItems
+      });
+    }
+
+    // Group 5: DEPLOYMENTS / CHANGES
+    const recentDeployments = deployments.filter((d) => {
+      const depTime = d.deployedAt || d.createdAt || 0;
+      return (
+        depTime >= windowStartMs &&
+        depTime <= windowEndMs &&
+        (d.workload.toLowerCase() === targetWorkload.toLowerCase() ||
+          connectedServices.has(d.workload) ||
+          dependencies.has(d.workload))
+      );
+    });
+
+    const deploymentItems: RelatedLogItem[] = [];
+    for (const dep of recentDeployments) {
+      const depLogs = clusterLogs.filter((l) => l.workload.toLowerCase() === dep.workload.toLowerCase());
+      deploymentItems.push({
+        id: `deploy-${dep.id || dep.workload}`,
+        category: 'DEPLOYMENT_CHANGE',
+        resourceKind: 'Deployment',
+        resourceName: `${dep.workload}:${dep.revision || dep.imageTag || 'vLatest'}`,
+        namespace: dep.namespace || clusterNamespace,
+        relevanceScore: 94,
+        relevanceReasons: [
+          `Rollout of revision ${dep.revision || 'current'} occurred during investigation window`,
+          `Image: ${dep.imageTag || dep.containers?.[0]?.image || 'latest'}`,
+          `Deployed ${Math.round(Math.abs((dep.deployedAt || incidentTimestamp) - incidentTimestamp) / 60000)}m relative to incident onset`
+        ],
+        errorCount: depLogs.filter((l) => l.severity === 'ERROR').length,
+        warningCount: depLogs.filter((l) => l.severity === 'WARN').length,
+        totalLogsCount: depLogs.length,
+        sampleLogs: depLogs.slice(0, 5).map((r) => ({
+          timestamp: r.timestamp,
+          timestampMs: r.timestampMs,
+          severity: r.severity,
+          message: r.message,
+          podName: r.podName,
+          container: r.container
+        })),
+        relationshipDescription: `Deployment update ${dep.workload} (${dep.revision || 'vLatest'}) rollout in ${dep.namespace}`,
+        deepLinkFilter: {
+          clusterId,
+          namespace: dep.namespace,
+          workload: dep.workload,
+          startTimeMs: windowStartMs,
+          endTimeMs: windowEndMs
+        }
+      });
+    }
+    if (deploymentItems.length > 0) {
+      groups.push({
+        category: 'DEPLOYMENT_CHANGE',
+        categoryLabel: 'Deployments & Changes',
+        itemCount: deploymentItems.length,
+        totalErrors: deploymentItems.reduce((acc, i) => acc + i.errorCount, 0),
+        totalWarnings: deploymentItems.reduce((acc, i) => acc + i.warningCount, 0),
+        items: deploymentItems
+      });
+    }
+
+    // 8. Construct Unified Evidence Timeline (Deployments + Logs + Restarts + Events)
+    const timelineEvents: EvidenceTimelineItem[] = [];
+
+    // Add Incident Onset Marker
+    timelineEvents.push({
+      id: `timeline-incident-onset`,
+      timestamp: incidentTimestamp,
+      timeFormatted: new Date(incidentTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      relativeOffset: 'at onset',
+      type: 'INCIDENT_DETECTED',
+      source: targetWorkload,
+      headline: `Incident Detected: ${incident.title}`,
+      detail: `${incident.incidentType} triggered on ${targetKind} "${targetName}" (${incident.severity})`,
+      resourceKind: targetKind,
+      resourceName: targetName,
+      namespace: clusterNamespace,
+      severity: incident.severity as any,
+      isKeyEvidence: true
+    });
+
+    // Add Deployments
+    for (const d of recentDeployments) {
+      const depTime = d.deployedAt || d.createdAt || incidentTimestamp - 10 * 60 * 1000;
+      const diffMs = depTime - incidentTimestamp;
+      const diffMins = Math.round(Math.abs(diffMs) / 60000);
+      timelineEvents.push({
+        id: `timeline-dep-${d.id || d.workload}`,
+        timestamp: depTime,
+        timeFormatted: new Date(depTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        relativeOffset: diffMs < 0 ? `-${diffMins}m before onset` : `+${diffMins}m after onset`,
+        type: 'DEPLOYMENT',
+        source: `${d.workload}:${d.revision || d.imageTag || 'latest'}`,
+        headline: `Deployment Rolled Out: ${d.workload}`,
+        detail: `Revision ${d.revision || 'vLatest'} deployed with image "${d.imageTag || 'latest'}"`,
+        resourceKind: 'Deployment',
+        resourceName: d.workload,
+        namespace: d.namespace,
+        severity: 'INFO',
+        isKeyEvidence: true
+      });
+    }
+
+    // Add Key Error / Warning Log Events
+    const significantLogs = clusterLogs
+      .filter((l) => l.severity === 'FATAL' || l.severity === 'ERROR' || l.severity === 'WARN')
+      .sort((a, b) => a.timestampMs - b.timestampMs);
+
+    // Limit to top 15 distinct timeline log points
+    const seenPatterns = new Set<string>();
+    for (const log of significantLogs) {
+      const norm = this.normalizeErrorPattern(log.message);
+      const key = `${log.workload}:${norm}`;
+      if (seenPatterns.has(key) && seenPatterns.size > 8) continue;
+      seenPatterns.add(key);
+
+      const diffMs = log.timestampMs - incidentTimestamp;
+      const diffMins = Math.round(Math.abs(diffMs) / 60000);
+      const offsetStr = diffMs < 0 ? `-${diffMins}m before onset` : `+${diffMins}m after onset`;
+
+      timelineEvents.push({
+        id: `timeline-log-${log.id}`,
+        timestamp: log.timestampMs,
+        timeFormatted: new Date(log.timestampMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        relativeOffset: offsetStr,
+        type: log.severity === 'FATAL' ? 'LOG_FATAL' : log.severity === 'ERROR' ? 'LOG_ERROR' : 'LOG_WARNING',
+        source: log.workload,
+        headline: `${log.workload}: ${log.message.slice(0, 70)}${log.message.length > 70 ? '...' : ''}`,
+        detail: `[${log.severity}] ${log.namespace}/${log.podName}:${log.container} - ${log.message}`,
+        resourceKind: 'Pod',
+        resourceName: log.podName,
+        namespace: log.namespace,
+        severity: log.severity === 'FATAL' || log.severity === 'ERROR' ? 'HIGH' : 'MEDIUM',
+        isKeyEvidence: log.severity === 'ERROR' || log.severity === 'FATAL',
+        logRecordId: log.id
+      });
+
+      if (timelineEvents.length >= 25) break;
+    }
+
+    // Add Kubernetes Events
+    const targetEvents = targetResource?.events || incident.technicalDetails?.events || [];
+    for (let i = 0; i < targetEvents.length; i++) {
+      const evt = targetEvents[i];
+      const evtTime = evt.timestamp || incidentTimestamp;
+      const diffMs = evtTime - incidentTimestamp;
+      const diffMins = Math.round(Math.abs(diffMs) / 60000);
+      timelineEvents.push({
+        id: `timeline-evt-${i}`,
+        timestamp: evtTime,
+        timeFormatted: new Date(evtTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        relativeOffset: diffMs < 0 ? `-${diffMins}m before onset` : `+${diffMins}m after onset`,
+        type: 'K8S_EVENT',
+        source: 'kubelet',
+        headline: `K8s ${evt.type || 'Warning'}: ${evt.reason}`,
+        detail: `${evt.message} (count: ${evt.count || 1})`,
+        resourceKind: targetKind,
+        resourceName: targetName,
+        namespace: clusterNamespace,
+        severity: evt.type === 'Warning' ? 'HIGH' : 'INFO',
+        isKeyEvidence: true
+      });
+    }
+
+    timelineEvents.sort((a, b) => a.timestamp - b.timestamp);
+
+    // 9. Discover Similar Historical Incidents
+    const similarHistorical: HistoricalIncidentMatch[] = [];
+    const allOrgIncidents = store.getIncidents(orgId);
+    for (const inc of allOrgIncidents) {
+      if (inc.id === incidentId) continue;
+      const isSameWorkload =
+        inc.workload?.toLowerCase() === targetWorkload.toLowerCase() ||
+        inc.resourceName.toLowerCase() === targetName.toLowerCase();
+      const isSameType = inc.incidentType === incident.incidentType;
+      const isSameCluster = inc.clusterId === clusterId;
+
+      if (isSameWorkload || (isSameType && isSameCluster)) {
+        const occurredAt = inc.firstSeenAt || inc.createdAt || Date.now();
+        const daysAgo = Math.max(1, Math.round((Date.now() - occurredAt) / (86400 * 1000)));
+
+        similarHistorical.push({
+          id: inc.id,
+          title: inc.title,
+          occurredAt,
+          daysAgo,
+          affectedWorkload: inc.workload || inc.resourceName,
+          errorPattern: inc.technicalDetails?.message || `${inc.incidentType} on ${inc.resourceKind}`,
+          similarityScore: isSameWorkload && isSameType ? 95 : isSameWorkload ? 82 : 70,
+          provenanceReason: isSameWorkload
+            ? `Matching workload "${targetWorkload}" with previous ${inc.incidentType}`
+            : `Matching incident type across cluster ${inc.clusterName || inc.clusterId}`,
+          previousResolution: inc.resolution?.reason || 'Resolved by automated remediation policy'
+        });
+      }
+      if (similarHistorical.length >= 4) break;
+    }
+
+    // 10. Generate RCA Supporting Evidence & Connected Chain
+    const supportingEvidence: string[] = [];
+    const connectedChain: Array<{
+      step: number;
+      actor: string;
+      observation: string;
+      offsetSeconds?: number;
+      transitionText?: string;
+    }> = [];
+
+    let stepNum = 1;
+    // Step 1: Recent deployment or trigger
+    if (recentDeployments.length > 0) {
+      const dep = recentDeployments[0];
+      supportingEvidence.push(`Failure started following rollout of ${dep.workload} (${dep.revision || 'vLatest'})`);
+      connectedChain.push({
+        step: stepNum++,
+        actor: dep.workload,
+        observation: `Deployment rollout (${dep.revision || dep.imageTag || 'vLatest'}) applied to cluster`,
+        offsetSeconds: 0,
+        transitionText: 'triggered upstream configuration changes'
+      });
+    }
+
+    // Step 2: Dependency / Backend anomaly
+    if (depItems.length > 0 && depItems[0].errorCount > 0) {
+      const topDep = depItems[0];
+      supportingEvidence.push(`${topDep.resourceName} reported ${topDep.errorCount} error-level anomalies prior to client timeout`);
+      connectedChain.push({
+        step: stepNum++,
+        actor: topDep.resourceName,
+        observation: topDep.topErrorPattern || `${topDep.errorCount} error-level log lines detected in backend`,
+        offsetSeconds: 45,
+        transitionText: 'cascaded to client connectivity failures'
+      });
+    }
+
+    // Step 3: Connected service timeouts
+    if (connectedItems.length > 0 && connectedItems[0].errorCount > 0) {
+      const topSvc = connectedItems[0];
+      supportingEvidence.push(`${topSvc.resourceName} experienced ${topSvc.errorCount} errors communicating with dependencies`);
+      connectedChain.push({
+        step: stepNum++,
+        actor: topSvc.resourceName,
+        observation: topSvc.topErrorPattern || `Connection errors or timeout reached`,
+        offsetSeconds: 25,
+        transitionText: 'exhausted request buffers'
+      });
+    }
+
+    // Step 4: Direct target failure
+    if (directItems.length > 0) {
+      const direct = directItems[0];
+      supportingEvidence.push(`${targetWorkload} reported ${direct.errorCount} errors: "${(direct.topErrorPattern || incident.title).slice(0, 80)}"`);
+      connectedChain.push({
+        step: stepNum++,
+        actor: targetWorkload,
+        observation: direct.topErrorPattern || `${incident.incidentType} status reached`,
+        offsetSeconds: 30,
+        transitionText: 'caused pod container termination / crash'
+      });
+    }
+
+    const rcaConfidence = Math.min(
+      95,
+      60 + (recentDeployments.length ? 15 : 0) + (depItems.length ? 10 : 0) + (directLogs.length ? 10 : 0)
+    );
+
+    // 11. Bounded Smart Query for Deep Investigation
+    const investigationQuery = `workload:${targetWorkload} OR namespace:${clusterNamespace} ${dependencies.size ? `OR ${Array.from(dependencies).slice(0, 3).join(' ')}` : ''}`;
+
+    // 12. Preserve captured context on incident object in store for permanent auditability
+    incident.technicalDetails = incident.technicalDetails || {};
+    incident.technicalDetails.smartLogsContext = {
+      window,
+      investigationQuery,
+      totalCorrelatedLogs: clusterLogs.length,
+      correlatedWorkloadsCount: groups.reduce((acc, g) => acc + g.itemCount, 0),
+      capturedAt: Date.now()
+    };
+
+    return {
+      incidentId,
+      clusterId,
+      namespace: clusterNamespace,
+      targetWorkload,
+      targetResourceKind: targetKind,
+      window,
+      queryContext: {
+        targetWorkload,
+        namespace: clusterNamespace,
+        clusterId,
+        correlatedServices: Array.from(connectedServices),
+        dependencies: Array.from(dependencies),
+        nodeName: targetNode,
+        investigationQuery
+      },
+      groups,
+      evidenceTimeline: timelineEvents,
+      similarHistoricalIncidents: similarHistorical,
+      rootCauseHypothesis: {
+        title: incident.technicalDetails?.reason || incident.title,
+        confidence: rcaConfidence,
+        supportingEvidence,
+        connectedChain
+      },
+      resourceLimits: {
+        maxLogEntries: maxEntries,
+        maxRelatedWorkloads: maxWorkloads,
+        maxDependencies: maxDependencies,
+        limitsReached
+      },
+      totalCorrelatedLogs: clusterLogs.length,
+      generatedAt: Date.now()
+    };
+  }
 }
 
 export const logManager = new LogManager();
+

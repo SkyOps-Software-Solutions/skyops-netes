@@ -67,6 +67,7 @@ import { SkyOpsIntelligenceCard } from './SkyOpsIntelligenceCard';
 import { WhatChangedDrawer } from './WhatChangedDrawer';
 import { BlastRadiusSection } from './BlastRadiusSection';
 import { SimilarIncidentsSection } from './SimilarIncidentsSection';
+import { IncidentRelatedLogsSection } from './IncidentRelatedLogsSection';
 import { IncidentPostmortemModal } from './IncidentPostmortemModal';
 import { PreDeploymentGateModal } from './PreDeploymentGateModal';
 import { parseKubernetesError } from './telemetryParser';

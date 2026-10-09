@@ -190,3 +190,141 @@ export interface LogSearchResult {
   timeRangeMs: { start: number; end: number };
   queryDurationMs: number;
 }
+
+// ==========================================
+// Incident-Aware Smart Logs & RCA Types
+// ==========================================
+
+export type RelatedLogCategory =
+  | 'DIRECT'
+  | 'CONNECTED_SERVICE'
+  | 'DEPENDENCY'
+  | 'INFRASTRUCTURE'
+  | 'DEPLOYMENT_CHANGE'
+  | 'K8S_EVENT'
+  | 'HISTORICAL_PRECEDENT';
+
+export interface RelatedLogItem {
+  id: string;
+  category: RelatedLogCategory;
+  resourceKind: string;
+  resourceName: string;
+  namespace?: string;
+  nodeName?: string;
+  relevanceScore: number; // 0 to 100
+  relevanceReasons: string[]; // e.g. ["checkout-api communicates with Redis", "Redis errors started 2m before failure"]
+  errorCount: number;
+  warningCount: number;
+  totalLogsCount: number;
+  sampleLogs: Array<{
+    timestamp: string;
+    timestampMs: number;
+    severity: LogSeverity;
+    message: string;
+    podName: string;
+    container: string;
+  }>;
+  topErrorPattern?: string;
+  relationshipDescription: string;
+  deepLinkFilter: {
+    clusterId: string;
+    namespace?: string;
+    workload?: string;
+    podName?: string;
+    nodeName?: string;
+    search?: string;
+    severity?: string;
+    startTimeMs?: number;
+    endTimeMs?: number;
+  };
+}
+
+export interface RelatedLogGroup {
+  category: RelatedLogCategory;
+  categoryLabel: string;
+  itemCount: number;
+  totalErrors: number;
+  totalWarnings: number;
+  items: RelatedLogItem[];
+}
+
+export interface EvidenceTimelineItem {
+  id: string;
+  timestamp: number;
+  timeFormatted: string; // "14:24" or ISO time
+  relativeOffset: string; // "-6m before onset", "+2m after detection"
+  type: 'DEPLOYMENT' | 'LOG_WARNING' | 'LOG_ERROR' | 'LOG_FATAL' | 'K8S_EVENT' | 'RESTART' | 'INCIDENT_DETECTED';
+  source: string; // e.g. "checkout:v42", "redis", "payment-service", "kubelet"
+  headline: string;
+  detail: string;
+  resourceKind?: string;
+  resourceName?: string;
+  namespace?: string;
+  severity?: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
+  isKeyEvidence: boolean;
+  logRecordId?: string;
+}
+
+export interface BoundedInvestigationWindow {
+  incidentTime: number;
+  startTime: number;
+  endTime: number;
+  durationMinutes: number;
+  configuredPreMinutes: number;
+  configuredPostMinutes: number;
+  isExpandedWindow?: boolean;
+}
+
+export interface HistoricalIncidentMatch {
+  id: string;
+  title: string;
+  occurredAt: number;
+  daysAgo: number;
+  affectedWorkload: string;
+  errorPattern: string;
+  similarityScore: number;
+  provenanceReason: string;
+  previousResolution?: string;
+}
+
+export interface IncidentSmartLogsReport {
+  incidentId: string;
+  clusterId: string;
+  namespace: string;
+  targetWorkload: string;
+  targetResourceKind: string;
+  window: BoundedInvestigationWindow;
+  queryContext: {
+    targetWorkload: string;
+    namespace: string;
+    clusterId: string;
+    correlatedServices: string[];
+    dependencies: string[];
+    nodeName?: string;
+    investigationQuery: string;
+  };
+  groups: RelatedLogGroup[];
+  evidenceTimeline: EvidenceTimelineItem[];
+  similarHistoricalIncidents: HistoricalIncidentMatch[];
+  rootCauseHypothesis?: {
+    title: string;
+    confidence: number;
+    supportingEvidence: string[];
+    connectedChain: Array<{
+      step: number;
+      actor: string;
+      observation: string;
+      offsetSeconds?: number;
+      transitionText?: string;
+    }>;
+  };
+  resourceLimits: {
+    maxLogEntries: number;
+    maxRelatedWorkloads: number;
+    maxDependencies: number;
+    limitsReached: boolean;
+  };
+  totalCorrelatedLogs: number;
+  generatedAt: number;
+}
+

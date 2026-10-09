@@ -83,6 +83,33 @@ logRouter.post('/deployment-comparison', requireUserAuth, requireOrgMembership, 
   res.json(comparison);
 });
 
+// --- Incident-Aware Smart Logs Engine ---
+logRouter.get('/smart-logs/:incidentId', requireUserAuth, requireOrgMembership, async (req: AuthenticatedUserRequest, res: Response) => {
+  try {
+    const preMinutes = req.query.preMinutes ? parseInt(req.query.preMinutes as string, 10) : undefined;
+    const postMinutes = req.query.postMinutes ? parseInt(req.query.postMinutes as string, 10) : undefined;
+    const maxEntries = req.query.maxEntries ? parseInt(req.query.maxEntries as string, 10) : undefined;
+    const maxWorkloads = req.query.maxWorkloads ? parseInt(req.query.maxWorkloads as string, 10) : undefined;
+    const maxDependencies = req.query.maxDependencies ? parseInt(req.query.maxDependencies as string, 10) : undefined;
+
+    const report = await logManager.getIncidentSmartLogs(req.orgId!, req.params.incidentId, {
+      preMinutes: isNaN(preMinutes!) ? undefined : preMinutes,
+      postMinutes: isNaN(postMinutes!) ? undefined : postMinutes,
+      maxEntries: isNaN(maxEntries!) ? undefined : maxEntries,
+      maxWorkloads: isNaN(maxWorkloads!) ? undefined : maxWorkloads,
+      maxDependencies: isNaN(maxDependencies!) ? undefined : maxDependencies
+    });
+
+    res.json({ report });
+  } catch (err: any) {
+    if (err.message && err.message.includes('not found')) {
+      return res.status(404).json({ error: err.message });
+    }
+    res.status(500).json({ error: err.message || 'Failed to generate incident smart logs' });
+  }
+});
+
+
 // --- Log Alert Rules ---
 logRouter.get('/alerts', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res: Response) => {
   const rules = logManager.getAlertRules(req.orgId!);

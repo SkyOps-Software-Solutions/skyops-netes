@@ -176,50 +176,47 @@ export const ClustersView: React.FC<ClustersViewProps> = ({
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-7xl mx-auto font-sans text-zinc-100">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800/80 pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-5">
         <div>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center">
-              <Server className="w-4 h-4 text-sky-400" />
-            </div>
-            <h1 className="text-xl font-bold tracking-tight text-zinc-100">
-              Multi-Cluster Infrastructure
-            </h1>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/30">
-              Tenant Isolated
+            <h2 className="text-lg font-bold tracking-tight text-white">
+              Connected Kubernetes Clusters
+            </h2>
+            <span className="text-xs px-2.5 py-0.5 rounded-md bg-sky-500/10 text-sky-300 border border-sky-500/25 font-medium">
+              {clusters.length} Connected
             </span>
           </div>
-          <p className="text-xs text-zinc-400 mt-1 font-mono">
-            {currentOrg?.name || 'Organization'} • Production ({prodCount}) • Staging ({stageCount}) • Development ({devCount})
+          <p className="text-xs text-zinc-400 mt-1">
+            {currentOrg?.name || 'Workspace'} • Production ({prodCount}) • Staging ({stageCount}) • Development ({devCount})
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           {/* View mode toggle */}
-          <div className="inline-flex rounded-lg bg-zinc-900 p-0.5 border border-zinc-800">
+          <div className="inline-flex rounded-lg bg-zinc-950 p-1 border border-zinc-800">
             <button
               onClick={() => setViewMode('hierarchy')}
-              className={`px-2.5 py-1 text-xs font-mono rounded-md transition-colors flex items-center gap-1.5 ${
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 cursor-pointer ${
                 viewMode === 'hierarchy'
-                  ? 'bg-zinc-800 text-zinc-100 shadow-xs'
+                  ? 'bg-zinc-800 text-white shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
-              title="Hierarchical Tree Topology"
+              title="Group by Environment"
             >
-              <FolderTree className="w-3.5 h-3.5" />
-              <span>Topology</span>
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>Cards by Environment</span>
             </button>
             <button
               onClick={() => setViewMode('table')}
-              className={`px-2.5 py-1 text-xs font-mono rounded-md transition-colors flex items-center gap-1.5 ${
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 cursor-pointer ${
                 viewMode === 'table'
-                  ? 'bg-zinc-800 text-zinc-100 shadow-xs'
+                  ? 'bg-zinc-800 text-white shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
-              title="Standard Cluster Grid"
+              title="Table View"
             >
               <List className="w-3.5 h-3.5" />
-              <span>Table</span>
+              <span>Table List</span>
             </button>
           </div>
 
@@ -247,10 +244,10 @@ export const ClustersView: React.FC<ClustersViewProps> = ({
       {/* Auto-Heal Result Notice */}
       {autoHealNotice && (
         <div
-          className={`p-3 text-xs rounded-xl font-mono flex items-center justify-between border ${
+          className={`p-3.5 text-xs rounded-xl flex items-center justify-between border ${
             autoHealNotice.type === 'success'
-              ? 'bg-emerald-950/60 border-emerald-700/60 text-emerald-300'
-              : 'bg-rose-950/60 border-rose-800 text-rose-300'
+              ? 'bg-emerald-950/60 border-emerald-700/60 text-emerald-200'
+              : 'bg-rose-950/60 border-rose-800 text-rose-200'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -259,7 +256,7 @@ export const ClustersView: React.FC<ClustersViewProps> = ({
             ) : (
               <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
             )}
-            <span>{autoHealNotice.message}</span>
+            <span className="font-medium">{autoHealNotice.message}</span>
           </div>
           <button
             onClick={() => setAutoHealNotice(null)}
@@ -276,162 +273,157 @@ export const ClustersView: React.FC<ClustersViewProps> = ({
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
           <input
             type="text"
-            placeholder="Filter by name, provider (EKS, GKE, AKS, Kind), region, or environment..."
+            placeholder="Search clusters by name, provider (EKS, GKE, AKS), region, or environment..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 text-xs bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-sky-500 font-mono"
+            className="w-full pl-9 pr-3 py-2 text-xs bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-sky-500"
           />
         </div>
-        <div className="text-xs font-mono text-zinc-500 flex items-center gap-2">
-          <span>Active Clusters: <strong className="text-zinc-300">{filteredClusters.length}</strong></span>
+        <div className="text-xs text-zinc-400 flex items-center gap-2">
+          <span>Showing <strong className="text-zinc-200">{filteredClusters.length}</strong> of {clusters.length} clusters</span>
         </div>
       </div>
 
-      {/* VIEW MODE 1: HIERARCHY TOPOLOGY (Prompt 3, Section 2) */}
+      {/* VIEW MODE 1: ENVIRONMENT GROUPED CARDS */}
       {viewMode === 'hierarchy' && (
         <div className="space-y-6">
-          <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-xl p-5">
-            <div className="text-xs font-mono text-sky-400 font-bold mb-3 flex items-center gap-2">
-              <FolderTree className="w-4 h-4" />
-              <span>{currentOrg?.name || 'SkyOps Enterprise Organization'}</span>
-            </div>
+          {['production', 'staging', 'development'].map((envKey) => {
+            const envClusters = filteredClusters.filter(
+              (c) => (c.environment || 'production').toLowerCase() === envKey
+            );
 
-            {/* Tree Branch: Production */}
-            <div className="space-y-4 ml-2 border-l border-zinc-800 pl-4">
-              {['production', 'staging', 'development'].map((envKey) => {
-                const envClusters = filteredClusters.filter(
-                  (c) => (c.environment || 'production').toLowerCase() === envKey
-                );
+            if (envClusters.length === 0 && searchTerm) return null;
 
-                const envLabel = envKey.charAt(0).toUpperCase() + envKey.slice(1);
+            const envLabel = envKey.charAt(0).toUpperCase() + envKey.slice(1);
 
-                return (
-                  <div key={envKey} className="space-y-3">
-                    <div className="flex items-center gap-2 text-xs font-mono font-semibold text-zinc-300">
-                      <span className="w-2 h-2 rounded-full bg-zinc-500" />
-                      <span>├── {envLabel}</span>
-                      <span className="text-[10px] text-zinc-500">
-                        ({envClusters.length} {envClusters.length === 1 ? 'cluster' : 'clusters'})
-                      </span>
-                    </div>
+            return (
+              <div key={envKey} className="space-y-3">
+                <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-zinc-200">
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        envKey === 'production'
+                          ? 'bg-sky-400'
+                          : envKey === 'staging'
+                          ? 'bg-amber-400'
+                          : 'bg-emerald-400'
+                      }`}
+                    />
+                    <span>{envLabel} Environment</span>
+                    <span className="text-xs font-normal text-zinc-500">
+                      ({envClusters.length} {envClusters.length === 1 ? 'cluster' : 'clusters'})
+                    </span>
+                  </div>
+                </div>
 
-                    {envClusters.length === 0 ? (
-                      <div className="ml-6 text-[11px] font-mono text-zinc-600 italic">
-                        No {envLabel} clusters connected yet
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 ml-4">
-                        {envClusters.map((cluster) => {
-                          const isHealthy =
-                            cluster.status === 'connected' ||
-                            (cluster as any).status === 'READY' ||
-                            cluster.agentStatus === 'CONNECTED';
-                          const hasCritical = cluster.openIncidentCount > 0;
-                          const agentConnected =
-                            cluster.agentStatus === 'CONNECTED' || (cluster as any).connectionState === 'connected' || cluster.status === 'connected';
+                {envClusters.length === 0 ? (
+                  <div className="p-4 rounded-xl bg-zinc-900/20 border border-zinc-800/50 text-xs text-zinc-500">
+                    No {envLabel.toLowerCase()} clusters connected yet.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {envClusters.map((cluster) => {
+                      const isHealthy =
+                        cluster.status === 'connected' ||
+                        (cluster as any).status === 'READY' ||
+                        cluster.status === 'HEALTHY' ||
+                        cluster.agentStatus === 'CONNECTED';
+                      const agentConnected =
+                        cluster.agentStatus === 'CONNECTED' ||
+                        (cluster as any).connectionState === 'connected' ||
+                        cluster.status === 'connected';
 
-                          return (
-                            <div
-                              key={cluster.id}
-                              onClick={() => onSelectCluster(cluster.id)}
-                              className="bg-zinc-950/70 border border-zinc-800/80 hover:border-zinc-700 rounded-xl p-4 transition-all cursor-pointer space-y-3 group"
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <div>
-                                  <div className="text-sm font-bold text-zinc-100 flex items-center gap-2">
-                                    <span>{cluster.displayName || cluster.name}</span>
-                                    {cluster.provider && (
-                                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700">
-                                        {cluster.provider.toUpperCase()}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="text-[10px] font-mono text-zinc-500 mt-0.5">
-                                    ID: {cluster.id} {cluster.region ? `• ${cluster.region}` : ''}
-                                  </div>
-                                </div>
-
-                                <div className="shrink-0 flex items-center gap-1.5">
-                                  <span
-                                    className={`w-2 h-2 rounded-full ${
-                                      !agentConnected
-                                        ? 'bg-amber-400 animate-pulse'
-                                        : isHealthy
-                                        ? 'bg-emerald-400'
-                                        : 'bg-red-400'
-                                    }`}
-                                  />
-                                  <span className="text-[11px] font-mono text-zinc-300">
-                                    {!agentConnected
-                                      ? 'Agent Disconnected'
-                                      : isHealthy
-                                      ? 'Healthy'
-                                      : 'Warning'}
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-zinc-400 bg-zinc-900/60 p-2.5 rounded-lg border border-zinc-800/60">
-                                <div>
-                                  <span className="text-zinc-500">K8s:</span>{' '}
-                                  <strong className="text-zinc-200">{cluster.k8sVersion || 'v1.31.0'}</strong>
-                                </div>
-                                <div>
-                                  <span className="text-zinc-500">Agent:</span>{' '}
-                                  <strong className="text-zinc-200">{cluster.agentVersion || 'v1.5.0'}</strong>
-                                </div>
-                                <div>
-                                  <span className="text-zinc-500">Heartbeat:</span>{' '}
-                                  <span className="text-zinc-300">{formatTimeAgo(cluster.lastHeartbeat)}</span>
-                                </div>
-                                <div>
-                                  <span className="text-zinc-500">Incidents:</span>{' '}
-                                  <strong className={cluster.openIncidentCount > 0 ? 'text-rose-400' : 'text-emerald-400'}>
-                                    {cluster.openIncidentCount}
-                                  </strong>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center justify-between pt-1">
-                                <div className="flex items-center gap-3">
-                                  <button
-                                    onClick={(e) => handleOpenHealthModal(cluster, e)}
-                                    className="text-xs font-mono text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer transition-colors"
-                                  >
-                                    <HeartPulse className="w-3.5 h-3.5 text-sky-400" />
-                                    <span>Cluster Health</span>
-                                  </button>
-                                  {cluster.openIncidentCount > 0 && (
-                                    <button
-                                      onClick={(e) => handleAutoHealCluster(cluster, e)}
-                                      disabled={healingClusterId === cluster.id}
-                                      className="text-xs font-mono text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer transition-colors font-bold"
-                                      title="Auto-heal all active incidents on this cluster"
-                                    >
-                                      {healingClusterId === cluster.id ? (
-                                        <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-300" />
-                                      ) : (
-                                        <Zap className="w-3.5 h-3.5 text-amber-300" />
-                                      )}
-                                      <span>{healingClusterId === cluster.id ? 'Healing...' : 'Auto-Heal'}</span>
-                                    </button>
+                      return (
+                        <div
+                          key={cluster.id}
+                          onClick={() => onSelectCluster(cluster.id)}
+                          className="bg-zinc-900/50 border border-zinc-800/90 hover:border-zinc-700 rounded-xl p-4 transition-all cursor-pointer space-y-3.5 group flex flex-col justify-between"
+                        >
+                          <div className="space-y-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="text-sm font-bold text-white flex items-center gap-2 truncate">
+                                  <span className="truncate">{cluster.displayName || cluster.name}</span>
+                                  {cluster.provider && (
+                                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700 shrink-0">
+                                      {cluster.provider.toUpperCase()}
+                                    </span>
                                   )}
                                 </div>
+                                <div className="text-[11px] text-zinc-500 mt-0.5 truncate">
+                                  {cluster.region ? `Region: ${cluster.region} • ` : ''}ID: <span className="font-mono">{cluster.id}</span>
+                                </div>
+                              </div>
 
-                                <span className="text-xs font-mono text-zinc-500 group-hover:text-zinc-300 transition-colors flex items-center gap-1">
-                                  Manage <ArrowRight className="w-3 h-3" />
-                                </span>
+                              <div className="shrink-0">
+                                <ClusterStatusBadge status={cluster.status} agentStatus={cluster.agentStatus} />
                               </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
+
+                            <div className="grid grid-cols-3 gap-2 text-xs bg-zinc-950/70 p-3 rounded-lg border border-zinc-800/70">
+                              <div>
+                                <div className="text-[10px] text-zinc-500">Nodes / Pods</div>
+                                <div className="font-semibold text-zinc-200 mt-0.5 tabular-nums">
+                                  {cluster.nodeCount} / {cluster.podCount}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-[10px] text-zinc-500">K8s Version</div>
+                                <div className="font-semibold text-zinc-200 mt-0.5 font-mono text-[11px]">
+                                  {cluster.k8sVersion || 'v1.31'}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-[10px] text-zinc-500">Incidents</div>
+                                <div
+                                  className={`font-bold mt-0.5 tabular-nums ${
+                                    cluster.openIncidentCount > 0 ? 'text-rose-400' : 'text-emerald-400'
+                                  }`}
+                                >
+                                  {cluster.openIncidentCount > 0 ? `${cluster.openIncidentCount} Open` : '0 Open'}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-2 border-t border-zinc-800/60">
+                            <div className="flex items-center gap-3">
+                              <button
+                                onClick={(e) => handleOpenHealthModal(cluster, e)}
+                                className="text-xs font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer transition-colors"
+                              >
+                                <HeartPulse className="w-3.5 h-3.5 text-sky-400" />
+                                <span>Quick Health</span>
+                              </button>
+                              {cluster.openIncidentCount > 0 && (
+                                <button
+                                  onClick={(e) => handleAutoHealCluster(cluster, e)}
+                                  disabled={healingClusterId === cluster.id}
+                                  className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer transition-colors"
+                                  title="Auto-heal all active incidents on this cluster"
+                                >
+                                  {healingClusterId === cluster.id ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-300" />
+                                  ) : (
+                                    <Zap className="w-3.5 h-3.5 text-amber-300" />
+                                  )}
+                                  <span>{healingClusterId === cluster.id ? 'Healing...' : 'Auto-Heal'}</span>
+                                </button>
+                              )}
+                            </div>
+
+                            <span className="text-xs font-medium text-zinc-400 group-hover:text-white transition-colors flex items-center gap-1">
+                              Inspect <ArrowRight className="w-3 h-3" />
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-          </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

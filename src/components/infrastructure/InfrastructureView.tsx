@@ -28,9 +28,15 @@ import { Cluster, Incident, KubernetesResource } from '../../types/index';
 import { ClusterStatusBadge } from '../common/Badges';
 import { ServicesView } from '../services/ServicesView';
 import { ArchitectureView } from '../architecture/ArchitectureView';
+import { WorkloadDetailModal } from '../resources/WorkloadDetailModal';
+import { PodDetailModal } from '../resources/PodDetailModal';
+import { NodeDetailModal } from '../resources/NodeDetailModal';
+
+export type InfraSubTab = 'workloads' | 'pods' | 'services' | 'nodes' | 'architecture';
 
 interface InfrastructureViewProps {
   clusters: Cluster[];
+  initialSubTab?: InfraSubTab;
   onSelectCluster: (clusterId: string) => void;
   onOpenAddCluster: () => void;
   onDeleteCluster: (clusterId: string) => void;
@@ -40,10 +46,9 @@ interface InfrastructureViewProps {
   onOpenLogs?: (clusterId: string, namespace: string, podName: string) => void;
 }
 
-type InfraSubTab = 'architecture' | 'clusters' | 'nodes' | 'workloads' | 'pods' | 'services';
-
 export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
   clusters = [],
+  initialSubTab = 'workloads',
   onSelectCluster,
   onOpenAddCluster,
   onDeleteCluster,
@@ -52,13 +57,24 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
   onSelectIncident,
   onOpenLogs
 }) => {
-  const [subTab, setSubTab] = useState<InfraSubTab>('clusters');
+  const [subTab, setSubTab] = useState<InfraSubTab>(initialSubTab);
   const [resources, setResources] = useState<KubernetesResource[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loadingResources, setLoadingResources] = useState(false);
   const [selectedClusterFilter, setSelectedClusterFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNamespaceFilter, setSelectedNamespaceFilter] = useState<string>('all');
+
+  // Interactive Detail Modals for deep resource inspection
+  const [selectedWorkload, setSelectedWorkload] = useState<KubernetesResource | null>(null);
+  const [selectedPod, setSelectedPod] = useState<KubernetesResource | null>(null);
+  const [selectedNode, setSelectedNode] = useState<KubernetesResource | null>(null);
+
+  useEffect(() => {
+    if (initialSubTab) {
+      setSubTab(initialSubTab);
+    }
+  }, [initialSubTab]);
 
   const fetchResources = async () => {
     try {
@@ -123,7 +139,7 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
   const workloads = useMemo(
     () =>
       filteredResources.filter((r) =>
-        ['Deployment', 'StatefulSet', 'DaemonSet', 'Rollout'].includes(r.kind)
+        ['Deployment', 'StatefulSet', 'DaemonSet', 'Rollout', 'Job', 'CronJob'].includes(r.kind)
       ),
     [filteredResources]
   );
@@ -135,133 +151,225 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
     () => filteredResources.filter((r) => r.kind === 'Service'),
     [filteredResources]
   );
-  const servicesAndStorage = useMemo(
+
+  // Quick health counts
+  const degradedWorkloadsCount = useMemo(
+    () => workloads.filter((w) => w.health === 'CRITICAL' || w.health === 'WARNING').length,
+    [workloads]
+  );
+  const failingPodsCount = useMemo(
     () =>
-      filteredResources.filter((r) =>
-        ['Service', 'PersistentVolumeClaim', 'Ingress'].includes(r.kind)
-      ),
-    [filteredResources]
+      pods.filter(
+        (p) =>
+          p.health === 'CRITICAL' ||
+          p.status === 'CrashLoopBackOff' ||
+          p.status === 'ImagePullBackOff' ||
+          p.status === 'OOMKilled'
+      ).length,
+    [pods]
   );
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-6 lg:p-8 max-w-7xl mx-auto space-y-6 font-sans text-zinc-100">
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800/80 pb-5">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-zinc-100">Infrastructure Center</h1>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/30">
-              Fleet Mesh
-            </span>
-          </div>
+          <h1 className="text-xl font-bold text-zinc-100 tracking-tight">
+            Kubernetes Infrastructure & Resources
+          </h1>
           <p className="text-xs text-zinc-400 mt-1">
-            Real-time inventory of connected clusters, nodes, deployments, pods, and storage
+            Inspect and troubleshoot deployments, running pods, networking services, worker nodes, and service dependencies across your clusters.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <button
             onClick={() => {
               onRefresh();
               fetchResources();
             }}
             disabled={loading || loadingResources}
-            className="p-2 text-zinc-400 hover:text-zinc-200 bg-zinc-900 border border-zinc-800 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer"
-            title="Refresh Fleet Data"
+            className="px-3 py-2 text-xs font-medium text-zinc-300 hover:text-white bg-zinc-900 border border-zinc-800 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer flex items-center gap-1.5"
+            title="Refresh cluster resources"
           >
-            <RefreshCw className={`w-4 h-4 ${loading || loadingResources ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 text-sky-400 ${loading || loadingResources ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
           </button>
 
           <button
             onClick={onOpenAddCluster}
-            className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors cursor-pointer flex items-center gap-1.5 shadow-md"
+            className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
           >
             <Plus className="w-4 h-4" />
-            Connect Cluster
+            <span>Connect Cluster</span>
           </button>
         </div>
       </div>
 
+      {/* 4 Interactive Resource Summary Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <button
+          onClick={() => setSubTab('workloads')}
+          className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+            subTab === 'workloads'
+              ? 'bg-sky-500/10 border-sky-500/40 shadow-xs'
+              : 'bg-zinc-900/60 border-zinc-800/80 hover:border-zinc-700'
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs text-zinc-400">
+            <span className="font-medium">Workloads</span>
+            <Layers className="w-4 h-4 text-sky-400" />
+          </div>
+          <div className="text-2xl font-bold text-white mt-1.5 font-mono tabular-nums">
+            {workloads.length}
+          </div>
+          <div className="text-[11px] text-zinc-400 mt-1">
+            {degradedWorkloadsCount > 0 ? (
+              <span className="text-amber-400 font-medium">{degradedWorkloadsCount} need attention</span>
+            ) : (
+              <span className="text-emerald-400">All deployments healthy</span>
+            )}
+          </div>
+        </button>
+
+        <button
+          onClick={() => setSubTab('pods')}
+          className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+            subTab === 'pods'
+              ? 'bg-sky-500/10 border-sky-500/40 shadow-xs'
+              : 'bg-zinc-900/60 border-zinc-800/80 hover:border-zinc-700'
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs text-zinc-400">
+            <span className="font-medium">Pods</span>
+            <Boxes className="w-4 h-4 text-indigo-400" />
+          </div>
+          <div className="text-2xl font-bold text-white mt-1.5 font-mono tabular-nums">
+            {pods.length}
+          </div>
+          <div className="text-[11px] text-zinc-400 mt-1">
+            {failingPodsCount > 0 ? (
+              <span className="text-rose-400 font-medium">{failingPodsCount} crashing or failing</span>
+            ) : (
+              <span className="text-emerald-400">All containers running</span>
+            )}
+          </div>
+        </button>
+
+        <button
+          onClick={() => setSubTab('services')}
+          className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+            subTab === 'services'
+              ? 'bg-sky-500/10 border-sky-500/40 shadow-xs'
+              : 'bg-zinc-900/60 border-zinc-800/80 hover:border-zinc-700'
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs text-zinc-400">
+            <span className="font-medium">Services & Ingress</span>
+            <Network className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div className="text-2xl font-bold text-white mt-1.5 font-mono tabular-nums">
+            {services.length}
+          </div>
+          <div className="text-[11px] text-zinc-400 mt-1">
+            ClusterIP, NodePort & LoadBalancers
+          </div>
+        </button>
+
+        <button
+          onClick={() => setSubTab('nodes')}
+          className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+            subTab === 'nodes'
+              ? 'bg-sky-500/10 border-sky-500/40 shadow-xs'
+              : 'bg-zinc-900/60 border-zinc-800/80 hover:border-zinc-700'
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs text-zinc-400">
+            <span className="font-medium">Worker Nodes</span>
+            <Cpu className="w-4 h-4 text-amber-400" />
+          </div>
+          <div className="text-2xl font-bold text-white mt-1.5 font-mono tabular-nums">
+            {nodes.length}
+          </div>
+          <div className="text-[11px] text-zinc-400 mt-1">
+            {nodes.filter((n) => n.status === 'Ready').length} Ready across fleet
+          </div>
+        </button>
+      </div>
+
       {/* Sub-Navigation & Filters Bar */}
-      <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
+      <div className="bg-zinc-900/70 border border-zinc-800/80 rounded-xl p-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         {/* Sub-tabs */}
-        <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-lg border border-zinc-800 overflow-x-auto">
-          <button
-            onClick={() => setSubTab('architecture')}
-            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              subTab === 'architecture'
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            <Workflow className="w-3.5 h-3.5 text-sky-400" />
-            Architecture
-          </button>
-          <button
-            onClick={() => setSubTab('clusters')}
-            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              subTab === 'clusters'
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            <Server className="w-3.5 h-3.5" />
-            Clusters ({safeClusters.length})
-          </button>
-          <button
-            onClick={() => setSubTab('nodes')}
-            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              subTab === 'nodes'
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            <Cpu className="w-3.5 h-3.5" />
-            Nodes ({nodes.length})
-          </button>
+        <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-lg border border-zinc-800/80 overflow-x-auto">
           <button
             onClick={() => setSubTab('workloads')}
-            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               subTab === 'workloads'
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-xs'
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            Workloads ({workloads.length})
+            <span>Workloads ({workloads.length})</span>
           </button>
+
           <button
             onClick={() => setSubTab('pods')}
-            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               subTab === 'pods'
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-xs'
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
             <Boxes className="w-3.5 h-3.5" />
-            Pods ({pods.length})
+            <span>Pods ({pods.length})</span>
           </button>
+
           <button
             onClick={() => setSubTab('services')}
-            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               subTab === 'services'
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-xs'
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
             <Network className="w-3.5 h-3.5" />
-            Services ({services.length})
+            <span>Services ({services.length})</span>
+          </button>
+
+          <button
+            onClick={() => setSubTab('nodes')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              subTab === 'nodes'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-xs'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Cpu className="w-3.5 h-3.5" />
+            <span>Nodes ({nodes.length})</span>
+          </button>
+
+          <button
+            onClick={() => setSubTab('architecture')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              subTab === 'architecture'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-xs'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Workflow className="w-3.5 h-3.5 text-sky-400" />
+            <span>Topology Map</span>
           </button>
         </div>
 
         {/* Global Cluster & Search Filter */}
-        {subTab !== 'architecture' && (
+        {subTab !== 'architecture' && subTab !== 'services' && (
           <div className="flex flex-wrap items-center gap-2.5">
-            {safeClusters.length > 1 && (
+            {safeClusters.length > 0 && (
               <select
                 value={selectedClusterFilter}
                 onChange={(e) => setSelectedClusterFilter(e.target.value)}
-                className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-sky-500"
+                className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-sky-500 cursor-pointer"
               >
                 <option value="all">All Clusters ({safeClusters.length})</option>
                 {safeClusters.map((c) => (
@@ -272,11 +380,11 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
               </select>
             )}
 
-            {namespaces.length > 0 && subTab !== 'clusters' && subTab !== 'nodes' && (
+            {namespaces.length > 0 && subTab !== 'nodes' && (
               <select
                 value={selectedNamespaceFilter}
                 onChange={(e) => setSelectedNamespaceFilter(e.target.value)}
-                className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-sky-500"
+                className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-sky-500 cursor-pointer"
               >
                 <option value="all">All Namespaces</option>
                 {namespaces.map((ns) => (
@@ -288,13 +396,13 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
             )}
 
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-2.5" />
+              <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search resource..."
-                className="bg-zinc-950 border border-zinc-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-zinc-300 placeholder-zinc-500 focus:outline-none focus:border-sky-500 w-44 sm:w-56"
+                placeholder="Filter by name or namespace..."
+                className="bg-zinc-950 border border-zinc-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-sky-500 w-48 sm:w-60"
               />
             </div>
           </div>
@@ -319,144 +427,27 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
         />
       )}
 
-      {subTab === 'clusters' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {safeClusters.length === 0 ? (
-            <div className="col-span-full py-16 text-center bg-zinc-900/60 border border-zinc-800 rounded-xl">
-              <Server className="w-10 h-10 text-zinc-500 mx-auto mb-3" />
-              <h3 className="text-sm font-semibold text-zinc-200">No Clusters Connected</h3>
-              <p className="text-xs text-zinc-400 mt-1 max-w-sm mx-auto mb-4">
-                Connect your Kubernetes cluster with the SkyOps Helm chart to start streaming telemetry.
-              </p>
-              <button
-                onClick={onOpenAddCluster}
-                className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-md"
-              >
-                + Connect Cluster
-              </button>
-            </div>
-          ) : (
-            safeClusters.map((cluster) => {
-              const clusterRes = safeResources.filter((r) => r.clusterId === cluster.id);
-              const nodeCount = cluster.nodeCount || clusterRes.filter((r) => r.kind === 'Node').length || 0;
-              const podCount = cluster.podCount || clusterRes.filter((r) => r.kind === 'Pod').length || 0;
-              const serviceCount = clusterRes.filter((r) => r.kind === 'Service').length || 0;
-              const clusterIncidents = incidents.filter(
-                (i) => i.clusterId === cluster.id && (i.status === 'OPEN' || i.status === 'IN_PROGRESS' || i.status === 'ACKNOWLEDGED')
-              );
-
-              return (
-                <div
-                  key={cluster.id}
-                  className="cosmic-panel cosmic-panel-hover rounded-xl p-5 flex flex-col justify-between transition-all group shadow-sm text-xs font-sans"
-                >
-                  <div>
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-lg bg-sky-500/10 border border-sky-400/20 flex items-center justify-center text-sky-400">
-                          <Server className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <h3
-                            onClick={() => onSelectCluster(cluster.id)}
-                            className="text-sm font-bold text-white group-hover:text-sky-400 transition-colors cursor-pointer tracking-tight"
-                          >
-                            {cluster.name}
-                          </h3>
-                          <div className="text-[11px] text-zinc-400 font-sans">
-                            {cluster.environment || 'production'} • {cluster.region || 'global'}
-                          </div>
-                        </div>
-                      </div>
-
-                      <ClusterStatusBadge status={cluster.status} agentStatus={cluster.agentStatus} />
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 my-4">
-                      <div className="bg-[#05060A]/80 p-2.5 rounded-lg border border-white/6">
-                        <div className="text-[10px] font-mono text-zinc-500 uppercase">Nodes</div>
-                        <div className="text-xs font-semibold text-zinc-200 mt-0.5">{nodeCount} Ready</div>
-                      </div>
-                      <div className="bg-[#05060A]/80 p-2.5 rounded-lg border border-white/6">
-                        <div className="text-[10px] font-mono text-zinc-500 uppercase">Workloads</div>
-                        <div className="text-xs font-semibold text-zinc-200 mt-0.5">{podCount} Pods</div>
-                      </div>
-                      <div className="bg-[#05060A]/80 p-2.5 rounded-lg border border-white/6">
-                        <div className="text-[10px] font-mono text-zinc-500 uppercase">Services</div>
-                        <div className="text-xs font-semibold text-zinc-200 mt-0.5">{serviceCount} Mesh</div>
-                      </div>
-                      <div className="bg-[#05060A]/80 p-2.5 rounded-lg border border-white/6">
-                        <div className="text-[10px] font-mono text-zinc-500 uppercase">Incidents</div>
-                        <div className={`text-xs font-semibold mt-0.5 ${clusterIncidents.length > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                          {clusterIncidents.length > 0 ? `${clusterIncidents.length} Active` : '0 Active'}
-                        </div>
-                      </div>
-                      <div className="bg-[#05060A]/80 p-2.5 rounded-lg border border-white/6">
-                        <div className="text-[10px] font-mono text-zinc-500 uppercase">K8s Version</div>
-                        <div className="text-xs font-semibold text-zinc-200 mt-0.5">
-                          {cluster.k8sVersion || 'v1.29'}
-                        </div>
-                      </div>
-                      <div className="bg-[#05060A]/80 p-2.5 rounded-lg border border-white/6">
-                        <div className="text-[10px] font-mono text-zinc-500 uppercase">Agent</div>
-                        <div className="text-xs font-semibold text-emerald-400 mt-0.5 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-energy-healthy" />
-                          <span>{cluster.agentStatus || 'CONNECTED'}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-3 border-t border-zinc-800 flex items-center justify-between">
-                    <button
-                      onClick={() => onSelectCluster(cluster.id)}
-                      className="text-xs font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer"
-                    >
-                      Manage Infrastructure
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(`Remove cluster "${cluster.name}" from SkyOps?`)) {
-                          onDeleteCluster(cluster.id);
-                        }
-                      }}
-                      title="Disconnect Cluster"
-                      className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      )}
-
       {/* Nodes Tab */}
       {subTab === 'nodes' && (
-        <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl overflow-hidden shadow-sm">
+        <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl overflow-hidden shadow-xs">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-950/80 text-[11px] font-mono text-zinc-400">
+                <tr className="border-b border-zinc-800 bg-zinc-950/70 text-[11px] font-medium text-zinc-400">
                   <th className="py-3 px-4">Node Name</th>
                   <th className="py-3 px-4">Cluster</th>
-                  <th className="py-3 px-4">Condition</th>
-                  <th className="py-3 px-4">CPU Allocatable</th>
-                  <th className="py-3 px-4">Memory Allocatable</th>
-                  <th className="py-3 px-4">Pressure</th>
-                  <th className="py-3 px-4">Taints / OS</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">CPU Capacity</th>
+                  <th className="py-3 px-4">Memory Capacity</th>
+                  <th className="py-3 px-4">Resource Pressure</th>
+                  <th className="py-3 px-4 text-right">Details</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 font-sans">
                 {nodes.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-zinc-500">
-                      No nodes found for the selected filter.
+                    <td colSpan={7} className="py-10 text-center text-zinc-500">
+                      No worker nodes match the selected filter.
                     </td>
                   </tr>
                 ) : (
@@ -471,42 +462,46 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
                     );
 
                     return (
-                      <tr key={`${node.clusterId}-${node.name}`} className="hover:bg-zinc-800/40 transition-colors">
-                        <td className="py-3 px-4 font-semibold text-zinc-100 flex items-center gap-2">
-                          <Cpu className="w-3.5 h-3.5 text-zinc-500" />
-                          {node.name}
+                      <tr
+                        key={`${node.clusterId}-${node.name}`}
+                        onClick={() => setSelectedNode(node)}
+                        className="hover:bg-zinc-800/40 transition-colors cursor-pointer"
+                      >
+                        <td className="py-3.5 px-4 font-semibold text-zinc-100 flex items-center gap-2 font-mono">
+                          <Cpu className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <span>{node.name}</span>
                         </td>
-                        <td className="py-3 px-4 font-mono text-zinc-400">{cluster?.name || node.clusterId}</td>
-                        <td className="py-3 px-4">
+                        <td className="py-3.5 px-4 text-zinc-300">{cluster?.name || node.clusterId}</td>
+                        <td className="py-3.5 px-4">
                           <span
-                            className={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase font-medium ${
-                              node.status === 'Ready'
-                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                : 'bg-red-500/10 text-red-400 border-red-500/30'
+                            className={`text-xs font-medium ${
+                              node.status === 'Ready' ? 'text-emerald-400' : 'text-rose-400'
                             }`}
                           >
-                            {node.status}
+                            {node.status || 'Ready'}
                           </span>
                         </td>
-                        <td className="py-3 px-4 font-mono text-zinc-300">
-                          {(node.metrics as any)?.cpuUsage || (node as any).cpuAllocatable || '—'}
+                        <td className="py-3.5 px-4 font-mono text-zinc-300 tabular-nums">
+                          {(node.metrics as any)?.cpuUsage || (node.statusSummary as any)?.capacity?.cpu || (node as any).cpuAllocatable || '—'}
                         </td>
-                        <td className="py-3 px-4 font-mono text-zinc-300">
-                          {(node.metrics as any)?.memoryUsage || (node as any).memoryAllocatable || '—'}
+                        <td className="py-3.5 px-4 font-mono text-zinc-300 tabular-nums">
+                          {(node.metrics as any)?.memoryUsage || (node.statusSummary as any)?.capacity?.memory || (node as any).memoryAllocatable || '—'}
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-3.5 px-4">
                           {hasMemoryPressure || hasDiskPressure ? (
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30 font-bold">
-                              {hasMemoryPressure ? 'MEM PRESSURE' : 'DISK PRESSURE'}
+                            <span className="text-xs font-medium text-rose-400">
+                              {hasMemoryPressure ? 'Memory Pressure' : 'Disk Pressure'}
                             </span>
                           ) : (
-                            <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3" /> None
+                            <span className="text-xs text-emerald-400 flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Healthy
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-4 font-mono text-zinc-400 text-[11px]">
-                          {(node as any).osImage || (node as any).architecture || '—'}
+                        <td className="py-3.5 px-4 text-right">
+                          <span className="text-sky-400 hover:text-sky-300 text-xs font-medium">
+                            Inspect →
+                          </span>
                         </td>
                       </tr>
                     );
@@ -520,60 +515,77 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
 
       {/* Workloads Tab */}
       {subTab === 'workloads' && (
-        <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl overflow-hidden shadow-sm">
+        <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl overflow-hidden shadow-xs">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-950/80 text-[11px] font-mono text-zinc-400">
+                <tr className="border-b border-zinc-800 bg-zinc-950/70 text-[11px] font-medium text-zinc-400">
                   <th className="py-3 px-4">Workload Name</th>
-                  <th className="py-3 px-4">Kind</th>
+                  <th className="py-3 px-4">Type</th>
                   <th className="py-3 px-4">Namespace</th>
                   <th className="py-3 px-4">Cluster</th>
-                  <th className="py-3 px-4">Replicas</th>
-                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">Ready Replicas</th>
                   <th className="py-3 px-4">Health</th>
+                  <th className="py-3 px-4 text-right">Details</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 font-sans">
                 {workloads.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-zinc-500">
-                      No deployments or workloads found for the selected filter.
+                    <td colSpan={7} className="py-10 text-center text-zinc-500">
+                      No deployments or workloads match the selected filter.
                     </td>
                   </tr>
                 ) : (
                   workloads.map((w) => {
                     const cluster = safeClusters.find((c) => c.id === w.clusterId);
+                    const readyReplicas =
+                      (w as any).readyReplicas ??
+                      (w.statusSummary as any)?.readyReplicas ??
+                      (w.statusSummary as any)?.availableReplicas;
+                    const desiredReplicas =
+                      (w as any).replicas ?? (w.specSummary as any)?.replicas;
+
                     return (
-                      <tr key={`${w.clusterId}-${w.namespace}-${w.name}`} className="hover:bg-zinc-800/40 transition-colors">
-                        <td className="py-3 px-4 font-semibold text-zinc-100 flex items-center gap-2">
-                          <Layers className="w-3.5 h-3.5 text-sky-400" />
-                          {w.name}
+                      <tr
+                        key={`${w.clusterId}-${w.namespace}-${w.name}`}
+                        onClick={() => setSelectedWorkload(w)}
+                        className="hover:bg-zinc-800/40 transition-colors cursor-pointer"
+                      >
+                        <td className="py-3.5 px-4 font-semibold text-zinc-100 flex items-center gap-2 font-mono">
+                          <Layers className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                          <span>{w.name}</span>
                         </td>
-                        <td className="py-3 px-4 font-mono text-zinc-400">{w.kind}</td>
-                        <td className="py-3 px-4 font-mono text-zinc-300">{w.namespace || 'default'}</td>
-                        <td className="py-3 px-4 font-mono text-zinc-400">{cluster?.name || w.clusterId}</td>
-                        <td className="py-3 px-4 font-mono text-zinc-200">
-                          {(w as any).readyReplicas !== undefined && (w as any).replicas !== undefined
-                            ? `${(w as any).readyReplicas} / ${(w as any).replicas}`
-                            : (w as any).replicas !== undefined
-                            ? `${(w as any).replicas}`
-                            : '—'}
+                        <td className="py-3.5 px-4 text-zinc-400">{w.kind}</td>
+                        <td className="py-3.5 px-4 font-mono text-zinc-300">{w.namespace || 'default'}</td>
+                        <td className="py-3.5 px-4 text-zinc-300">{cluster?.name || w.clusterId}</td>
+                        <td className="py-3.5 px-4 font-mono text-zinc-200 tabular-nums">
+                          {readyReplicas !== undefined && desiredReplicas !== undefined
+                            ? `${readyReplicas} / ${desiredReplicas}`
+                            : desiredReplicas !== undefined
+                            ? `${desiredReplicas}`
+                            : w.status || '—'}
                         </td>
-                        <td className="py-3 px-4 font-mono text-zinc-300">{w.status || '—'}</td>
-                        <td className="py-3 px-4">
+                        <td className="py-3.5 px-4">
                           <span
-                            className={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase font-medium ${
+                            className={`text-xs font-medium ${
                               w.health === 'CRITICAL'
-                                ? 'bg-red-500/10 text-red-400 border-red-500/30'
+                                ? 'text-rose-400'
                                 : w.health === 'WARNING'
-                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                                : w.health === 'HEALTHY'
-                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                                ? 'text-amber-400'
+                                : 'text-emerald-400'
                             }`}
                           >
-                            {w.health || 'UNKNOWN'}
+                            {w.health === 'CRITICAL'
+                              ? 'Critical'
+                              : w.health === 'WARNING'
+                              ? 'Degraded'
+                              : 'Healthy'}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <span className="text-sky-400 hover:text-sky-300 text-xs font-medium">
+                            Inspect →
                           </span>
                         </td>
                       </tr>
@@ -588,25 +600,25 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
 
       {/* Pods Tab */}
       {subTab === 'pods' && (
-        <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl overflow-hidden shadow-sm">
+        <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl overflow-hidden shadow-xs">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-950/80 text-[11px] font-mono text-zinc-400">
+                <tr className="border-b border-zinc-800 bg-zinc-950/70 text-[11px] font-medium text-zinc-400">
                   <th className="py-3 px-4">Pod Name</th>
                   <th className="py-3 px-4">Namespace</th>
                   <th className="py-3 px-4">Cluster</th>
-                  <th className="py-3 px-4">Status / Phase</th>
+                  <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4">Restarts</th>
-                  <th className="py-3 px-4">Node</th>
+                  <th className="py-3 px-4">Worker Node</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 font-sans">
                 {pods.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-zinc-500">
-                      No pods found for the selected filter.
+                    <td colSpan={7} className="py-10 text-center text-zinc-500">
+                      No pods match the selected filter.
                     </td>
                   </tr>
                 ) : (
@@ -617,45 +629,57 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
                       pod.status === 'ImagePullBackOff' ||
                       pod.status === 'OOMKilled' ||
                       pod.health === 'CRITICAL';
+                    const restarts =
+                      (pod as any).restartCount ??
+                      pod.containers?.reduce((sum, c) => sum + (c.restartCount || 0), 0) ??
+                      0;
 
                     return (
-                      <tr key={`${pod.clusterId}-${pod.namespace}-${pod.name}`} className="hover:bg-zinc-800/40 transition-colors">
-                        <td className="py-3 px-4 font-semibold text-zinc-100 flex items-center gap-2">
-                          <Boxes className="w-3.5 h-3.5 text-zinc-500" />
-                          <span className="truncate max-w-[200px]">{pod.name}</span>
+                      <tr
+                        key={`${pod.clusterId}-${pod.namespace}-${pod.name}`}
+                        onClick={() => setSelectedPod(pod)}
+                        className="hover:bg-zinc-800/40 transition-colors cursor-pointer"
+                      >
+                        <td className="py-3.5 px-4 font-semibold text-zinc-100 flex items-center gap-2 font-mono">
+                          <Boxes className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                          <span className="truncate max-w-[240px]">{pod.name}</span>
                         </td>
-                        <td className="py-3 px-4 font-mono text-zinc-300">{pod.namespace || 'default'}</td>
-                        <td className="py-3 px-4 font-mono text-zinc-400">{cluster?.name || pod.clusterId}</td>
-                        <td className="py-3 px-4">
+                        <td className="py-3.5 px-4 font-mono text-zinc-300">{pod.namespace || 'default'}</td>
+                        <td className="py-3.5 px-4 text-zinc-300">{cluster?.name || pod.clusterId}</td>
+                        <td className="py-3.5 px-4">
                           <span
-                            className={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase font-medium ${
+                            className={`text-xs font-medium ${
                               isCrashing
-                                ? 'bg-red-500/10 text-red-400 border-red-500/30 font-bold'
+                                ? 'text-rose-400 font-semibold'
                                 : pod.status === 'Running'
-                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                                ? 'text-emerald-400'
+                                : 'text-amber-400'
                             }`}
                           >
                             {pod.status || 'Unknown'}
                           </span>
                         </td>
-                        <td className="py-3 px-4 font-mono text-zinc-300">
-                          {(pod as any).restartCount || 0}
+                        <td className="py-3.5 px-4 font-mono text-zinc-300 tabular-nums">{restarts}</td>
+                        <td className="py-3.5 px-4 font-mono text-zinc-400 truncate max-w-[160px]">
+                          {(pod as any).nodeName || (pod.specSummary as any)?.nodeName || '—'}
                         </td>
-                        <td className="py-3 px-4 font-mono text-zinc-400 truncate max-w-[140px]">
-                          {(pod as any).nodeName || '—'}
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          {onOpenLogs && (
+                        <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-3">
+                            {onOpenLogs && (
+                              <button
+                                onClick={() => onOpenLogs(pod.clusterId, pod.namespace, pod.name)}
+                                className="text-sky-400 hover:text-sky-300 text-xs font-medium cursor-pointer"
+                              >
+                                Live Logs
+                              </button>
+                            )}
                             <button
-                              onClick={() =>
-                                onOpenLogs(pod.clusterId, pod.namespace, pod.name)
-                              }
-                              className="text-sky-400 hover:text-sky-300 text-xs font-medium cursor-pointer"
+                              onClick={() => setSelectedPod(pod)}
+                              className="text-zinc-300 hover:text-white text-xs font-medium cursor-pointer"
                             >
-                              Logs →
+                              Inspect →
                             </button>
-                          )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -681,6 +705,60 @@ export const InfrastructureView: React.FC<InfrastructureViewProps> = ({
           onSelectCluster={onSelectCluster}
           onSelectIncident={onSelectIncident}
           isEmbedded
+        />
+      )}
+
+      {/* Resource Detail Modals */}
+      {selectedWorkload && (
+        <WorkloadDetailModal
+          workload={selectedWorkload}
+          clusterResources={safeResources.filter((r) => r.clusterId === selectedWorkload.clusterId)}
+          incidents={incidents.filter((i) => i.clusterId === selectedWorkload.clusterId)}
+          onClose={() => setSelectedWorkload(null)}
+          onSelectPod={(pod) => {
+            setSelectedWorkload(null);
+            setSelectedPod(pod);
+          }}
+          onSelectIncident={(incId) => {
+            setSelectedWorkload(null);
+            if (onSelectIncident) onSelectIncident(incId);
+          }}
+        />
+      )}
+
+      {selectedPod && (
+        <PodDetailModal
+          pod={selectedPod}
+          clusterResources={safeResources.filter((r) => r.clusterId === selectedPod.clusterId)}
+          incidents={incidents.filter((i) => i.clusterId === selectedPod.clusterId)}
+          onClose={() => setSelectedPod(null)}
+          onSelectIncident={(incId) => {
+            setSelectedPod(null);
+            if (onSelectIncident) onSelectIncident(incId);
+          }}
+        />
+      )}
+
+      {selectedNode && (
+        <NodeDetailModal
+          node={selectedNode}
+          cluster={
+            safeClusters.find((c) => c.id === selectedNode.clusterId) || {
+              id: selectedNode.clusterId,
+              name: selectedNode.clusterName || selectedNode.clusterId
+            } as Cluster
+          }
+          clusterResources={safeResources.filter((r) => r.clusterId === selectedNode.clusterId)}
+          incidents={incidents.filter((i) => i.clusterId === selectedNode.clusterId)}
+          onClose={() => setSelectedNode(null)}
+          onSelectPod={(pod) => {
+            setSelectedNode(null);
+            setSelectedPod(pod);
+          }}
+          onSelectIncident={(incId) => {
+            setSelectedNode(null);
+            if (onSelectIncident) onSelectIncident(incId);
+          }}
         />
       )}
     </div>

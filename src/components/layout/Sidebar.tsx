@@ -27,6 +27,7 @@ import {
   ShieldCheck,
   Sparkles,
   Terminal,
+  Trash2,
   UserCheck,
   X,
   Zap
@@ -34,8 +35,9 @@ import {
 import React, { useState } from 'react';
 import { AGENT_VERSION } from '../../config/version';
 import { useAuth } from '../../context/AuthContext';
+import { Organization } from '../../types/index';
 import { BrandLogo } from '../common/BrandLogo';
-import { Modal } from '../common/UI';
+import { Button, Modal } from '../common/UI';
 import { PWAInstallButton } from '../common/PWAInstallButton';
 
 export type NavigationTab =
@@ -77,6 +79,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     organizations,
     switchOrganization,
     createOrganization,
+    deleteOrganization,
     role,
     user,
     signOut,
@@ -88,6 +91,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [isCreatingOrg, setIsCreatingOrg] = useState(false);
   const [newOrgName, setNewOrgName] = useState('');
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
+  const [orgToDelete, setOrgToDelete] = useState<Organization | null>(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
+  const [deleteAcknowledged, setDeleteAcknowledged] = useState(false);
+  const [isDeletingOrg, setIsDeletingOrg] = useState(false);
+  const [deleteOrgError, setDeleteOrgError] = useState<string | null>(null);
 
   const handleCreateOrg = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,6 +106,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setIsOrgDropdownOpen(false);
   };
 
+  const openDeleteOrgModal = (org: Organization, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOrgToDelete(org);
+    setDeleteConfirmName('');
+    setDeleteAcknowledged(false);
+    setDeleteOrgError(null);
+    setIsOrgDropdownOpen(false);
+  };
+
+  const handleConfirmDeleteOrg = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!orgToDelete) return;
+    if (deleteConfirmName.trim() !== orgToDelete.name.trim()) {
+      setDeleteOrgError(`Please type "${orgToDelete.name}" exactly to confirm deletion.`);
+      return;
+    }
+    if (!deleteAcknowledged) {
+      setDeleteOrgError('Please acknowledge that this action is permanent.');
+      return;
+    }
+
+    try {
+      setIsDeletingOrg(true);
+      setDeleteOrgError(null);
+      await deleteOrganization(orgToDelete.id, deleteConfirmName.trim(), true);
+      setOrgToDelete(null);
+      setDeleteConfirmName('');
+      setDeleteAcknowledged(false);
+    } catch (err: any) {
+      setDeleteOrgError(err?.message || 'Failed to delete workspace');
+    } finally {
+      setIsDeletingOrg(false);
+    }
+  };
+
   const handleSignOut = async () => {
     await signOut();
     if (onSignOut) onSignOut();
@@ -106,101 +149,86 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navItems: Array<{
     id: NavigationTab;
     label: string;
+    subtitle: string;
     icon: React.ReactNode;
     badge?: number;
-    badgeColor?: string;
   }> = [
     {
       id: 'overview',
-      label: 'Command Center',
+      label: 'Overview',
+      subtitle: 'Fleet summary & health',
       icon: <LayoutDashboard className="w-4 h-4" />
     },
     {
       id: 'clusters',
-      label: 'Clusters & Fleets',
-      icon: <Boxes className="w-4 h-4" />
+      label: 'Clusters',
+      subtitle: 'Connected K8s environments',
+      icon: <Server className="w-4 h-4" />
     },
     {
       id: 'infrastructure',
       label: 'Infrastructure',
-      icon: <Server className="w-4 h-4" />
-    },
-    {
-      id: 'services',
-      label: 'Services',
-      icon: <Network className="w-4 h-4" />
+      subtitle: 'Workloads, pods & services',
+      icon: <Layers className="w-4 h-4" />
     },
     {
       id: 'incidents',
       label: 'Incidents',
+      subtitle: 'Triage & auto-healing',
       icon: <AlertTriangle className="w-4 h-4" />,
-      badge: openIncidentsCount,
-      badgeColor: 'bg-red-500/20 text-red-300 border-red-500/30'
-    },
-    {
-      id: 'logs',
-      label: 'Logs',
-      icon: <Terminal className="w-4 h-4" />
+      badge: openIncidentsCount
     },
     {
       id: 'observability',
-      label: 'Metrics & Telemetry',
-      icon: <Radio className="w-4 h-4" />
-    },
-    {
-      id: 'cost',
-      label: 'Cost Intelligence',
-      icon: <Coins className="w-4 h-4" />
-    },
-    {
-      id: 'security',
-      label: 'Security Health',
-      icon: <ShieldCheck className="w-4 h-4" />
+      label: 'Observability',
+      subtitle: 'Metrics, events & pod logs',
+      icon: <Activity className="w-4 h-4" />
     },
     {
       id: 'audit',
-      label: 'Activity & Audit Log',
-      icon: <Activity className="w-4 h-4" />
+      label: 'Activity Log',
+      subtitle: 'Team actions & audit trail',
+      icon: <ShieldCheck className="w-4 h-4" />
     },
     {
       id: 'settings',
       label: 'Settings',
+      subtitle: 'Workspace, team & billing',
       icon: <Settings className="w-4 h-4" />
     }
   ];
 
-  // Role Capability definitions for Role-Based UI (Prompt 3, Section 15 & 16)
+  // Role Capability definitions for Role-Based UI
   const roleCapabilities: Record<string, { can: string[]; cannot: string[] }> = {
     OWNER: {
       can: [
-        'Full administrative access across all clusters',
-        'Heal incidents & approve autonomous remediations',
-        'Modify Auto-Healing and global security policies',
-        'View cost intelligence & apply resource rightsizing',
-        'Manage clusters, team roles, and billing subscriptions',
-        'Access and export immutable audit logs'
+        'Full administrative access across all connected clusters',
+        'Auto-heal incidents and approve remediation actions',
+        'Configure Auto-Healing rules and workspace governance',
+        'Inspect workloads, pods, services, metrics, and live container logs',
+        'Manage clusters, team members, roles, and billing subscriptions',
+        'Access and export immutable team activity logs'
       ],
       cannot: []
     },
     ADMIN: {
       can: [
-        'View and heal all incidents across environments',
+        'View and auto-heal all incidents across environments',
         'Approve autonomous and manual remediations',
-        'Manage cluster configurations and security policies',
-        'View cost intelligence and apply rightsizing',
-        'Invite team members and manage organization roles',
-        'Inspect immutable audit logs'
+        'Manage cluster connections and Auto-Healing policies',
+        'Inspect workloads, pods, services, metrics, and live logs',
+        'Invite team members and manage workspace roles',
+        'Inspect and export team activity logs'
       ],
-      cannot: ['Transfer organization ownership']
+      cannot: ['Delete workspace or transfer organization ownership']
     },
     SRE: {
       can: [
-        'View all cluster incidents, telemetry, and diagnostics',
-        'Heal incidents and execute approved remediations',
-        'Modify Auto-Healing policies and security rules',
-        'View cost intelligence and apply resource rightsizing',
-        'Manage cluster connectivity and agent tokens',
-        'Inspect container logs and Prometheus metrics'
+        'View all cluster incidents, metrics, events, and diagnostics',
+        'Auto-heal incidents and execute approved remediations',
+        'Configure Auto-Healing policies and safety limits',
+        'Manage cluster connectivity and agent credentials',
+        'Stream live container logs and inspect workloads'
       ],
       cannot: ['Manage organization billing', 'Remove organization administrators']
     },
@@ -208,42 +236,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
       can: [
         'View incidents and workload health across clusters',
         'Heal staging and development incidents',
-        'Inspect application container logs and events',
-        'View telemetry and cost allocation breakdowns'
+        'Stream application container logs and Kubernetes events',
+        'Inspect resource metrics, pods, and services'
       ],
       cannot: [
         'Approve production autonomous remediations',
-        'Modify global security policies',
-        'Manage clusters or invite team members'
+        'Modify organization-wide governance policies',
+        'Delete clusters or invite team members'
       ]
     },
     VIEWER: {
       can: [
-        'View incidents and cluster topologies',
-        'View health metrics and service mesh',
-        'View telemetry snapshots and diagnostics',
-        'View cost allocation breakdown'
+        'View fleet overview, clusters, and infrastructure topology',
+        'Inspect workloads, pods, services, and resource metrics',
+        'Read incident timelines and root-cause diagnostics'
       ],
       cannot: [
-        'Heal incidents',
+        'Auto-heal incidents or execute cluster changes',
         'Approve remediation actions',
-        'Change Auto-Healing policies',
-        'Modify security policies',
-        'Manage clusters or modify resources'
+        'Change Auto-Healing or workspace settings',
+        'Connect or delete clusters'
       ]
     },
     AUDITOR: {
       can: [
-        'View complete cryptographic audit logs',
-        'Inspect security posture and policy compliance',
-        'View incident timelines, postmortems, and verification evidence',
-        'Inspect cost allocation and resource baselines'
+        'View and verify complete cryptographic activity logs',
+        'Inspect incident timelines, postmortems, and verification evidence',
+        'Review workspace retention and Auto-Healing governance policies'
       ],
       cannot: [
         'Heal incidents or execute cluster mutations',
         'Approve remediation actions',
-        'Modify security or auto-healing policies',
-        'Manage clusters or users'
+        'Modify workspace policies, clusters, or users'
       ]
     }
   };
@@ -388,20 +412,52 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               )}
 
-              <div className="px-3 py-1.5 text-[10px] text-zinc-500 uppercase">Tenant Organizations</div>
-              {organizations.map((org) => (
-                <button
-                  key={org.id}
-                  onClick={() => {
-                    switchOrganization(org.id);
-                    setIsOrgDropdownOpen(false);
-                  }}
-                  className="w-full px-3 py-1.5 text-xs text-left hover:bg-zinc-800 text-zinc-200 flex items-center justify-between cursor-pointer"
-                >
-                  <span className="truncate">{org.name}</span>
-                  {org.id === currentOrg?.id && <CheckCircle2 className="w-3 h-3 text-sky-400" />}
-                </button>
-              ))}
+              <div className="px-3 py-1.5 text-[10px] text-zinc-500 uppercase flex items-center justify-between">
+                <span>Tenant Workspaces ({organizations.length})</span>
+              </div>
+              <div className="max-h-52 overflow-y-auto divide-y divide-zinc-800/40">
+                {organizations.map((org) => {
+                  const isCurrent = org.id === currentOrg?.id;
+                  const canDeleteThisOrg =
+                    org.ownerUserId === user?.id ||
+                    (org as any).ownerEmail?.toLowerCase() === user?.email?.toLowerCase() ||
+                    (isCurrent && role === 'OWNER');
+
+                  return (
+                    <div
+                      key={org.id}
+                      className={`w-full px-3 py-1.5 text-xs flex items-center justify-between gap-2 group transition-colors ${
+                        isCurrent ? 'bg-sky-950/25 text-zinc-100' : 'hover:bg-zinc-800/80 text-zinc-200'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          switchOrganization(org.id);
+                          setIsOrgDropdownOpen(false);
+                        }}
+                        className="flex-1 min-w-0 text-left flex items-center gap-2 cursor-pointer py-0.5"
+                      >
+                        <span className="truncate font-medium">{org.name}</span>
+                        {isCurrent && (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                        )}
+                      </button>
+
+                      {canDeleteThisOrg && (
+                        <button
+                          type="button"
+                          onClick={(e) => openDeleteOrgModal(org, e)}
+                          title={`Delete workspace "${org.name}"`}
+                          className="p-1 rounded text-zinc-500 hover:text-rose-400 hover:bg-rose-950/40 transition-colors cursor-pointer shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
 
               <div className="border-t border-zinc-800 my-1 pt-1">
                 {isCreatingOrg ? (
@@ -431,13 +487,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                   </form>
                 ) : (
-                  <button
-                    onClick={() => setIsCreatingOrg(true)}
-                    className="w-full px-3 py-1.5 text-xs text-left text-sky-400 hover:bg-zinc-800 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Plus className="w-3 h-3" />
-                    <span>Create Organization</span>
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setIsCreatingOrg(true)}
+                      className="w-full px-3 py-1.5 text-xs text-left text-sky-400 hover:bg-zinc-800 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Create Organization</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsOrgDropdownOpen(false);
+                        onSelectTab('settings');
+                      }}
+                      className="w-full px-3 py-1.5 text-xs text-left text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Settings className="w-3 h-3" />
+                      <span>Manage Workspaces</span>
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -446,18 +514,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       {/* Navigation Links */}
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1.5">
+        {!isCollapsed && (
+          <div className="px-3 pb-1 text-[11px] font-medium text-zinc-500">
+            Workspace Navigation
+          </div>
+        )}
         {navItems.map((item) => {
           const isActive = activeTab === item.id;
           return isCollapsed ? (
             <button
               key={item.id}
               onClick={() => onSelectTab(item.id)}
-              title={`${item.label}${typeof item.badge === 'number' && item.badge > 0 ? ` (${item.badge})` : ''}`}
+              title={`${item.label} — ${item.subtitle}${typeof item.badge === 'number' && item.badge > 0 ? ` (${item.badge})` : ''}`}
               className={`w-10 h-10 mx-auto rounded-lg flex items-center justify-center transition-colors relative cursor-pointer ${
                 isActive
-                  ? 'bg-sky-500/10 text-sky-400 border border-sky-500/30 border-l-2 border-l-sky-400'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
+                  ? 'bg-sky-500/15 text-sky-300 border border-sky-500/30 shadow-xs'
+                  : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900'
               }`}
             >
               {item.icon}
@@ -469,18 +542,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               key={item.id}
               onClick={() => onSelectTab(item.id)}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition-all cursor-pointer group ${
                 isActive
-                  ? 'bg-sky-500/10 text-sky-400 border border-sky-500/30 border-l-2 border-l-sky-400'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
+                  ? 'bg-sky-500/12 text-sky-300 border border-sky-500/25 shadow-xs'
+                  : 'text-zinc-300 hover:text-white hover:bg-zinc-900/80 border border-transparent'
               }`}
             >
-              <div className="flex items-center gap-2.5">
-                {item.icon}
-                <span>{item.label}</span>
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className={`p-1.5 rounded-md transition-colors shrink-0 ${
+                    isActive
+                      ? 'bg-sky-500/20 text-sky-300'
+                      : 'bg-zinc-900 text-zinc-400 group-hover:text-zinc-200 group-hover:bg-zinc-800'
+                  }`}
+                >
+                  {item.icon}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold leading-tight truncate">{item.label}</div>
+                  <div className={`text-[11px] leading-tight truncate mt-0.5 ${isActive ? 'text-sky-300/80' : 'text-zinc-500'}`}>
+                    {item.subtitle}
+                  </div>
+                </div>
               </div>
               {typeof item.badge === 'number' && item.badge > 0 && (
-                <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-900/80 text-rose-300 border border-rose-700/60">
+                <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md bg-rose-950 text-rose-300 border border-rose-800/80 shrink-0 tabular-nums">
                   {item.badge}
                 </span>
               )}
@@ -494,23 +580,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               onClick={onOpenAddCluster}
               title="Connect Cluster"
-              className="w-10 h-10 flex items-center justify-center rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-sky-400 hover:text-sky-300 transition-colors cursor-pointer"
+              className="w-10 h-10 flex items-center justify-center rounded-lg bg-sky-600/20 hover:bg-sky-600/30 border border-sky-500/30 text-sky-300 transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4" />
             </button>
             <PWAInstallButton className="w-10 h-10 p-0 justify-center" />
           </div>
         ) : (
-          <div className="pt-6 space-y-2">
-            <div className="px-3 py-1 text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Quick Actions</div>
+          <div className="pt-5 space-y-2">
             <button
               onClick={onOpenAddCluster}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-zinc-300 hover:text-white bg-zinc-900 hover:bg-zinc-800/90 border border-zinc-800 transition-colors cursor-pointer"
+              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-xs font-semibold text-white bg-sky-600 hover:bg-sky-500 transition-colors cursor-pointer shadow-xs"
             >
-              <Plus className="w-3.5 h-3.5 text-sky-400" />
-              <span>Connect Cluster</span>
+              <Plus className="w-4 h-4" />
+              <span>Connect Kubernetes Cluster</span>
             </button>
-            <div className="px-1">
+            <div className="px-0.5">
               <PWAInstallButton className="w-full justify-center py-2" />
             </div>
           </div>
@@ -614,6 +699,100 @@ export const Sidebar: React.FC<SidebarProps> = ({
             Permissions are enforced both in the client interface and verified cryptographically on all backend API requests.
           </div>
         </div>
+      </Modal>
+
+      {/* Delete Workspace Confirmation Modal */}
+      <Modal
+        isOpen={Boolean(orgToDelete)}
+        onClose={() => {
+          if (!isDeletingOrg) setOrgToDelete(null);
+        }}
+        title="Delete Organization Workspace"
+        maxWidth="max-w-md"
+      >
+        {orgToDelete && (
+          <form onSubmit={handleConfirmDeleteOrg} className="space-y-4 font-sans text-xs">
+            <div className="p-3.5 rounded-xl bg-rose-950/30 border border-rose-800/60 space-y-2">
+              <div className="flex items-center gap-2 text-rose-300 font-semibold text-sm">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>Permanently delete "{orgToDelete.name}"?</span>
+              </div>
+              <p className="text-zinc-300 leading-relaxed text-xs">
+                This action will permanently delete the workspace <strong className="text-white">{orgToDelete.name}</strong> (<code className="text-rose-300 font-mono">{orgToDelete.id}</code>), including all connected Kubernetes clusters, active agent tokens, incident history, telemetry, and team memberships scoped to this workspace.
+              </p>
+              {organizations.filter((o) => o.id !== orgToDelete.id).length > 0 ? (
+                <p className="text-[11px] text-sky-300 bg-sky-950/40 border border-sky-800/50 rounded-lg px-2.5 py-1.5">
+                  {orgToDelete.id === currentOrg?.id
+                    ? `After deletion, your session will automatically switch to "${organizations.filter((o) => o.id !== orgToDelete.id)[0].name}".`
+                    : `Your active workspace "${currentOrg?.name}" will remain unaffected.`}
+                </p>
+              ) : (
+                <p className="text-[11px] text-amber-300 bg-amber-950/40 border border-amber-800/50 rounded-lg px-2.5 py-1.5">
+                  This is your only workspace. After deleting it, you will be prompted to create a fresh workspace.
+                </p>
+              )}
+            </div>
+
+            {deleteOrgError && (
+              <div className="p-2.5 rounded-lg bg-rose-950/60 border border-rose-800 text-rose-200 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>{deleteOrgError}</span>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-zinc-300 font-medium mb-1.5">
+                Type <span className="font-mono font-bold text-rose-300 select-all">{orgToDelete.name}</span> to confirm:
+              </label>
+              <input
+                type="text"
+                required
+                value={deleteConfirmName}
+                onChange={(e) => setDeleteConfirmName(e.target.value)}
+                placeholder={orgToDelete.name}
+                className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-rose-500 font-mono text-xs"
+                autoFocus
+              />
+            </div>
+
+            <label className="flex items-start gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={deleteAcknowledged}
+                onChange={(e) => setDeleteAcknowledged(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-zinc-700 bg-zinc-950 text-rose-500 focus:ring-0 cursor-pointer"
+              />
+              <span className="text-zinc-300 text-xs leading-snug">
+                I understand that deleting this workspace and its associated cluster resources is permanent and cannot be undone.
+              </span>
+            </label>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={isDeletingOrg}
+                onClick={() => setOrgToDelete(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="danger"
+                size="sm"
+                disabled={
+                  isDeletingOrg ||
+                  deleteConfirmName.trim() !== orgToDelete.name.trim() ||
+                  !deleteAcknowledged
+                }
+                icon={<Trash2 className="w-3.5 h-3.5" />}
+              >
+                {isDeletingOrg ? 'Deleting Workspace...' : 'Delete Workspace Permanently'}
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
     </aside>
   );

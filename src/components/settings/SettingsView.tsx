@@ -16,10 +16,12 @@ import {
   Lock,
   Mail,
   Play,
+  Plus,
   RefreshCw,
   Save,
   Server,
   Shield,
+  Trash2,
   Users,
   Webhook,
   Zap
@@ -27,8 +29,8 @@ import {
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { Cluster, OrganizationSettings } from '../../types/index';
-import { Button, CodeBlock, CopyButton } from '../common/UI';
+import { Cluster, Organization, OrganizationSettings } from '../../types/index';
+import { Button, CodeBlock, CopyButton, Modal } from '../common/UI';
 import { NotificationsManager } from './NotificationsManager';
 import { SupportManager } from './SupportManager';
 import { SystemHealthManager } from './SystemHealthManager';
@@ -50,15 +52,9 @@ export type SettingsTab =
   | 'org'
   | 'team'
   | 'autohealing'
-  | 'notifications'
-  | 'subscription'
-  | 'usage'
-  | 'invoices'
-  | 'webhooks'
   | 'integrations'
+  | 'billing'
   | 'support'
-  | 'contact'
-  | 'system'
   | 'testbed';
 
 interface TabGroup {
@@ -71,7 +67,7 @@ interface TabGroup {
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIncident, onRefresh }) => {
-  const { currentOrg, role, user } = useAuth();
+  const { currentOrg, organizations, switchOrganization, createOrganization, deleteOrganization, role, user } = useAuth();
   const safeClusters = Array.isArray(clusters) ? clusters : [];
   const [activeTab, setActiveTab] = useState<SettingsTab>('org');
   const [selectedClusterId, setSelectedClusterId] = useState<string>(safeClusters[0]?.id || '');
@@ -80,6 +76,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
 
   // Org Settings Form state
   const isOwnerOrAdmin = role === 'OWNER' || role === 'ADMIN';
+  const isOwner =
+    role === 'OWNER' ||
+    currentOrg?.ownerUserId === user?.id ||
+    Boolean((currentOrg as any)?.ownerEmail && (currentOrg as any).ownerEmail.toLowerCase() === user?.email?.toLowerCase());
   const [orgName, setOrgName] = useState(currentOrg?.name || '');
   const [timezone, setTimezone] = useState(currentOrg?.settings?.general?.timezone || 'UTC');
   const [enforceMfa, setEnforceMfa] = useState(currentOrg?.settings?.security?.enforceMfa || false);
@@ -91,6 +91,76 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
   const [savingOrg, setSavingOrg] = useState(false);
   const [orgSuccessMsg, setOrgSuccessMsg] = useState<string | null>(null);
   const [orgError, setOrgError] = useState<string | null>(null);
+
+  // Workspace Directory & Deletion state
+  const [newWorkspaceName, setNewWorkspaceName] = useState('');
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
+  const [showCreateWorkspaceForm, setShowCreateWorkspaceForm] = useState(false);
+  const [workspaceToDelete, setWorkspaceToDelete] = useState<Organization | null>(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
+  const [deleteAcknowledged, setDeleteAcknowledged] = useState(false);
+  const [deletingWorkspace, setDeletingWorkspace] = useState(false);
+  const [deleteWorkspaceError, setDeleteWorkspaceError] = useState<string | null>(null);
+
+  const handleCreateWorkspace = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newWorkspaceName.trim()) return;
+    try {
+      setCreatingWorkspace(true);
+      setOrgError(null);
+      const created = await createOrganization(newWorkspaceName.trim());
+      setNewWorkspaceName('');
+      setShowCreateWorkspaceForm(false);
+      setOrgSuccessMsg(`Workspace "${created.name}" created and set as your active workspace.`);
+      setTimeout(() => setOrgSuccessMsg(null), 4000);
+      onRefresh();
+    } catch (err: any) {
+      setOrgError(err?.message || 'Failed to create workspace');
+    } finally {
+      setCreatingWorkspace(false);
+    }
+  };
+
+  const openDeleteWorkspaceModal = (org: Organization) => {
+    setWorkspaceToDelete(org);
+    setDeleteConfirmName('');
+    setDeleteAcknowledged(false);
+    setDeleteWorkspaceError(null);
+  };
+
+  const handleDeleteWorkspace = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!workspaceToDelete) return;
+    if (deleteConfirmName.trim() !== workspaceToDelete.name.trim()) {
+      setDeleteWorkspaceError(`Workspace name does not match. Please type "${workspaceToDelete.name}" exactly.`);
+      return;
+    }
+    if (!deleteAcknowledged) {
+      setDeleteWorkspaceError('Please acknowledge that workspace deletion is permanent.');
+      return;
+    }
+
+    try {
+      setDeletingWorkspace(true);
+      setDeleteWorkspaceError(null);
+      const deletedName = workspaceToDelete.name;
+      const res = await deleteOrganization(workspaceToDelete.id, deleteConfirmName.trim(), true);
+      setWorkspaceToDelete(null);
+      setDeleteConfirmName('');
+      setDeleteAcknowledged(false);
+      setOrgSuccessMsg(
+        res.remainingWorkspaces.length > 0
+          ? `Workspace "${deletedName}" was permanently deleted.`
+          : `Workspace "${deletedName}" was permanently deleted.`
+      );
+      setTimeout(() => setOrgSuccessMsg(null), 5000);
+      onRefresh();
+    } catch (err: any) {
+      setDeleteWorkspaceError(err?.message || 'Failed to delete workspace');
+    } finally {
+      setDeletingWorkspace(false);
+    }
+  };
 
   useEffect(() => {
     if (currentOrg) {
@@ -226,48 +296,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
 
   const tabGroups: TabGroup[] = [
     {
-      category: 'GENERAL',
+      category: 'WORKSPACE',
       items: [
-        { id: 'org', label: 'Organization', icon: <Building2 className="w-3.5 h-3.5" /> },
+        { id: 'org', label: 'Workspace & Security', icon: <Building2 className="w-3.5 h-3.5" /> },
         { id: 'team', label: 'Team & Access', icon: <Users className="w-3.5 h-3.5" /> },
-        { id: 'autohealing', label: 'Auto-Healing', icon: <Zap className="w-3.5 h-3.5 text-sky-400" /> },
-        { id: 'notifications', label: 'Notifications', icon: <Bell className="w-3.5 h-3.5" /> }
+        { id: 'autohealing', label: 'Auto-Healing Rules', icon: <Zap className="w-3.5 h-3.5 text-sky-400" /> }
       ]
     },
     {
-      category: 'BILLING',
+      category: 'OPERATIONS & BILLING',
       items: [
-        { id: 'subscription', label: 'Subscription', icon: <CreditCard className="w-3.5 h-3.5" /> },
-        { id: 'usage', label: 'Usage & Limits', icon: <Activity className="w-3.5 h-3.5" /> },
-        { id: 'invoices', label: 'Invoices', icon: <FileText className="w-3.5 h-3.5" /> }
-      ]
-    },
-    {
-      category: 'INTEGRATIONS',
-      items: [
-        { id: 'webhooks', label: 'Webhooks', icon: <Webhook className="w-3.5 h-3.5" /> },
-        { id: 'integrations', label: 'Integrations', icon: <Layers className="w-3.5 h-3.5" /> }
-      ]
-    },
-    {
-      category: 'SUPPORT',
-      items: [
-        { id: 'support', label: 'Help & Support', icon: <Headphones className="w-3.5 h-3.5" /> },
-        { id: 'contact', label: 'Contact SkyOps', icon: <Mail className="w-3.5 h-3.5" /> }
-      ]
-    },
-    {
-      category: 'SYSTEM',
-      items: [
-        { id: 'system', label: 'System Status', icon: <HeartPulse className="w-3.5 h-3.5" /> }
+        { id: 'integrations', label: 'Alerts & Integrations', icon: <Bell className="w-3.5 h-3.5" /> },
+        { id: 'billing', label: 'Billing & Usage', icon: <CreditCard className="w-3.5 h-3.5" /> },
+        { id: 'support', label: 'Help & System Status', icon: <Headphones className="w-3.5 h-3.5" /> }
       ]
     },
     ...(import.meta.env.DEV
       ? [
           {
-            category: 'DEV ONLY',
+            category: 'DEV TOOLS',
             items: [
-              { id: 'testbed' as SettingsTab, label: 'Failure QA Testbed', icon: <Zap className="w-3.5 h-3.5 text-amber-400" /> }
+              { id: 'testbed' as SettingsTab, label: 'Failure Simulator', icon: <Zap className="w-3.5 h-3.5 text-amber-400" /> }
             ]
           }
         ]
@@ -277,27 +326,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
   return (
     <div className="p-6 sm:p-8 space-y-6 max-w-7xl mx-auto font-sans text-zinc-100">
       {/* Page Header */}
-      <div className="border-b border-white/6 pb-5">
-        <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2.5">
-          SkyOps Workspace Settings & Governance
-        </h1>
+      <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-5">
+        <h2 className="text-lg font-bold text-white tracking-tight">
+          Workspace Settings & Governance
+        </h2>
         <p className="text-xs text-zinc-400 mt-1">
-          Manage workspace profile, RBAC access, commercial subscriptions, usage quotas, integrations, and support channels.
+          Configure workspace security policies, team access, automated healing rules, alert channels, and billing.
         </p>
 
-        {/* Categorized Tab Navigation */}
-        <div className="mt-6 flex flex-wrap gap-x-6 gap-y-3 border-b border-white/6 -mb-5 pb-3">
+        {/* Clean Categorized Tab Navigation */}
+        <div className="mt-5 flex flex-wrap gap-x-6 gap-y-3 pt-4 border-t border-zinc-800/80">
           {tabGroups.map((group) => (
-            <div key={group.category} className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[10px] font-mono font-semibold uppercase tracking-wider text-zinc-500 mr-1">
-                {group.category}
+            <div key={group.category} className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-medium text-zinc-500 mr-1">
+                {group.category}:
               </span>
-              <div className="flex items-center gap-1 bg-[#090D1C]/80 p-0.5 rounded-lg border border-white/8">
+              <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
                 {group.items.map((item) => (
                   <button
                     key={item.id}
                     onClick={() => setActiveTab(item.id)}
-                    className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 rounded-md transition-all cursor-pointer whitespace-nowrap ${
+                    className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                       activeTab === item.id
                         ? 'bg-sky-500/15 text-sky-300 font-semibold border border-sky-400/40 shadow-xs'
                         : 'text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent'
@@ -524,6 +573,167 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
               )}
             </form>
           </div>
+
+          {/* Tenant Workspaces Directory (Switch, Create, or Delete Any Owned Workspace) */}
+          <div className="p-6 rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800/80 pb-3">
+              <div>
+                <h3 className="text-xs font-bold text-zinc-200 font-mono uppercase tracking-wider flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-sky-400" />
+                  Your Tenant Workspaces ({organizations.length})
+                </h3>
+                <p className="text-xs text-zinc-400 mt-1">
+                  Manage all workspaces created or joined under your account. Switch active context or delete unused workspaces you own.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowCreateWorkspaceForm((prev) => !prev)}
+                icon={<Plus className="w-3.5 h-3.5" />}
+              >
+                New Workspace
+              </Button>
+            </div>
+
+            {showCreateWorkspaceForm && (
+              <form
+                onSubmit={handleCreateWorkspace}
+                className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 flex flex-col sm:flex-row items-stretch sm:items-end gap-3"
+              >
+                <div className="flex-1">
+                  <label className="block text-[11px] font-mono uppercase text-zinc-400 mb-1">
+                    New Organization / Workspace Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    minLength={2}
+                    maxLength={60}
+                    placeholder="e.g., Staging Platform or Acme FinTech"
+                    value={newWorkspaceName}
+                    onChange={(e) => setNewWorkspaceName(e.target.value)}
+                    className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-sky-500"
+                    autoFocus
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setShowCreateWorkspaceForm(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="sm"
+                    disabled={creatingWorkspace || newWorkspaceName.trim().length < 2}
+                    icon={<Plus className="w-3.5 h-3.5" />}
+                  >
+                    {creatingWorkspace ? 'Creating...' : 'Create Workspace'}
+                  </Button>
+                </div>
+              </form>
+            )}
+
+            <div className="divide-y divide-zinc-800/80 border border-zinc-800/80 rounded-xl overflow-hidden bg-zinc-950/60">
+              {organizations.map((org) => {
+                const isCurrent = org.id === currentOrg?.id;
+                const isOrgOwner =
+                  org.ownerUserId === user?.id ||
+                  Boolean((org as any).ownerEmail && (org as any).ownerEmail.toLowerCase() === user?.email?.toLowerCase()) ||
+                  (isCurrent && role === 'OWNER');
+
+                return (
+                  <div
+                    key={org.id}
+                    className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-zinc-900/40 transition-colors"
+                  >
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold text-zinc-100 truncate">
+                          {org.name}
+                        </span>
+                        {isCurrent && (
+                          <span className="px-2 py-0.5 rounded-md bg-sky-500/15 text-sky-300 border border-sky-500/30 text-[10px] font-mono font-semibold">
+                            ACTIVE WORKSPACE
+                          </span>
+                        )}
+                        {isOrgOwner && (
+                          <span className="px-2 py-0.5 rounded-md bg-zinc-900 text-zinc-400 border border-zinc-800 text-[10px] font-mono">
+                            OWNER
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] font-mono text-zinc-500 flex items-center gap-3 flex-wrap">
+                        <span>ID: {org.id}</span>
+                        {org.slug && <span>Slug: {org.slug}</span>}
+                        {typeof org.membersCount === 'number' && (
+                          <span>{org.membersCount} {org.membersCount === 1 ? 'member' : 'members'}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {!isCurrent && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => switchOrganization(org.id)}
+                        >
+                          Switch to Workspace
+                        </Button>
+                      )}
+                      {isOrgOwner && (
+                        <Button
+                          type="button"
+                          variant="danger"
+                          size="sm"
+                          onClick={() => openDeleteWorkspaceModal(org)}
+                          icon={<Trash2 className="w-3.5 h-3.5" />}
+                        >
+                          Delete
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Danger Zone: Delete Current Workspace */}
+          {currentOrg && isOwner && (
+            <div className="p-6 rounded-xl bg-rose-950/15 border border-rose-900/60 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <h3 className="text-xs font-bold text-rose-300 font-mono uppercase tracking-wider flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-400" />
+                    Danger Zone — Delete Workspace
+                  </h3>
+                  <p className="text-xs text-zinc-300 leading-relaxed max-w-2xl">
+                    Permanently delete <strong className="text-white">{currentOrg.name}</strong> (<code className="text-rose-300 font-mono">{currentOrg.id}</code>) and all its connected Kubernetes clusters ({safeClusters.length}), active agent credentials, incidents, telemetry, and workspace policies.
+                  </p>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  onClick={() => openDeleteWorkspaceModal(currentOrg)}
+                  icon={<Trash2 className="w-3.5 h-3.5" />}
+                  className="shrink-0"
+                >
+                  Delete This Workspace
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -535,31 +745,46 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
         <AutoHealingManager clusters={safeClusters} onRefresh={onRefresh} />
       )}
 
-      {/* Tab: Incident Email Notifications */}
-      {activeTab === 'notifications' && <NotificationsManager />}
-
-      {/* Tab: Subscription & Billing */}
-      {(activeTab === 'subscription' || activeTab === 'usage') && <UsageManager />}
-
-      {/* Tab: Invoices */}
-      {activeTab === 'invoices' && <InvoicesManager />}
-
-      {/* Tab: Webhooks */}
-      {activeTab === 'webhooks' && <WebhooksManager />}
-
-      {/* Tab: Integrations Hub */}
+      {/* Tab: Alerts, Notifications, Webhooks & Integrations */}
       {activeTab === 'integrations' && (
-        <IntegrationsHubManager onNavigateToWebhooks={() => setActiveTab('webhooks')} />
+        <div className="space-y-8">
+          <NotificationsManager />
+          <div className="border-t border-zinc-800/80 pt-8">
+            <IntegrationsHubManager
+              onNavigateToWebhooks={() => {
+                const el = document.getElementById('webhooks-section');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}
+            />
+          </div>
+          <div id="webhooks-section" className="border-t border-zinc-800/80 pt-8">
+            <WebhooksManager />
+          </div>
+        </div>
       )}
 
-      {/* Tab: Support & Ticketing */}
-      {activeTab === 'support' && <SupportManager clusters={safeClusters} />}
+      {/* Tab: Subscription, Usage Limits & Invoices */}
+      {activeTab === 'billing' && (
+        <div className="space-y-8">
+          <UsageManager />
+          <div className="border-t border-zinc-800/80 pt-8">
+            <InvoicesManager />
+          </div>
+        </div>
+      )}
 
-      {/* Tab: Contact SkyOps */}
-      {activeTab === 'contact' && <ContactManager />}
-
-      {/* Tab: System Health Probes */}
-      {activeTab === 'system' && <SystemHealthManager />}
+      {/* Tab: Support, Contact & System Health */}
+      {activeTab === 'support' && (
+        <div className="space-y-8">
+          <SupportManager clusters={safeClusters} />
+          <div className="border-t border-zinc-800/80 pt-8">
+            <SystemHealthManager />
+          </div>
+          <div className="border-t border-zinc-800/80 pt-8">
+            <ContactManager />
+          </div>
+        </div>
+      )}
 
       {/* Tab: QA Scenario Testbed (Dev Only) */}
       {import.meta.env.DEV && activeTab === 'testbed' && (
@@ -673,6 +898,100 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
           </div>
         </div>
       )}
+
+      {/* Delete Workspace Confirmation Modal */}
+      <Modal
+        isOpen={Boolean(workspaceToDelete)}
+        onClose={() => {
+          if (!deletingWorkspace) setWorkspaceToDelete(null);
+        }}
+        title="Delete Organization Workspace"
+        maxWidth="max-w-md"
+      >
+        {workspaceToDelete && (
+          <form onSubmit={handleDeleteWorkspace} className="space-y-4 font-sans text-xs">
+            <div className="p-3.5 rounded-xl bg-rose-950/30 border border-rose-800/60 space-y-2">
+              <div className="flex items-center gap-2 text-rose-300 font-semibold text-sm">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>Permanently delete "{workspaceToDelete.name}"?</span>
+              </div>
+              <p className="text-zinc-300 leading-relaxed text-xs">
+                This action will permanently remove the workspace <strong className="text-white">{workspaceToDelete.name}</strong> (<code className="text-rose-300 font-mono">{workspaceToDelete.id}</code>) along with all connected Kubernetes clusters, active agent tokens, incidents, telemetry, and member permissions.
+              </p>
+              {organizations.filter((o) => o.id !== workspaceToDelete.id).length > 0 ? (
+                <p className="text-[11px] text-sky-300 bg-sky-950/40 border border-sky-800/50 rounded-lg px-2.5 py-1.5">
+                  {workspaceToDelete.id === currentOrg?.id
+                    ? `After deletion, you will be automatically switched to "${organizations.filter((o) => o.id !== workspaceToDelete.id)[0].name}".`
+                    : `Your current active workspace "${currentOrg?.name}" will remain active.`}
+                </p>
+              ) : (
+                <p className="text-[11px] text-amber-300 bg-amber-950/40 border border-amber-800/50 rounded-lg px-2.5 py-1.5">
+                  This is your only workspace. After deleting it, you will be prompted to create a new workspace.
+                </p>
+              )}
+            </div>
+
+            {deleteWorkspaceError && (
+              <div className="p-2.5 rounded-lg bg-rose-950/60 border border-rose-800 text-rose-200 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>{deleteWorkspaceError}</span>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-zinc-300 font-medium mb-1.5">
+                Type <span className="font-mono font-bold text-rose-300 select-all">{workspaceToDelete.name}</span> to confirm:
+              </label>
+              <input
+                type="text"
+                required
+                value={deleteConfirmName}
+                onChange={(e) => setDeleteConfirmName(e.target.value)}
+                placeholder={workspaceToDelete.name}
+                className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-rose-500 font-mono text-xs"
+                autoFocus
+              />
+            </div>
+
+            <label className="flex items-start gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={deleteAcknowledged}
+                onChange={(e) => setDeleteAcknowledged(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-zinc-700 bg-zinc-950 text-rose-500 focus:ring-0 cursor-pointer"
+              />
+              <span className="text-zinc-300 text-xs leading-snug">
+                I understand that deleting this workspace and all its cluster telemetry and incidents is permanent and cannot be undone.
+              </span>
+            </label>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={deletingWorkspace}
+                onClick={() => setWorkspaceToDelete(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="danger"
+                size="sm"
+                disabled={
+                  deletingWorkspace ||
+                  deleteConfirmName.trim() !== workspaceToDelete.name.trim() ||
+                  !deleteAcknowledged
+                }
+                icon={<Trash2 className="w-3.5 h-3.5" />}
+              >
+                {deletingWorkspace ? 'Deleting Workspace...' : 'Delete Workspace Permanently'}
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </div>
   );
 };

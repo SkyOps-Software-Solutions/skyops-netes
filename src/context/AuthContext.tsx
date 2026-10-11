@@ -31,6 +31,11 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   switchOrganization: (orgId: string) => Promise<void>;
   createOrganization: (name: string) => Promise<Organization>;
+  deleteOrganization: (
+    orgId: string,
+    confirmName: string,
+    acknowledgement?: boolean
+  ) => Promise<{ message: string; remainingWorkspaces: Array<{ id: string; name: string }> }>;
   refreshSession: () => Promise<void>;
   refreshPendingInvitations: () => Promise<void>;
   acceptInvitation: (invitationId: string) => Promise<void>;
@@ -331,6 +336,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return newOrg;
   };
 
+  const deleteOrganization = async (
+    orgId: string,
+    confirmName: string,
+    acknowledgement = true
+  ): Promise<{ message: string; remainingWorkspaces: Array<{ id: string; name: string }> }> => {
+    const res = await api.deleteOrganization(orgId, confirmName, acknowledgement);
+    const remaining = res.remainingWorkspaces || [];
+    const activeOrgId = localStorage.getItem('skyops_active_org_id');
+
+    if (activeOrgId === orgId || currentOrg?.id === orgId) {
+      if (remaining.length > 0) {
+        localStorage.setItem('skyops_active_org_id', remaining[0].id);
+      } else {
+        localStorage.removeItem('skyops_active_org_id');
+      }
+    }
+
+    await refreshSession();
+    return {
+      message: res.message || 'Workspace deleted.',
+      remainingWorkspaces: remaining
+    };
+  };
+
   const acceptInvitation = async (invitationId: string) => {
     const res = await api.acceptMyInvitation(invitationId);
     if (res.organization?.id) {
@@ -381,6 +410,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signOut,
         switchOrganization,
         createOrganization,
+        deleteOrganization,
         refreshSession,
         refreshPendingInvitations,
         acceptInvitation,

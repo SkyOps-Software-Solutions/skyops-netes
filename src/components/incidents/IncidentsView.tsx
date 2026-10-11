@@ -207,6 +207,8 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
     new Set((initialIncidents || []).map((i) => i.incidentType).filter(Boolean))
   );
 
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+
   const resetFilters = () => {
     setStatusFilter('ALL');
     setSeverityFilter('ALL');
@@ -229,24 +231,23 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
     searchTerm.trim() !== '';
 
   return (
-    <div className="p-6 lg:p-10 space-y-6 max-w-7xl mx-auto font-sans text-zinc-100">
+    <div className="p-6 lg:p-8 space-y-6 max-w-7xl mx-auto font-sans text-zinc-100">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800/80 pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-5">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
-              <AlertTriangle className="w-5 h-5 text-amber-400" />
-              <span>Incident Investigation Workspace</span>
-            </h1>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">
-              Deterministic Engine
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-lg font-bold text-white tracking-tight">
+              Incidents & Auto-Healing
+            </h2>
+            <span className="text-xs px-2.5 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/25 font-medium">
+              {incidents.filter((i) => i.status !== 'RESOLVED' && i.status !== 'CLOSED').length} Active
             </span>
           </div>
           <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
-            Multi-cluster Kubernetes failure states, occurrence telemetry, and root-cause evidence across {currentOrg?.name || 'Organization'}
+            Investigate cluster issues, root-cause evidence, and trigger 1-click verified remediation across {currentOrg?.name || 'your workspace'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {canEditIncidents && incidents.some((i) => i.status !== 'RESOLVED' && i.status !== 'CLOSED') && (
             <Button
               variant="primary"
@@ -254,15 +255,24 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
               onClick={handleAutoHealCluster}
               disabled={initialLoading || autoHealing || fetchingServer}
               icon={<Zap className={`w-3.5 h-3.5 text-amber-300 ${autoHealing ? 'animate-bounce' : ''}`} />}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold shadow-md hover:shadow-emerald-500/20"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow-sm"
             >
               {autoHealing
-                ? 'Auto-Healing Cluster...'
+                ? 'Healing...'
                 : clusterFilter !== 'ALL'
-                ? `⚡ Auto-Heal ${clusters.find((c) => c.id === clusterFilter)?.displayName || clusters.find((c) => c.id === clusterFilter)?.name || 'Cluster'} Incidents`
-                : '⚡ Auto-Heal Cluster Incidents'}
+                ? `Auto-Heal ${clusters.find((c) => c.id === clusterFilter)?.displayName || clusters.find((c) => c.id === clusterFilter)?.name || 'Cluster'}`
+                : 'Auto-Heal All'}
             </Button>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsGateModalOpen(true)}
+            icon={<Shield className="w-3.5 h-3.5 text-purple-400" />}
+            className="text-purple-300 border-purple-500/30 hover:bg-purple-500/10"
+          >
+            Pre-Deploy Gate
+          </Button>
           {canEditIncidents && incidents.length > 0 && (
             <Button
               variant="outline"
@@ -275,15 +285,6 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
               Clear All
             </Button>
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsGateModalOpen(true)}
-            icon={<Shield className="w-3.5 h-3.5 text-purple-400" />}
-            className="text-purple-300 border-purple-500/30 hover:bg-purple-500/10"
-          >
-            Pre-Deployment Gate
-          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -308,10 +309,10 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
       {/* Heal Notice Banner */}
       {healNotice && (
         <div
-          className={`p-3.5 rounded-xl border flex items-center justify-between text-xs font-mono ${
+          className={`p-3.5 rounded-xl border flex items-center justify-between text-xs ${
             healNotice.type === 'success'
-              ? 'bg-emerald-950/60 border-emerald-700/60 text-emerald-300'
-              : 'bg-rose-950/60 border-rose-800 text-rose-300'
+              ? 'bg-emerald-950/60 border-emerald-700/60 text-emerald-200'
+              : 'bg-rose-950/60 border-rose-800 text-rose-200'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -320,7 +321,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
             ) : (
               <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
             )}
-            <span>{healNotice.message}</span>
+            <span className="font-medium">{healNotice.message}</span>
           </div>
           <button
             onClick={() => setHealNotice(null)}
@@ -331,197 +332,215 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
         </div>
       )}
 
-      {/* MULTI-CLUSTER ENVIRONMENT BREAKDOWN (Prompt 3, Section 4: Exact Specifications) */}
-      {/* Example: ALL INCIDENTS: Production 12 | Staging 3 | Development 1 */}
-      <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-xs font-mono font-bold text-zinc-300 uppercase tracking-wider">
+      {/* Environment Quick Filter Cards */}
+      <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-xs font-semibold text-zinc-300">
           <Server className="w-4 h-4 text-sky-400" />
-          <span>ALL INCIDENTS BY ENVIRONMENT:</span>
+          <span>Filter by Environment:</span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Production Pill */}
+          <button
+            onClick={() => setEnvironmentFilter('ALL')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+              environmentFilter === 'ALL'
+                ? 'bg-zinc-800 text-white border border-zinc-700'
+                : 'bg-zinc-950 hover:bg-zinc-900 text-zinc-400 border border-zinc-800'
+            }`}
+          >
+            All Environments
+          </button>
+
           <button
             onClick={() =>
               setEnvironmentFilter(environmentFilter === 'production' ? 'ALL' : 'production')
             }
-            className={`px-3 py-1 rounded-lg text-xs font-mono flex items-center gap-1.5 transition-all cursor-pointer ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
               environmentFilter === 'production'
-                ? 'bg-rose-950/60 text-rose-300 border border-rose-500/50 shadow-xs'
-                : 'bg-zinc-950 hover:bg-zinc-800 text-zinc-300 border border-zinc-800'
+                ? 'bg-rose-950/60 text-rose-200 border border-rose-500/50 shadow-xs'
+                : 'bg-zinc-950 hover:bg-zinc-900 text-zinc-300 border border-zinc-800'
             }`}
           >
             <span className="w-2 h-2 rounded-full bg-rose-500" />
             <span>Production</span>
-            <strong className="text-zinc-100 ml-1 font-bold">
-              {summary?.byEnvironment?.production ?? 12}
+            <strong className="text-white ml-1 tabular-nums">
+              {summary?.byEnvironment?.production ?? 0}
             </strong>
           </button>
 
-          {/* Staging Pill */}
           <button
             onClick={() =>
               setEnvironmentFilter(environmentFilter === 'staging' ? 'ALL' : 'staging')
             }
-            className={`px-3 py-1 rounded-lg text-xs font-mono flex items-center gap-1.5 transition-all cursor-pointer ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
               environmentFilter === 'staging'
-                ? 'bg-amber-950/60 text-amber-300 border border-amber-500/50 shadow-xs'
-                : 'bg-zinc-950 hover:bg-zinc-800 text-zinc-300 border border-zinc-800'
+                ? 'bg-amber-950/60 text-amber-200 border border-amber-500/50 shadow-xs'
+                : 'bg-zinc-950 hover:bg-zinc-900 text-zinc-300 border border-zinc-800'
             }`}
           >
             <span className="w-2 h-2 rounded-full bg-amber-500" />
             <span>Staging</span>
-            <strong className="text-zinc-100 ml-1 font-bold">
-              {summary?.byEnvironment?.staging ?? 3}
+            <strong className="text-white ml-1 tabular-nums">
+              {summary?.byEnvironment?.staging ?? 0}
             </strong>
           </button>
 
-          {/* Development Pill */}
           <button
             onClick={() =>
               setEnvironmentFilter(environmentFilter === 'development' ? 'ALL' : 'development')
             }
-            className={`px-3 py-1 rounded-lg text-xs font-mono flex items-center gap-1.5 transition-all cursor-pointer ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
               environmentFilter === 'development'
-                ? 'bg-sky-950/60 text-sky-300 border border-sky-500/50 shadow-xs'
-                : 'bg-zinc-950 hover:bg-zinc-800 text-zinc-300 border border-zinc-800'
+                ? 'bg-sky-950/60 text-sky-200 border border-sky-500/50 shadow-xs'
+                : 'bg-zinc-950 hover:bg-zinc-900 text-zinc-300 border border-zinc-800'
             }`}
           >
             <span className="w-2 h-2 rounded-full bg-sky-500" />
             <span>Development</span>
-            <strong className="text-zinc-100 ml-1 font-bold">
-              {summary?.byEnvironment?.development ?? 1}
+            <strong className="text-white ml-1 tabular-nums">
+              {summary?.byEnvironment?.development ?? 0}
             </strong>
           </button>
-
-          {environmentFilter !== 'ALL' && (
-            <button
-              onClick={() => setEnvironmentFilter('ALL')}
-              className="text-[11px] text-zinc-400 hover:text-zinc-200 underline ml-2"
-            >
-              Clear Env Filter
-            </button>
-          )}
         </div>
       </div>
 
-      {/* FILTER CONTROLS GRID (Prompt 3, Section 4: Server-Side Multi-Filter) */}
+      {/* Clean Primary Filter Bar + Collapsible Advanced Filters */}
       <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-xl p-4 space-y-3 text-xs">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2.5">
+        <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
           {/* 1. Search Box */}
-          <div className="sm:col-span-2 relative">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
             <input
               type="text"
-              placeholder="Search ID, title, workload..."
+              placeholder="Search incidents by title, ID, pod, or workload..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-sky-500 font-mono text-xs"
+              className="w-full pl-9 pr-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-sky-500 text-xs"
             />
           </div>
 
-          {/* 2. Cluster Filter */}
-          <div>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Cluster Filter */}
             <select
               value={clusterFilter}
               onChange={(e) => setClusterFilter(e.target.value)}
-              className="w-full px-2 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-500 text-xs font-mono"
+              className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-500 text-xs cursor-pointer"
             >
-              <option value="ALL">Cluster: All</option>
+              <option value="ALL">All Clusters</option>
               {clusters.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.displayName || c.name}
                 </option>
               ))}
             </select>
-          </div>
 
-          {/* 3. Environment Filter */}
-          <div>
-            <select
-              value={environmentFilter}
-              onChange={(e) => setEnvironmentFilter(e.target.value)}
-              className="w-full px-2 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-500 text-xs font-mono"
-            >
-              <option value="ALL">Env: All</option>
-              <option value="production">Production</option>
-              <option value="staging">Staging</option>
-              <option value="development">Development</option>
-            </select>
-          </div>
-
-          {/* 4. Namespace Filter */}
-          <div>
-            <select
-              value={namespaceFilter}
-              onChange={(e) => setNamespaceFilter(e.target.value)}
-              className="w-full px-2 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-500 text-xs font-mono"
-            >
-              <option value="ALL">Namespace: All</option>
-              {uniqueNamespaces.map((ns) => (
-                <option key={ns} value={ns}>
-                  {ns}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* 5. Workload Filter */}
-          <div>
-            <select
-              value={workloadFilter}
-              onChange={(e) => setWorkloadFilter(e.target.value)}
-              className="w-full px-2 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-500 text-xs font-mono"
-            >
-              <option value="ALL">Workload: All</option>
-              {uniqueWorkloads.map((wl) => (
-                <option key={wl} value={wl}>
-                  {wl}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* 6. Severity Filter */}
-          <div>
+            {/* Severity Filter */}
             <select
               value={severityFilter}
               onChange={(e) => setSeverityFilter(e.target.value)}
-              className="w-full px-2 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-500 text-xs font-mono"
+              className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-500 text-xs cursor-pointer"
             >
-              <option value="ALL">Severity: All</option>
-              <option value="CRITICAL">CRITICAL</option>
-              <option value="HIGH">HIGH</option>
-              <option value="MEDIUM">MEDIUM</option>
-              <option value="LOW">LOW</option>
+              <option value="ALL">All Severities</option>
+              <option value="CRITICAL">Critical</option>
+              <option value="HIGH">High</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="LOW">Low</option>
             </select>
-          </div>
 
-          {/* 7. Status Filter */}
-          <div>
+            {/* Status Filter */}
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-2 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-500 text-xs font-mono"
+              className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-500 text-xs cursor-pointer"
             >
-              <option value="ALL">Status: All</option>
-              <option value="OPEN">OPEN</option>
-              <option value="ACKNOWLEDGED">ACKNOWLEDGED</option>
-              <option value="IN_PROGRESS">IN_PROGRESS</option>
-              <option value="RESOLVED">RESOLVED</option>
-              <option value="CLOSED">CLOSED</option>
+              <option value="ALL">All Statuses</option>
+              <option value="OPEN">Open</option>
+              <option value="ACKNOWLEDGED">Acknowledged</option>
+              <option value="IN_PROGRESS">In Progress</option>
+              <option value="RESOLVED">Resolved</option>
+              <option value="CLOSED">Closed</option>
             </select>
+
+            {/* More Filters Toggle */}
+            <button
+              type="button"
+              onClick={() => setShowAdvancedFilters((prev) => !prev)}
+              className={`px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                showAdvancedFilters ||
+                namespaceFilter !== 'ALL' ||
+                workloadFilter !== 'ALL' ||
+                incidentTypeFilter !== 'ALL'
+                  ? 'bg-sky-500/15 border-sky-500/40 text-sky-300'
+                  : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>More Filters</span>
+            </button>
           </div>
         </div>
 
+        {/* Collapsible Advanced Filters (Namespace, Workload, Failure Type) */}
+        {showAdvancedFilters && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-3 border-t border-zinc-800/70">
+            <div>
+              <label className="text-[11px] text-zinc-500 block mb-1">Namespace</label>
+              <select
+                value={namespaceFilter}
+                onChange={(e) => setNamespaceFilter(e.target.value)}
+                className="w-full px-2.5 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-500 text-xs"
+              >
+                <option value="ALL">All Namespaces</option>
+                {uniqueNamespaces.map((ns) => (
+                  <option key={ns} value={ns}>
+                    {ns}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[11px] text-zinc-500 block mb-1">Resource / Workload</label>
+              <select
+                value={workloadFilter}
+                onChange={(e) => setWorkloadFilter(e.target.value)}
+                className="w-full px-2.5 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-500 text-xs"
+              >
+                <option value="ALL">All Workloads</option>
+                {uniqueWorkloads.map((wl) => (
+                  <option key={wl} value={wl}>
+                    {wl}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[11px] text-zinc-500 block mb-1">Failure Type</label>
+              <select
+                value={incidentTypeFilter}
+                onChange={(e) => setIncidentTypeFilter(e.target.value)}
+                className="w-full px-2.5 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 focus:outline-none focus:border-sky-500 text-xs"
+              >
+                <option value="ALL">All Failure Types</option>
+                {uniqueTypes.map((ft) => (
+                  <option key={ft} value={ft}>
+                    {ft}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
         {hasActiveFilters && (
-          <div className="flex items-center justify-between pt-1 border-t border-zinc-800/60 text-[11px] text-zinc-400">
+          <div className="flex items-center justify-between pt-2 border-t border-zinc-800/60 text-xs text-zinc-400">
             <span>
-              Server-filtered incidents: <strong className="text-zinc-200">{incidents.length}</strong> (Total matching: {totalCount})
+              Matching incidents: <strong className="text-zinc-200">{incidents.length}</strong> (Total: {totalCount})
             </span>
             <button
               onClick={resetFilters}
-              className="text-sky-400 hover:text-sky-300 font-mono transition-colors"
+              className="text-sky-400 hover:text-sky-300 font-medium transition-colors cursor-pointer"
             >
               Reset All Filters
             </button>

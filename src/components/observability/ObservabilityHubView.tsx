@@ -475,11 +475,62 @@ export const ObservabilityHubView: React.FC<ObservabilityHubViewProps> = ({
                     />
                   </div>
                 ) : (
-                  <EmptyState
-                    icon={<Terminal className="w-8 h-8 text-zinc-500" />}
-                    title="Select a Pod to stream logs."
-                    description="Choose a pod from the target pod selector above to stream real-time standard output and diagnostic logs."
-                  />
+                  <div className="space-y-4">
+                    <EmptyState
+                      icon={<Terminal className="w-8 h-8 text-zinc-500" />}
+                      title="Select a Pod to stream logs."
+                      description="Choose a pod from the selector above or click any pod below to stream real-time container output and diagnostic logs."
+                    />
+
+                    {filteredPods.length > 0 && (
+                      <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-xl p-4 space-y-3">
+                        <div className="text-xs font-semibold text-zinc-300 flex items-center justify-between">
+                          <span>Quick Select Pod ({filteredPods.length} available)</span>
+                          <span className="text-[11px] font-normal text-zinc-500">Click any pod to open live logs</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-72 overflow-y-auto pr-1">
+                          {filteredPods.slice(0, 24).map((p) => {
+                            const isUnhealthy =
+                              p.health === 'CRITICAL' ||
+                              p.status === 'CrashLoopBackOff' ||
+                              p.status === 'ImagePullBackOff' ||
+                              p.status === 'OOMKilled';
+                            return (
+                              <button
+                                key={p.id || `${p.namespace}/${p.name}`}
+                                type="button"
+                                onClick={() =>
+                                  setSelectedPod({
+                                    clusterId: selectedCluster.id,
+                                    namespace: p.namespace,
+                                    name: p.name,
+                                    uid: p.uid,
+                                    container: p.containers?.[0]?.name
+                                  })
+                                }
+                                className={`p-3 rounded-lg border text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                                  isUnhealthy
+                                    ? 'bg-rose-950/20 hover:bg-rose-950/35 border-rose-800/60 text-rose-200'
+                                    : 'bg-zinc-950/70 hover:bg-zinc-900 border-zinc-800/80 text-zinc-200'
+                                }`}
+                              >
+                                <div className="min-w-0">
+                                  <div className="text-xs font-mono font-semibold truncate">{p.name}</div>
+                                  <div className="text-[11px] text-zinc-400 truncate mt-0.5">
+                                    {p.namespace} •{' '}
+                                    <span className={isUnhealthy ? 'text-rose-400 font-semibold' : 'text-emerald-400'}>
+                                      {p.status}
+                                    </span>
+                                  </div>
+                                </div>
+                                <Terminal className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )}

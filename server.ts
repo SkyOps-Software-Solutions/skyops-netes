@@ -334,21 +334,25 @@ const DeleteOrgSchema = z.object({
 app.delete(
   '/api/v1/orgs/:id',
   requireUserAuth,
-  requireOrgMembership,
-  requireRole(['OWNER']),
   (req: AuthenticatedUserRequest, res) => {
     const orgId = req.params.id;
-    if (orgId !== req.orgId) {
-      return res.status(403).json({ error: 'Forbidden: Cannot delete a workspace outside your active context' });
-    }
-
     const org = store.getOrganization(orgId);
     if (!org) {
       return res.status(404).json({ error: 'Workspace not found' });
     }
 
+    const access = store.checkUserOrgAccess(req.user!.id, orgId, req.user!.email);
+    const isOwner =
+      access.role === 'OWNER' ||
+      org.ownerUserId === req.user!.id ||
+      Boolean((org as any).ownerEmail && (org as any).ownerEmail.toLowerCase() === req.user!.email.toLowerCase());
+
+    if (!access.hasAccess && !isOwner) {
+      return res.status(403).json({ error: 'Forbidden: You do not have access to this workspace' });
+    }
+
     // Verify user is actual owner or has OWNER role
-    if (req.userRole !== 'OWNER' && org.ownerUserId !== req.user!.id) {
+    if (!isOwner) {
       return res.status(403).json({ error: 'Only the Workspace Owner can permanently delete this workspace' });
     }
 

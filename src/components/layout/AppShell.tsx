@@ -1,7 +1,6 @@
-import { Bell, BookOpen, HelpCircle, Shield, Terminal } from 'lucide-react';
+import { AlertTriangle, BookOpen, Building2, Plus, RefreshCw } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
-import { AGENT_VERSION } from '../../config/version';
 import { useAuth } from '../../context/AuthContext';
 import { Cluster, Incident, OverviewMetrics } from '../../types/index';
 import { AddClusterModal } from '../clusters/AddClusterModal';
@@ -10,36 +9,65 @@ import { ClustersView } from '../clusters/ClustersView';
 import { IncidentDetailView } from '../incidents/IncidentDetailView';
 import { IncidentsView } from '../incidents/IncidentsView';
 import { OverviewView } from '../overview/OverviewView';
-import { InfrastructureView } from '../infrastructure/InfrastructureView';
-import { ServicesView } from '../services/ServicesView';
-import { LogsManagementView } from '../logs/LogsManagementView';
+import { InfrastructureView, InfraSubTab } from '../infrastructure/InfrastructureView';
 import { LogNavigationIntent, ObservabilityHubView } from '../observability/ObservabilityHubView';
-import { CostIntelligenceView } from '../cost/CostIntelligenceView';
-import { SecurityPostureView } from '../security/SecurityPostureView';
 import { SettingsView } from '../settings/SettingsView';
 import { AuditView } from '../audit/AuditView';
 import { NavigationTab, Sidebar } from './Sidebar';
 import { Footer } from './Footer';
 import { DocTopic, KnowledgeBaseModal } from '../docs/KnowledgeBaseModal';
-import { BrandLogo } from '../common/BrandLogo';
 
 interface AppShellProps {
   initialOpenAddCluster?: boolean;
   onSignOut?: () => void;
 }
 
+const PAGE_METADATA: Record<string, { title: string; subtitle: string }> = {
+  overview: {
+    title: 'Overview',
+    subtitle: 'Fleet health summary, active alerts, and connected Kubernetes clusters'
+  },
+  clusters: {
+    title: 'Clusters',
+    subtitle: 'Connect, organize, and inspect your Kubernetes environments'
+  },
+  infrastructure: {
+    title: 'Infrastructure',
+    subtitle: 'Explore workloads, pods, services, worker nodes, and topology'
+  },
+  incidents: {
+    title: 'Incidents',
+    subtitle: 'Investigate cluster issues, root-cause evidence, and 1-click Auto-Healing'
+  },
+  observability: {
+    title: 'Observability',
+    subtitle: 'Live CPU & memory metrics, Kubernetes events, and container logs'
+  },
+  audit: {
+    title: 'Activity Log',
+    subtitle: 'Complete history of team actions, auto-healing, and cluster changes'
+  },
+  settings: {
+    title: 'Settings',
+    subtitle: 'Workspace preferences, team access, auto-healing rules, and billing'
+  }
+};
+
 export const AppShell: React.FC<AppShellProps> = ({
   initialOpenAddCluster = false,
   onSignOut
 }) => {
-  const { currentOrg } = useAuth();
+  const { currentOrg, createOrganization, pendingInvitations, acceptInvitation } = useAuth();
   const [activeTab, setActiveTab] = useState<NavigationTab>('overview');
+  const [infraSubTab, setInfraSubTab] = useState<InfraSubTab>('workloads');
   const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
   const [pendingLogIntent, setPendingLogIntent] = useState<LogNavigationIntent | null>(null);
   const [isAddClusterOpen, setIsAddClusterOpen] = useState(initialOpenAddCluster);
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
   const [selectedDocTopic, setSelectedDocTopic] = useState<DocTopic>('quickstart');
+  const [newWorkspaceName, setNewWorkspaceName] = useState('');
+  const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
 
   const handleOpenDoc = (topic: DocTopic) => {
     setSelectedDocTopic(topic);
@@ -103,6 +131,18 @@ export const AppShell: React.FC<AppShellProps> = ({
   const [refreshKey, setRefreshKey] = useState(0);
 
   const fetchGlobalData = async (isManual = false) => {
+    if (!currentOrg?.id) {
+      setMetrics(defaultMetrics);
+      setClusters([]);
+      setIncidents([]);
+      setRecentActivity([]);
+      setFetchError(null);
+      setIsStale(false);
+      setLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
+
     if (isManual) {
       setIsRefreshing(true);
       setRefreshKey((prev) => prev + 1);
@@ -123,7 +163,7 @@ export const AppShell: React.FC<AppShellProps> = ({
           encounteredError = true;
           errorMessage = err?.message || 'Failed to sync active incidents';
           console.warn('Incidents data fetch notice:', errorMessage);
-          return null; // Do NOT return empty array on failure: preserve last-known-good data!
+          return null;
         })
       ]);
 
@@ -135,7 +175,6 @@ export const AppShell: React.FC<AppShellProps> = ({
         setMetrics(defaultMetrics);
       }
 
-      // Only update incidents if a valid array was retrieved
       if (incidentsData !== null) {
         setIncidents(incidentsData);
       }
@@ -177,7 +216,6 @@ export const AppShell: React.FC<AppShellProps> = ({
     setIncidents([]);
     setMetrics(null);
     fetchGlobalData();
-    // 10-second background polling for live agent pulses and incidents
     const interval = setInterval(() => fetchGlobalData(false), 10000);
     return () => clearInterval(interval);
   }, [currentOrg?.id]);
@@ -185,7 +223,9 @@ export const AppShell: React.FC<AppShellProps> = ({
   const handleSelectCluster = (id: string) => {
     setSelectedClusterId(id);
     setSelectedIncidentId(null);
-    setActiveTab('infrastructure');
+    if (activeTab !== 'infrastructure') {
+      setActiveTab('clusters');
+    }
   };
 
   const handleOpenLogs = (clusterId: string, namespace: string, podName: string) => {
@@ -195,10 +235,10 @@ export const AppShell: React.FC<AppShellProps> = ({
       namespace,
       name: podName
     });
-    setActiveTab('logs');
+    setActiveTab('observability');
     try {
       if (typeof window !== 'undefined') {
-        window.history.pushState({ tab: 'logs' }, '', '/logs');
+        window.history.pushState({ tab: 'observability' }, '', '/observability');
       }
     } catch {
       // safe fallback
@@ -236,23 +276,42 @@ export const AppShell: React.FC<AppShellProps> = ({
     }
   };
 
-  const handleTabChange = (tab: NavigationTab) => {
-    setActiveTab(tab);
+  const handleTabChange = (tab: NavigationTab, subTab?: InfraSubTab) => {
     setSelectedClusterId(null);
     handleClearIncident();
+
+    // Map legacy or consolidated tab targets into the 7 core pages
+    if (tab === 'services') {
+      setInfraSubTab('services');
+      setActiveTab('infrastructure');
+      return;
+    }
+    if (tab === 'logs') {
+      setActiveTab('observability');
+      return;
+    }
+    if (tab === 'cost' || tab === 'security') {
+      setActiveTab('overview');
+      return;
+    }
+
+    if (tab === 'infrastructure' && subTab) {
+      setInfraSubTab(subTab);
+    }
+
+    setActiveTab(tab);
     try {
       if (typeof window !== 'undefined') {
-        if (tab === 'logs') {
-          window.history.pushState({ tab: 'logs' }, '', '/logs');
-        } else if (tab === 'incidents') {
+        if (tab === 'incidents') {
           window.history.pushState({ tab: 'incidents' }, '', '/incidents');
+        } else if (tab === 'observability') {
+          window.history.pushState({ tab: 'observability' }, '', '/observability');
         }
       }
     } catch {
       // safe fallback
     }
-    // Clear any pending log navigation when navigating away from observability or logs
-    if (tab !== 'observability' && tab !== 'logs') {
+    if (tab !== 'observability') {
       setPendingLogIntent(null);
     }
   };
@@ -275,10 +334,11 @@ export const AppShell: React.FC<AppShellProps> = ({
           return;
         }
 
-        const logsMatch = window.location.pathname.match(/^\/logs(?:\/([a-zA-Z0-9_-]+))?/i) ||
+        const logsMatch =
+          window.location.pathname.match(/^\/logs(?:\/([a-zA-Z0-9_-]+))?/i) ||
           window.location.hash.match(/^#(?:|\/)logs(?:\/([a-zA-Z0-9_-]+))?/i);
         if (logsMatch) {
-          setActiveTab('logs');
+          setActiveTab('observability');
           setSelectedClusterId(null);
           setSelectedIncidentId(null);
           return;
@@ -297,6 +357,8 @@ export const AppShell: React.FC<AppShellProps> = ({
     (i) => i.status === 'OPEN' || i.status === 'IN_PROGRESS' || i.status === 'ACKNOWLEDGED'
   ).length;
 
+  const pageMeta = PAGE_METADATA[activeTab] || PAGE_METADATA.overview;
+
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-100 antialiased overflow-hidden font-sans">
       {/* Navigation Sidebar */}
@@ -312,45 +374,152 @@ export const AppShell: React.FC<AppShellProps> = ({
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-zinc-950">
-        {/* Top Operational Bar */}
-        <header className="h-12 border-b border-zinc-800/80 px-4 sm:px-6 flex items-center justify-between shrink-0 bg-zinc-950/80 backdrop-blur-xs">
-          <div className="flex items-center gap-3 text-xs font-mono text-zinc-400">
-            <span className="flex items-center gap-2">
-              <BrandLogo size="xs" className="rounded-sm" />
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Central Ingestion API: <strong className="text-zinc-200">Online</strong>
-            </span>
-            <span className="text-zinc-700 hidden md:inline">|</span>
-            <span className="hidden md:inline">
-              Tenant: <strong className="text-sky-400">{currentOrg?.name || 'Workspace'}</strong>
+        {/* Clean, Human-Understandable Top Header Bar */}
+        <header className="h-14 border-b border-zinc-800/80 px-5 sm:px-8 flex items-center justify-between shrink-0 bg-zinc-950/90 backdrop-blur-xs sticky top-0 z-20">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center gap-2 text-xs text-zinc-400 min-w-0">
+              <span className="font-medium text-zinc-300 truncate max-w-[160px]">
+                {currentOrg?.name || 'My Workspace'}
+              </span>
+              <span className="text-zinc-600" aria-hidden="true">/</span>
+              <span className="font-semibold text-zinc-100">{pageMeta.title}</span>
+            </div>
+            <span className="text-zinc-700 hidden lg:inline" aria-hidden="true">·</span>
+            <span className="text-xs text-zinc-400 hidden lg:inline truncate">
+              {pageMeta.subtitle}
             </span>
           </div>
 
-          <div className="flex items-center gap-3 text-xs font-mono text-zinc-400">
+          <div className="flex items-center gap-2.5 shrink-0">
+            {/* Active Incidents quick jump if any are open */}
+            {openIncidentsCount > 0 && activeTab !== 'incidents' && (
+              <button
+                onClick={() => handleTabChange('incidents')}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-rose-950/70 hover:bg-rose-900/70 text-rose-300 border border-rose-800/70 text-xs font-medium transition-colors cursor-pointer"
+                title="View active incidents needing attention"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                <span>{openIncidentsCount} Open {openIncidentsCount === 1 ? 'Incident' : 'Incidents'}</span>
+              </button>
+            )}
+
+            {/* Sync & Manual Refresh Button */}
+            <button
+              onClick={handleManualRefresh}
+              disabled={loading || isRefreshing}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 text-xs transition-colors cursor-pointer"
+              title="Refresh live cluster telemetry and incidents"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-sky-400 ${loading || isRefreshing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{isRefreshing ? 'Syncing...' : 'Sync Now'}</span>
+            </button>
+
+            {/* Connect Cluster Quick Button */}
+            <button
+              onClick={() => setIsAddClusterOpen(true)}
+              className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-sky-600/15 hover:bg-sky-600/25 text-sky-300 border border-sky-500/30 text-xs font-medium transition-colors cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Connect Cluster</span>
+            </button>
+
+            {/* Docs & Help */}
             <button
               id="topbar-docs-btn"
               onClick={() => handleOpenDoc('quickstart')}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-sky-300 border border-zinc-800 transition-colors cursor-pointer"
-              title="SkyOps Technical Reference & Documentation"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-sky-300 border border-zinc-800 text-xs transition-colors cursor-pointer"
+              title="SkyOps Guides & Documentation"
             >
               <BookOpen className="w-3.5 h-3.5 text-sky-400" />
-              <span>Docs</span>
+              <span>Help & Docs</span>
             </button>
-            <span className="text-zinc-700 hidden sm:inline">|</span>
-            <span className="text-emerald-400 hidden sm:flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              Autonomous Engine Active
-            </span>
-            <span className="text-zinc-700 hidden sm:inline">|</span>
-            <span>
-              SkyOps Agent: <strong className="text-zinc-200">{AGENT_VERSION}</strong>
-            </span>
           </div>
         </header>
 
-        {/* View Routing */}
+        {/* View Routing (7 Core Production Pages) */}
         <div className="flex-1">
-          {activeTab === 'overview' && (
+          {!currentOrg ? (
+            <div className="p-8 max-w-xl mx-auto my-12">
+              <div className="p-6 rounded-2xl bg-zinc-900/60 border border-zinc-800 space-y-5 shadow-xl">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-white">Create Your Organization Workspace</h2>
+                    <p className="text-xs text-zinc-400 mt-0.5">
+                      You currently have no active workspace. Create a new tenant workspace to connect and manage Kubernetes clusters.
+                    </p>
+                  </div>
+                </div>
+
+                {pendingInvitations && pendingInvitations.length > 0 && (
+                  <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-800/50 space-y-2">
+                    <div className="text-xs font-semibold text-amber-300">
+                      Pending Workspace Invitations ({pendingInvitations.length})
+                    </div>
+                    {pendingInvitations.map((inv) => (
+                      <div key={inv.id} className="flex items-center justify-between gap-2 text-xs bg-zinc-950/80 p-2.5 rounded-lg border border-zinc-800">
+                        <div>
+                          <div className="font-semibold text-zinc-100">{inv.orgName || 'Workspace'}</div>
+                          <div className="text-[11px] text-zinc-400">Role: {inv.role}</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => acceptInvitation(inv.id)}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer"
+                        >
+                          Accept & Join
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!newWorkspaceName.trim()) return;
+                    try {
+                      setIsCreatingWorkspace(true);
+                      await createOrganization(newWorkspaceName.trim());
+                      setNewWorkspaceName('');
+                    } finally {
+                      setIsCreatingWorkspace(false);
+                    }
+                  }}
+                  className="space-y-3"
+                >
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-300 mb-1.5">
+                      Workspace / Organization Name
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      minLength={2}
+                      maxLength={60}
+                      placeholder="e.g., Acme Cloud Platform"
+                      value={newWorkspaceName}
+                      onChange={(e) => setNewWorkspaceName(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-sky-500"
+                      autoFocus
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isCreatingWorkspace || newWorkspaceName.trim().length < 2}
+                    className="w-full py-2.5 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-semibold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>{isCreatingWorkspace ? 'Creating Workspace...' : 'Create Workspace'}</span>
+                  </button>
+                </form>
+              </div>
+            </div>
+          ) : (
+            <>
+              {activeTab === 'overview' && (
             <OverviewView
               metrics={metrics}
               clusters={clusters}
@@ -414,6 +583,7 @@ export const AppShell: React.FC<AppShellProps> = ({
               ) : (
                 <InfrastructureView
                   clusters={clusters}
+                  initialSubTab={infraSubTab}
                   onSelectCluster={handleSelectCluster}
                   onOpenAddCluster={() => setIsAddClusterOpen(true)}
                   onDeleteCluster={async (id) => {
@@ -427,32 +597,6 @@ export const AppShell: React.FC<AppShellProps> = ({
                 />
               )}
             </>
-          )}
-
-          {activeTab === 'services' && (
-            <div className="p-6 max-w-7xl mx-auto space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-xl font-bold text-zinc-100">Kubernetes Services</h1>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/30">
-                      Service Mesh & Ingress
-                    </span>
-                  </div>
-                  <p className="text-xs text-zinc-400 mt-1">
-                    First-class observability for ClusterIP, NodePort, LoadBalancer services, backing pods, and endpoint slices.
-                  </p>
-                </div>
-              </div>
-              <ServicesView
-                clusters={clusters}
-                incidents={incidents}
-                loading={loading || isRefreshing}
-                onRefresh={handleManualRefresh}
-                onSelectCluster={handleSelectCluster}
-                onSelectIncident={handleSelectIncident}
-              />
-            </div>
           )}
 
           {activeTab === 'incidents' && (
@@ -478,18 +622,6 @@ export const AppShell: React.FC<AppShellProps> = ({
             </>
           )}
 
-          {activeTab === 'logs' && (
-            <LogsManagementView
-              clusters={clusters}
-              initialClusterId={pendingLogIntent?.clusterId || selectedClusterId || undefined}
-              initialNamespace={pendingLogIntent?.namespace}
-              initialPod={pendingLogIntent?.name}
-              initialWorkload={pendingLogIntent?.name}
-              onSelectIncident={handleSelectIncident}
-              onRefreshGlobal={handleManualRefresh}
-            />
-          )}
-
           {activeTab === 'observability' && (
             <ObservabilityHubView
               clusters={clusters}
@@ -499,20 +631,7 @@ export const AppShell: React.FC<AppShellProps> = ({
             />
           )}
 
-          {activeTab === 'cost' && (
-            <CostIntelligenceView
-              clusters={clusters}
-              onOpenAddCluster={() => setIsAddClusterOpen(true)}
-            />
-          )}
-
-          {activeTab === 'security' && (
-            <SecurityPostureView />
-          )}
-
-          {activeTab === 'audit' && (
-            <AuditView />
-          )}
+          {activeTab === 'audit' && <AuditView />}
 
           {activeTab === 'settings' && (
             <SettingsView
@@ -520,6 +639,8 @@ export const AppShell: React.FC<AppShellProps> = ({
               onSelectIncident={handleSelectIncident}
               onRefresh={handleManualRefresh}
             />
+          )}
+            </>
           )}
         </div>
 

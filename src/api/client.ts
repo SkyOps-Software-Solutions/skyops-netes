@@ -288,6 +288,8 @@ class ApiClient {
     }>('/api/v1/auth/session', { method: 'POST' });
     if (session?.currentOrg?.id) {
       localStorage.setItem('skyops_active_org_id', session.currentOrg.id);
+    } else {
+      localStorage.removeItem('skyops_active_org_id');
     }
     return session;
   }
@@ -333,6 +335,7 @@ class ApiClient {
       `/api/v1/orgs/${orgId}`,
       {
         method: 'DELETE',
+        headers: { 'x-org-id': orgId },
         body: JSON.stringify({ confirmName, acknowledgement })
       }
     );

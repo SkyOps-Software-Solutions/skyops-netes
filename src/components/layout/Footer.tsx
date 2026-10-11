@@ -153,19 +153,28 @@ export const Footer: React.FC<FooterProps> = ({
             </div>
           </div>
 
-          {/* Column 2: Product (Real Verified Routes Only) */}
+          {/* Column 2: Product (7 Core Production Pages) */}
           <div className="space-y-3">
-            <h4 className="text-xs font-mono font-semibold uppercase tracking-wider text-zinc-200">
-              Product
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-200">
+              Platform
             </h4>
-            <ul className="space-y-2 text-xs font-mono">
+            <ul className="space-y-2 text-xs">
               <li>
                 <button
                   id="footer-product-command-center"
                   onClick={() => handleProductClick('overview', 'quickstart')}
                   className="text-zinc-400 hover:text-zinc-100 transition-colors cursor-pointer text-left"
                 >
-                  Command Center
+                  Overview Dashboard
+                </button>
+              </li>
+              <li>
+                <button
+                  id="footer-product-clusters"
+                  onClick={() => handleProductClick('clusters', 'connect-cluster')}
+                  className="text-zinc-400 hover:text-zinc-100 transition-colors cursor-pointer text-left"
+                >
+                  Clusters & Fleet
                 </button>
               </li>
               <li>
@@ -174,16 +183,7 @@ export const Footer: React.FC<FooterProps> = ({
                   onClick={() => handleProductClick('infrastructure', 'agent-guide')}
                   className="text-zinc-400 hover:text-zinc-100 transition-colors cursor-pointer text-left"
                 >
-                  Infrastructure
-                </button>
-              </li>
-              <li>
-                <button
-                  id="footer-product-observability"
-                  onClick={() => handleProductClick('observability', 'metrics')}
-                  className="text-zinc-400 hover:text-zinc-100 transition-colors cursor-pointer text-left"
-                >
-                  Observability
+                  Infrastructure Explorer
                 </button>
               </li>
               <li>
@@ -192,46 +192,34 @@ export const Footer: React.FC<FooterProps> = ({
                   onClick={() => handleProductClick('incidents', 'incidents')}
                   className="text-zinc-400 hover:text-zinc-100 transition-colors cursor-pointer text-left"
                 >
-                  Incidents
+                  Incidents & Auto-Healing
                 </button>
               </li>
               <li>
                 <button
-                  id="footer-product-services"
-                  onClick={() => handleProductClick('services', 'architecture')}
+                  id="footer-product-observability"
+                  onClick={() => handleProductClick('observability', 'metrics')}
                   className="text-zinc-400 hover:text-zinc-100 transition-colors cursor-pointer text-left"
                 >
-                  Services
+                  Observability (Metrics, Logs & Events)
                 </button>
               </li>
               <li>
                 <button
-                  id="footer-product-ai-investigation"
-                  onClick={() => {
-                    if (isAuthenticated && onNavigateTab) {
-                      onNavigateTab('incidents');
-                    } else {
-                      onOpenDoc('incidents');
-                    }
-                  }}
+                  id="footer-product-audit"
+                  onClick={() => handleProductClick('audit', 'rbac')}
                   className="text-zinc-400 hover:text-zinc-100 transition-colors cursor-pointer text-left"
                 >
-                  AI Investigation
+                  Activity Log
                 </button>
               </li>
               <li>
                 <button
-                  id="footer-product-safe-remediation"
-                  onClick={() => {
-                    if (isAuthenticated && onNavigateTab) {
-                      onNavigateTab('incidents');
-                    } else {
-                      onOpenDoc('remediation');
-                    }
-                  }}
+                  id="footer-product-settings"
+                  onClick={() => handleProductClick('settings', 'architecture')}
                   className="text-zinc-400 hover:text-zinc-100 transition-colors cursor-pointer text-left"
                 >
-                  Safe Remediation
+                  Workspace Settings
                 </button>
               </li>
             </ul>

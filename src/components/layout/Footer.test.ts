@@ -21,15 +21,15 @@ test('SkyOps Production Footer Specification & Route Verification Suite', async 
   });
 
   await t.test('2. Product Navigation: contains ONLY real existing product routes', () => {
-    // Real existing router tabs in AppShell / Sidebar:
+    // Real existing router tabs in AppShell / Sidebar (7 core production pages):
     const requiredProductLinks = [
-      'Command Center',
-      'Infrastructure',
-      'Observability',
-      'Incidents',
-      'Services',
-      'AI Investigation',
-      'Safe Remediation'
+      'Overview Dashboard',
+      'Clusters & Fleet',
+      'Infrastructure Explorer',
+      'Incidents & Auto-Healing',
+      'Observability (Metrics, Logs & Events)',
+      'Activity Log',
+      'Workspace Settings'
     ];
 
     for (const link of requiredProductLinks) {
@@ -41,10 +41,12 @@ test('SkyOps Production Footer Specification & Route Verification Suite', async 
 
     // Verify product click handlers map to authentic navigation tabs
     assert.match(footerSource, /handleProductClick\('overview'/);
+    assert.match(footerSource, /handleProductClick\('clusters'/);
     assert.match(footerSource, /handleProductClick\('infrastructure'/);
-    assert.match(footerSource, /handleProductClick\('observability'/);
     assert.match(footerSource, /handleProductClick\('incidents'/);
-    assert.match(footerSource, /handleProductClick\('services'/);
+    assert.match(footerSource, /handleProductClick\('observability'/);
+    assert.match(footerSource, /handleProductClick\('audit'/);
+    assert.match(footerSource, /handleProductClick\('settings'/);
   });
 
   await t.test('3. Learn / Get Started: every link has a verified documentation destination', () => {

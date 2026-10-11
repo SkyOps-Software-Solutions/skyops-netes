@@ -407,15 +407,22 @@ export async function requireOrgMembership(
         targetOrg = store.getOrganization(requestedOrgId) || undefined;
       }
     }
-    // Explicit requestedOrgId was not accessible to this user: reject with 403 (never fall back across tenant boundary)
+    // Explicit requestedOrgId was not accessible to this user:
+    // If this is the session establishment endpoint and the requestedOrgId no longer exists (e.g. just deleted),
+    // heal the session to the user's first available workspace. Otherwise reject with 403.
     if (!targetOrg) {
-      return res.status(403).json({
-        error: 'Forbidden: You do not have access to this organization',
-        code: 'ORG_ACCESS_DENIED',
-        requestedOrgId: requestedOrgId,
-        availableOrgs: userOrgs.map((o) => ({ id: o.id, name: o.name, slug: o.slug })),
-        message: 'You are not an authorized member of this organization.'
-      });
+      const isSessionRoute = req.path === '/api/v1/auth/session' || req.originalUrl?.includes('/api/v1/auth/session');
+      if (isSessionRoute && !store.getOrganization(requestedOrgId) && userOrgs.length > 0) {
+        targetOrg = userOrgs[0];
+      } else {
+        return res.status(403).json({
+          error: 'Forbidden: You do not have access to this organization',
+          code: 'ORG_ACCESS_DENIED',
+          requestedOrgId: requestedOrgId,
+          availableOrgs: userOrgs.map((o) => ({ id: o.id, name: o.name, slug: o.slug })),
+          message: 'You are not an authorized member of this organization.'
+        });
+      }
     }
   } else {
     targetOrg = userOrgs[0];

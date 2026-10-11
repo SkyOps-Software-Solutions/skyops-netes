@@ -968,10 +968,40 @@ export class DataStore {
       }
     }
 
-    // 3. Delete policies, webhooks, invitations, subscriptions
+    // 3. Delete policies, webhooks, invitations, tickets, invoices, deployments, remediation actions, subscriptions
     for (const [polId, pol] of Array.from(this.policies.entries())) {
       if (pol.orgId === orgId) {
         this.policies.delete(polId);
+      }
+    }
+    for (const [invId, inv] of Array.from(this.invitations.entries())) {
+      if (inv.orgId === orgId) {
+        this.invitations.delete(invId);
+      }
+    }
+    for (const [ticketId, ticket] of Array.from(this.supportTickets.entries())) {
+      if (ticket.orgId === orgId) {
+        this.supportTickets.delete(ticketId);
+      }
+    }
+    for (const [invoiceId, invoice] of Array.from(this.invoices.entries())) {
+      if (invoice.organizationId === orgId) {
+        this.invoices.delete(invoiceId);
+      }
+    }
+    for (const [depId, dep] of Array.from(this.deployments.entries())) {
+      if (dep.orgId === orgId) {
+        this.deployments.delete(depId);
+      }
+    }
+    for (const [actId, act] of Array.from(this.remediationActions.entries())) {
+      if (act.orgId === orgId) {
+        this.remediationActions.delete(actId);
+      }
+    }
+    for (const [recId, rec] of Array.from(this.appliedRightsizing.entries())) {
+      if ((rec as any).orgId === orgId) {
+        this.appliedRightsizing.delete(recId);
       }
     }
     this.subscriptions.delete(orgId);

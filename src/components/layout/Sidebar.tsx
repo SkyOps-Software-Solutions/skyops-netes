@@ -286,9 +286,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             onClick={onToggleCollapse}
             title="Pull navigation (Expand sidebar)"
-            className="w-9 h-9 rounded-lg hover:bg-zinc-800/80 flex items-center justify-center transition-colors cursor-pointer p-0.5"
+            className="w-11 h-11 rounded-xl hover:bg-zinc-800/80 flex items-center justify-center transition-colors cursor-pointer p-0.5"
           >
-            <BrandLogo size="md" className="rounded-md" />
+            <BrandLogo size="md" className="rounded-lg" />
           </button>
           {onToggleCollapse && (
             <button
@@ -301,10 +301,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
       ) : (
-        <div className="px-5 py-4 border-b border-zinc-800/80 flex items-center justify-between">
+        <div className="px-4 py-4 border-b border-zinc-800/80 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <BrandLogo
-              size="md"
+              size="lg"
               showText
               version={AGENT_VERSION}
               subtitle="K8s Incident Platform"
@@ -584,7 +584,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <Plus className="w-4 h-4" />
             </button>
-            <PWAInstallButton className="w-10 h-10 p-0 justify-center" />
+            <PWAInstallButton iconOnly className="w-10 h-10 p-0 justify-center rounded-lg" />
           </div>
         ) : (
           <div className="pt-5 space-y-2">
@@ -596,7 +596,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span>Connect Kubernetes Cluster</span>
             </button>
             <div className="px-0.5">
-              <PWAInstallButton className="w-full justify-center py-2" />
+              <PWAInstallButton variant="sidebar" className="w-full justify-center py-2" />
             </div>
           </div>
         )}

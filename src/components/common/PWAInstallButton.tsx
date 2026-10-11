@@ -4,16 +4,19 @@ import { usePWAInstall } from '../../hooks/usePWAInstall';
 
 interface PWAInstallButtonProps {
   className?: string;
-  variant?: 'compact' | 'standard' | 'sidebar';
+  variant?: 'compact' | 'standard' | 'sidebar' | 'icon';
+  iconOnly?: boolean;
 }
 
 export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
   className = '',
-  variant = 'compact'
+  variant = 'compact',
+  iconOnly = false
 }) => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   const [showIOSModal, setShowIOSModal] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const isSymbolOnly = iconOnly || variant === 'icon';
 
   // If already installed in standalone mode, do not show prompt
   if (isInstalled) {
@@ -45,11 +48,18 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
       <>
         <button
           onClick={() => setShowIOSModal(true)}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded bg-sky-950/60 hover:bg-sky-900/60 text-sky-300 hover:text-sky-200 border border-sky-800/60 transition-colors text-xs font-mono font-medium cursor-pointer ${className}`}
+          aria-label="Install SkyOps App"
+          className={`flex items-center justify-center ${
+            isSymbolOnly ? 'w-10 h-10 p-0 rounded-lg' : 'gap-1.5 px-2.5 py-1.5 rounded-lg'
+          } bg-sky-950/60 hover:bg-sky-900/60 text-sky-300 hover:text-sky-200 border border-sky-800/60 transition-colors text-xs font-mono font-medium cursor-pointer shrink-0 ${className}`}
           title="Install SkyOps as a Standalone App"
         >
-          <Download className="w-3.5 h-3.5 text-sky-400" />
-          <span>Install App</span>
+          <Download className="w-4 h-4 text-sky-400 shrink-0" />
+          {!isSymbolOnly && (
+            <span className={variant === 'compact' ? 'hidden sm:inline whitespace-nowrap' : 'whitespace-nowrap'}>
+              Install App
+            </span>
+          )}
         </button>
 
         {showIOSModal && (
@@ -104,11 +114,18 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
       <button
         onClick={handleInstallClick}
         disabled={installing}
-        className={`flex items-center gap-1.5 px-2.5 py-1 rounded bg-sky-600/90 hover:bg-sky-500 text-white border border-sky-400/40 shadow-xs hover:shadow-sky-500/20 transition-all text-xs font-mono font-medium cursor-pointer ${className}`}
+        aria-label="Install SkyOps App"
+        className={`flex items-center justify-center ${
+          isSymbolOnly ? 'w-10 h-10 p-0 rounded-lg' : 'gap-1.5 px-2.5 py-1.5 rounded-lg'
+        } bg-sky-600/90 hover:bg-sky-500 text-white border border-sky-400/40 shadow-xs hover:shadow-sky-500/20 transition-all text-xs font-mono font-medium cursor-pointer shrink-0 ${className}`}
         title="Install SkyOps to desktop or home screen"
       >
-        <Download className={`w-3.5 h-3.5 ${installing ? 'animate-bounce' : ''}`} />
-        <span>{installing ? 'Installing...' : isIOS ? 'Install on iOS' : 'Install App'}</span>
+        <Download className={`w-4 h-4 shrink-0 ${installing ? 'animate-bounce' : ''}`} />
+        {!isSymbolOnly && (
+          <span className={variant === 'compact' ? 'hidden sm:inline whitespace-nowrap' : 'whitespace-nowrap'}>
+            {installing ? 'Installing...' : isIOS ? 'Install on iOS' : 'Install App'}
+          </span>
+        )}
       </button>
 
       {showIOSModal && (

@@ -27,12 +27,12 @@ export interface BrandLogoProps {
 }
 
 const sizeMap = {
-  xs: 'w-5 h-5',
-  sm: 'w-6 h-6',
-  md: 'w-7 h-7',
-  lg: 'w-8 h-8',
-  xl: 'w-10 h-10',
-  '2xl': 'w-12 h-12'
+  xs: 'w-8 h-8',
+  sm: 'w-9 h-9',
+  md: 'w-11 h-11',
+  lg: 'w-14 h-14',
+  xl: 'w-20 h-20',
+  '2xl': 'w-24 h-24'
 };
 
 export const BrandLogo: React.FC<BrandLogoProps> = ({
@@ -63,7 +63,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
 
   const logoImage = (
     <div
-      className={`relative shrink-0 flex items-center justify-center ${rounded || 'rounded-lg'} overflow-hidden select-none ${imgDimensions} ${containerClassName}`}
+      className={`relative shrink-0 flex items-center justify-center ${rounded || 'rounded-xl'} overflow-hidden select-none ${imgDimensions} ${containerClassName}`}
       onClick={onClick}
     >
       {!hasError ? (
@@ -72,10 +72,10 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
           alt="SkyOps Logo"
           onError={handleImageError}
           loading={priority ? 'eager' : 'lazy'}
-          className={`w-full h-full object-contain drop-shadow-md transition-transform duration-200 ${rounded || ''} ${className}`}
+          className={`w-full h-full object-contain scale-110 drop-shadow-md transition-transform duration-200 ${rounded || ''} ${className}`}
         />
       ) : (
-        <div className="w-full h-full rounded-lg bg-sky-600 flex items-center justify-center text-white font-mono font-bold text-xs">
+        <div className="w-full h-full rounded-xl bg-sky-600 flex items-center justify-center text-white font-mono font-bold text-sm">
           SK
         </div>
       )}
@@ -87,10 +87,10 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
   }
 
   return (
-    <div className="flex items-center gap-2.5">
+    <div className="flex items-center gap-3">
       {logoImage}
       <div>
-        <div className={`font-bold text-zinc-100 tracking-tight flex items-center gap-1.5 ${textClassName || 'text-sm'}`}>
+        <div className={`font-bold text-zinc-100 tracking-tight flex items-center gap-1.5 ${textClassName || 'text-base'}`}>
           SkyOps
           {version && (
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
@@ -99,7 +99,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
           )}
         </div>
         {subtitle && (
-          <div className="text-[10px] font-mono text-zinc-500 leading-tight">
+          <div className="text-[11px] font-mono text-zinc-400 leading-tight mt-0.5">
             {subtitle}
           </div>
         )}

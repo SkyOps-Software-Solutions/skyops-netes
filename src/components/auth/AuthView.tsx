@@ -135,7 +135,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
         </button>
 
         <div className="flex items-center gap-2.5">
-          <BrandLogo size="md" showText />
+          <BrandLogo size="lg" showText />
         </div>
       </header>
 

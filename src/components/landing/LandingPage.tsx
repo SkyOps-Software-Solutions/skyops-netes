@@ -713,20 +713,20 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, on
         .skyops-logo {
           font-weight: 600;
           letter-spacing: -0.02em;
-          font-size: 1.15rem;
+          font-size: 1.25rem;
           display: flex;
           align-items: center;
-          gap: 10px;
+          gap: 12px;
           margin-right: auto;
           color: var(--ink);
           user-select: none;
         }
 
         .skyops-logo img {
-          width: 28px;
-          height: 28px;
+          width: 100%;
+          height: 100%;
           object-fit: contain;
-          border-radius: 6px;
+          border-radius: 10px;
         }
 
         nav.skyops-nav a,
@@ -1188,7 +1188,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, on
       {/* Top Navigation */}
       <nav id="nav" ref={navRef} className="skyops-nav">
         <div className="skyops-logo" onClick={() => scrollToSection(0)} style={{ cursor: 'pointer' }}>
-          <BrandLogo size="md" className="rounded-md" priority />
+          <BrandLogo size="lg" className="rounded-xl" priority />
           <span>SkyOps</span>
         </div>
         <div className="skyops-links">

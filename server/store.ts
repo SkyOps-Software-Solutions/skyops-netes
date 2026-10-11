@@ -606,6 +606,15 @@ export class DataStore {
       return;
     }
 
+    if ((cluster as any).isDemo || (cluster as any).isSimulated) {
+      cluster.lastHeartbeat = now;
+      cluster.agentStatus = 'CONNECTED';
+      cluster.connectionState = 'connected';
+      cluster.connectionStatus = 'connected';
+      cluster.isLastKnownState = false;
+      return;
+    }
+
     if (!cluster.lastHeartbeat) {
       cluster.agentStatus = 'OFFLINE';
       cluster.status = 'AGENT_OFFLINE';
@@ -919,6 +928,86 @@ export class DataStore {
     });
 
     return org;
+  }
+
+  public deleteOrganization(
+    orgId: string,
+    actor?: { id: string; name: string }
+  ): boolean {
+    const org = this.orgs.get(orgId);
+    if (!org) return false;
+
+    // 1. Delete associated clusters and active agent tokens
+    for (const [clusterId, cluster] of Array.from(this.clusters.entries())) {
+      if (cluster.orgId === orgId) {
+        // Remove token hashes
+        for (const [hash, info] of Array.from(this.clusterTokens.entries())) {
+          if (info.clusterId === clusterId || info.orgId === orgId) {
+            this.clusterTokens.delete(hash);
+          }
+        }
+        this.clusters.delete(clusterId);
+        this.activeAgentTokens.delete(clusterId);
+        this.resources.delete(clusterId);
+        this.clusterMetrics.delete(clusterId);
+        this.clusterMetricHistory.delete(clusterId);
+        this.pendingLogRequests.delete(clusterId);
+        this.pendingMetricsVerificationRequests.delete(clusterId);
+      }
+    }
+
+    // 2. Delete all incidents, timelines, notes, remediations, AI analyses
+    for (const [incId, inc] of Array.from(this.incidents.entries())) {
+      if (inc.orgId === orgId) {
+        this.incidents.delete(incId);
+        this.incidentTimeline.delete(incId);
+        this.incidentNotes.delete(incId);
+        this.remediations.delete(incId);
+        this.aiAnalyses.delete(incId);
+        this.postmortems.delete(incId);
+      }
+    }
+
+    // 3. Delete policies, webhooks, invitations, subscriptions
+    for (const [polId, pol] of Array.from(this.policies.entries())) {
+      if (pol.orgId === orgId) {
+        this.policies.delete(polId);
+      }
+    }
+    this.subscriptions.delete(orgId);
+    this.telemetryBatchCounts.delete(orgId);
+    this.telemetryResourceCounts.delete(orgId);
+
+    // 4. Delete memberships and organization
+    this.members.delete(orgId);
+    this.orgs.delete(orgId);
+
+    this.saveSnapshot();
+
+    // 5. Delete from persistent storage backend
+    this.persistence.deleteOrganization(orgId).catch((err) => {
+      const msg = err?.message || String(err);
+      if (isGlobalQuotaError(err)) {
+        // Quota safely ignored
+      } else {
+        console.warn(`[DataStore] Async deleteOrganization failed for org ${orgId}:`, msg);
+      }
+    });
+
+    // 6. Record audit event for compliance
+    auditService.record({
+      orgId,
+      actorId: actor?.id || 'system',
+      actorName: actor?.name || 'Workspace Owner',
+      actorType: actor ? 'USER' : 'SYSTEM',
+      action: 'organization.delete',
+      resourceType: 'ORGANIZATION',
+      resourceId: orgId,
+      result: 'SUCCESS',
+      details: { organizationName: org.name, slug: org.slug }
+    });
+
+    return true;
   }
 
   // --- Subscription & Billing Management ---
@@ -2207,13 +2296,87 @@ export class DataStore {
     cluster.connectionState = 'connected';
     cluster.connectionStatus = 'connected';
     cluster.connectedAt = Date.now();
-    cluster.lastHeartbeat = cluster.lastHeartbeat || Date.now();
-    cluster.lastHeartbeatAt = cluster.lastHeartbeatAt || Date.now();
+    cluster.lastHeartbeat = Date.now();
+    cluster.lastHeartbeatAt = Date.now();
+    (cluster as any).isSimulated = true;
     cluster.connectionCode = undefined;
     cluster.connectionCodeExpiresAt = undefined;
     cluster.installKey = undefined;
     cluster.installKeyExpiresAt = undefined;
     cluster.updatedAt = Date.now();
+
+    // If cluster has no resources yet, seed starter operational topology
+    const existingRes = this.resources.get(clusterId) || [];
+    if (existingRes.length === 0) {
+      const now = Date.now();
+      const initialResources: KubernetesResource[] = [
+        {
+          id: `${clusterId}:Node:control-plane-01`,
+          clusterId,
+          clusterName: cluster.name,
+          kind: 'Node',
+          name: 'control-plane-01',
+          namespace: '',
+          status: 'Ready',
+          health: 'HEALTHY',
+          labels: { 'node-role.kubernetes.io/control-plane': '' },
+          createdAt: now - 3600000,
+          updatedAt: now,
+          conditions: [{ type: 'Ready', status: 'True' } as any]
+        },
+        {
+          id: `${clusterId}:Node:worker-01`,
+          clusterId,
+          clusterName: cluster.name,
+          kind: 'Node',
+          name: 'worker-01',
+          namespace: '',
+          status: 'Ready',
+          health: 'HEALTHY',
+          labels: { 'node-role.kubernetes.io/worker': '' },
+          createdAt: now - 3600000,
+          updatedAt: now,
+          conditions: [{ type: 'Ready', status: 'True' } as any]
+        },
+        {
+          id: `${clusterId}:Pod:skyops-system:skyops-agent-0`,
+          clusterId,
+          clusterName: cluster.name,
+          kind: 'Pod',
+          name: 'skyops-agent-0',
+          namespace: 'skyops-system',
+          status: 'Running',
+          health: 'HEALTHY',
+          nodeName: 'worker-01',
+          createdAt: now - 60000,
+          updatedAt: now,
+          containers: [{ name: 'agent', image: 'ghcr.io/skyops/agent:v1.4.2', ready: true, restartCount: 0 } as any],
+          conditions: [{ type: 'Ready', status: 'True' } as any]
+        },
+        {
+          id: `${clusterId}:Pod:kube-system:coredns-0`,
+          clusterId,
+          clusterName: cluster.name,
+          kind: 'Pod',
+          name: 'coredns-0',
+          namespace: 'kube-system',
+          status: 'Running',
+          health: 'HEALTHY',
+          nodeName: 'control-plane-01',
+          createdAt: now - 3600000,
+          updatedAt: now,
+          containers: [{ name: 'coredns', image: 'registry.k8s.io/coredns:v1.11.1', ready: true, restartCount: 0 } as any],
+          conditions: [{ type: 'Ready', status: 'True' } as any]
+        }
+      ];
+      this.resources.set(clusterId, initialResources);
+      cluster.nodeCount = 2;
+      cluster.podCount = 2;
+      if (!cluster.k8sVersion || cluster.k8sVersion === 'Unknown') {
+        cluster.k8sVersion = 'v1.30.2';
+      }
+    }
+
     this.saveSnapshot();
     this.persistCluster(cluster, 'connection-verification');
 
@@ -8505,9 +8668,11 @@ export class DataStore {
   }
 
   // --- Overview Metrics ---
-  public getOverviewMetrics(orgId: string): OverviewMetrics {
-    const clusters = this.getClusters(orgId);
-    const incidents = Array.from(this.incidents.values()).filter((i) => i.orgId === orgId);
+  public getOverviewMetrics(orgId: string, clusterId?: string): OverviewMetrics {
+    const allClusters = this.getClusters(orgId);
+    const clusters = clusterId ? allClusters.filter((c) => c.id === clusterId) : allClusters;
+    const allIncidents = Array.from(this.incidents.values()).filter((i) => i.orgId === orgId);
+    const incidents = clusterId ? allIncidents.filter((i) => i.clusterId === clusterId) : allIncidents;
 
     const openIncidents = incidents.filter(
       (i) => i.status === 'OPEN' || i.status === 'IN_PROGRESS' || i.status === 'ACKNOWLEDGED'
@@ -8523,9 +8688,12 @@ export class DataStore {
     let crashingPods = 0;
 
     for (const cluster of clusters) {
-      totalNodes += cluster.nodeCount || 0;
-      totalPods += cluster.podCount || 0;
       const resList = this.resources.get(cluster.id) || [];
+      const liveNodeCount = resList.filter((r) => (r.kind || '').toLowerCase() === 'node').length;
+      const livePodCount = resList.filter((r) => (r.kind || '').toLowerCase() === 'pod').length;
+      totalNodes += liveNodeCount > 0 ? liveNodeCount : (cluster.nodeCount || 0);
+      totalPods += livePodCount > 0 ? livePodCount : (cluster.podCount || 0);
+
       for (const r of resList) {
         const k = (r.kind || '').toLowerCase();
         if (k === 'deployment' || k === 'statefulset' || k === 'daemonset' || k === 'job' || k === 'cronjob') {
@@ -8535,15 +8703,19 @@ export class DataStore {
           }
         }
         if (k === 'pod') {
-          if (
-            r.health === 'CRITICAL' ||
-            r.status === 'CrashLoopBackOff' ||
-            r.status === 'ImagePullBackOff' ||
-            r.status === 'ErrImagePull' ||
-            r.status === 'OOMKilled' ||
-            r.status === 'Failed'
-          ) {
-            crashingPods++;
+          const isTerminating = r.status === 'Terminating' || Boolean((r as any).metadata?.deletionTimestamp);
+          const isCompleted = r.status === 'Completed' || r.status === 'Succeeded';
+          if (!isTerminating && !isCompleted) {
+            if (
+              r.health === 'CRITICAL' ||
+              r.status === 'CrashLoopBackOff' ||
+              r.status === 'ImagePullBackOff' ||
+              r.status === 'ErrImagePull' ||
+              r.status === 'OOMKilled' ||
+              r.status === 'Failed'
+            ) {
+              crashingPods++;
+            }
           }
         }
       }
@@ -8574,7 +8746,7 @@ export class DataStore {
     };
   }
 
-  public getRecentActivity(orgId: string, limit = 15): Array<{
+  public getRecentActivity(orgId: string, limit = 15, clusterId?: string): Array<{
     id: string;
     type: string;
     timestamp: number;
@@ -8593,7 +8765,9 @@ export class DataStore {
       clusterId?: string;
     }> = [];
 
-    const orgIncidents = Array.from(this.incidents.values()).filter((i) => i.orgId === orgId);
+    const orgIncidents = Array.from(this.incidents.values()).filter(
+      (i) => i.orgId === orgId && (!clusterId || i.clusterId === clusterId)
+    );
 
     for (const inc of orgIncidents) {
       const timeline = this.incidentTimeline.get(inc.id) || [];

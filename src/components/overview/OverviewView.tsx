@@ -9,6 +9,7 @@ import {
   Clock,
   Cpu,
   Database,
+  DollarSign,
   ExternalLink,
   Flame,
   HardDrive,
@@ -28,11 +29,19 @@ import {
 import React, { useMemo, useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { Cluster, Incident, KubernetesResource, OverviewMetrics } from '../../types/index';
+import { CostOverview } from '../../types/enterprise';
 import { ClusterStatusBadge, SeverityBadge, StatusBadge } from '../common/Badges';
-import { Button, EmptyState } from '../common/UI';
+import { Button, EmptyState, Modal } from '../common/UI';
 import { ErrorBoundary } from '../common/ErrorBoundary';
 import { BrandLogo } from '../common/BrandLogo';
 import { ClusterInfrastructureBadges } from '../common/CloudProviderBadge';
+import {
+  computeScopedOverviewMetrics,
+  correlateAndPrioritizeIncidents,
+  determineOperationalHealth,
+  PrioritizedIncident,
+  OperationalHealthAssessment
+} from './overviewLogic';
 
 interface OverviewViewProps {
   metrics: OverviewMetrics | null;
@@ -53,6 +62,10 @@ interface OverviewViewProps {
   onRefresh: () => void;
   loading: boolean;
   onNavigateTab?: (tab: any) => void;
+  lastUpdatedAt?: number | null;
+  fetchError?: string | null;
+  isStale?: boolean;
+  refreshKey?: number;
 }
 
 const OverviewViewContent: React.FC<OverviewViewProps> = ({
@@ -64,26 +77,180 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
   onSelectCluster,
   onOpenAddCluster,
   onRefresh,
-  loading
+  loading,
+  lastUpdatedAt,
+  fetchError,
+  isStale = false,
+  refreshKey = 0,
+  onNavigateTab
 }) => {
   const [resources, setResources] = useState<KubernetesResource[]>([]);
   const [loadingResources, setLoadingResources] = useState(false);
+  const [resourceFetchError, setResourceFetchError] = useState<string | null>(null);
+  const [resourcesLastUpdated, setResourcesLastUpdated] = useState<number | null>(null);
+  const [scopedMetricsFromApi, setScopedMetricsFromApi] = useState<OverviewMetrics | null>(null);
+  const [costOverview, setCostOverview] = useState<CostOverview | null>(null);
   const [clusterFilter, setClusterFilter] = useState<string>('all');
   const [activeIncidentTab, setActiveIncidentTab] = useState<'all' | 'critical' | 'high' | 'in_progress'>('all');
-  const [inventorySearch, setInventorySearch] = useState('');
   const [autoHealingAll, setAutoHealingAll] = useState(false);
+  const [showAutoHealConfirmModal, setShowAutoHealConfirmModal] = useState(false);
   const [healingIncidentId, setHealingIncidentId] = useState<string | null>(null);
-  const [overviewNotice, setOverviewNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [overviewNotice, setOverviewNotice] = useState<{ type: 'success' | 'warning' | 'error' | 'info'; message: string } | null>(null);
 
-  const handleAutoHealAll = async () => {
+  // Sync resources and scoped overview data whenever cluster selection or refreshKey changes
+  useEffect(() => {
+    let isMounted = true;
+    const fetchData = async () => {
+      try {
+        setLoadingResources(true);
+        const [resData, ovData] = await Promise.all([
+          clusterFilter !== 'all' ? api.getClusterResources(clusterFilter) : api.getAllResources(),
+          api.getOverview(clusterFilter).catch((err) => {
+            console.warn('Overview API notice:', err?.message || err);
+            return null;
+          })
+        ]);
+
+        if (isMounted) {
+          setResources(Array.isArray(resData) ? resData : []);
+          if (ovData) {
+            setScopedMetricsFromApi(ovData.metrics || null);
+            setCostOverview(ovData.costOverview || null);
+          }
+          setResourceFetchError(null);
+          setResourcesLastUpdated(Date.now());
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          console.warn('OverviewView resources fetch notice:', err?.message || err);
+          setResourceFetchError(err?.message || 'Failed to sync cluster resources');
+        }
+      } finally {
+        if (isMounted) setLoadingResources(false);
+      }
+    };
+
+    fetchData();
+    return () => {
+      isMounted = false;
+    };
+  }, [clusterFilter, refreshKey]);
+
+  const safeClusters = Array.isArray(clusters) ? clusters : [];
+  const safeIncidents = Array.isArray(recentIncidents) ? recentIncidents : [];
+  const safeActivity = Array.isArray(recentActivity) ? recentActivity : [];
+  const safeResources = Array.isArray(resources) ? resources : [];
+
+  const isSingleCluster = clusterFilter !== 'all';
+  const selectedCluster = useMemo(() => {
+    return isSingleCluster ? safeClusters.find((c) => c.id === clusterFilter) || null : null;
+  }, [safeClusters, isSingleCluster, clusterFilter]);
+
+  // Scoped activity for the selected cluster
+  const scopedActivity = useMemo(() => {
+    if (!isSingleCluster) return safeActivity;
+    return safeActivity.filter((a) => !a.clusterId || a.clusterId === clusterFilter);
+  }, [safeActivity, isSingleCluster, clusterFilter]);
+
+  // Compute strictly scoped KPI metrics without mixing fleet and cluster-level counts
+  const scopedMetrics = useMemo(() => {
+    return computeScopedOverviewMetrics({
+      clusters: safeClusters,
+      resources: safeResources,
+      incidents: safeIncidents,
+      clusterFilter,
+      metrics: scopedMetricsFromApi || metrics
+    });
+  }, [safeClusters, safeResources, safeIncidents, clusterFilter, scopedMetricsFromApi, metrics]);
+
+  // Open & active incidents strictly for the selected scope
+  const openIncidents = useMemo(() => {
+    const list = isSingleCluster
+      ? safeIncidents.filter((i) => i.clusterId === clusterFilter)
+      : safeIncidents;
+    return list.filter(
+      (i) => i && (i.status === 'OPEN' || i.status === 'IN_PROGRESS' || i.status === 'ACKNOWLEDGED')
+    );
+  }, [safeIncidents, isSingleCluster, clusterFilter]);
+
+  // Deterministically prioritized and correlated incidents
+  const prioritizedIncidents = useMemo(() => {
+    const list = isSingleCluster
+      ? safeIncidents.filter((i) => i.clusterId === clusterFilter)
+      : safeIncidents;
+    return correlateAndPrioritizeIncidents(list, safeResources, safeClusters);
+  }, [safeIncidents, safeResources, safeClusters, isSingleCluster, clusterFilter]);
+
+  // Incidents filtered by the active triage radar sub-tab
+  const displayedIncidents = useMemo(() => {
+    const openList = prioritizedIncidents.filter(
+      (i) => i.status === 'OPEN' || i.status === 'IN_PROGRESS' || i.status === 'ACKNOWLEDGED'
+    );
+    if (activeIncidentTab === 'critical') return openList.filter((i) => i.severity === 'CRITICAL');
+    if (activeIncidentTab === 'high') return openList.filter((i) => i.severity === 'HIGH');
+    if (activeIncidentTab === 'in_progress') return openList.filter((i) => i.status === 'IN_PROGRESS');
+    return openList;
+  }, [prioritizedIncidents, activeIncidentTab]);
+
+  // Authoritative operational health assessment with clear, transparent observations
+  const healthAssessment = useMemo(() => {
+    return determineOperationalHealth({
+      clusters: safeClusters,
+      selectedCluster,
+      isSingleCluster,
+      resources: safeResources,
+      openIncidents,
+      isStale,
+      loading: loading || loadingResources,
+      fetchError: fetchError || resourceFetchError,
+      lastUpdatedAt: resourcesLastUpdated || lastUpdatedAt
+    });
+  }, [
+    safeClusters,
+    selectedCluster,
+    isSingleCluster,
+    safeResources,
+    openIncidents,
+    isStale,
+    loading,
+    loadingResources,
+    fetchError,
+    resourceFetchError,
+    resourcesLastUpdated,
+    lastUpdatedAt
+  ]);
+
+  const handleAutoHealAll = () => {
+    setShowAutoHealConfirmModal(true);
+  };
+
+  const handleAutoHealAllConfirmed = async () => {
     try {
       setAutoHealingAll(true);
       setOverviewNotice(null);
-      const res = await api.autoHealAllIncidents(clusterFilter !== 'all' ? clusterFilter : undefined);
-      setOverviewNotice({
-        type: 'success',
-        message: res.message || `Auto-healed ${res.healed} of ${res.total} fleet incidents.`
-      });
+      const targetClusterId = clusterFilter !== 'all' ? clusterFilter : undefined;
+      const res = await api.autoHealAllIncidents(targetClusterId);
+      if (res.total === 0) {
+        setOverviewNotice({
+          type: 'info',
+          message: 'No active eligible incidents found in this scope.'
+        });
+      } else if (res.healed === res.total) {
+        setOverviewNotice({
+          type: 'success',
+          message: `Successfully auto-healed and verified all ${res.healed} of ${res.total} incidents.`
+        });
+      } else if (res.healed > 0) {
+        setOverviewNotice({
+          type: 'warning',
+          message: `Partial auto-healing: ${res.healed} of ${res.total} incidents healed and verified (${res.failed} skipped or require manual approval).`
+        });
+      } else {
+        setOverviewNotice({
+          type: 'error',
+          message: `Auto-healing unexecuted: 0 of ${res.total} incidents healed (${res.failed} failed safety or policy checks).`
+        });
+      }
       onRefresh();
     } catch (err: any) {
       console.error('Failed to auto-heal fleet incidents:', err);
@@ -93,19 +260,28 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
       });
     } finally {
       setAutoHealingAll(false);
+      setShowAutoHealConfirmModal(false);
     }
   };
 
   const handleQuickAutoHeal = async (e: React.MouseEvent, incidentId: string) => {
     e.stopPropagation();
+    if (healingIncidentId) return;
     try {
       setHealingIncidentId(incidentId);
       setOverviewNotice(null);
-      await api.autoHealIncident(incidentId);
-      setOverviewNotice({
-        type: 'success',
-        message: `Incident ${incidentId} auto-healed and verified.`
-      });
+      const res = await api.autoHealIncident(incidentId);
+      if (res.success && (res.incident?.status === 'RESOLVED' || res.remediation?.status === 'VERIFIED_RESOLVED')) {
+        setOverviewNotice({
+          type: 'success',
+          message: `Incident ${incidentId} auto-healed and verified healthy (${res.remediation?.actionType || 'Remediated'}).`
+        });
+      } else {
+        setOverviewNotice({
+          type: 'warning',
+          message: `Incident ${incidentId}: Action dispatched (${res.remediation?.status || 'PENDING'}), verification in progress.`
+        });
+      }
       onRefresh();
     } catch (err: any) {
       console.error(`Failed to auto-heal incident ${incidentId}:`, err);
@@ -118,36 +294,8 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
     }
   };
 
-  // Fetch all resources across clusters to populate live node, pod, and workload telemetry
-  useEffect(() => {
-    let isMounted = true;
-    const fetchResources = async () => {
-      try {
-        setLoadingResources(true);
-        const data = await api.getAllResources();
-        if (isMounted) {
-          setResources(Array.isArray(data) ? data : []);
-        }
-      } catch (err) {
-        console.warn('OverviewView getAllResources notice:', err);
-      } finally {
-        if (isMounted) setLoadingResources(false);
-      }
-    };
-
-    fetchResources();
-    return () => {
-      isMounted = false;
-    };
-  }, [clusters.length]);
-
-  const safeClusters = Array.isArray(clusters) ? clusters : [];
-  const safeIncidents = Array.isArray(recentIncidents) ? recentIncidents : [];
-  const safeActivity = Array.isArray(recentActivity) ? recentActivity : [];
-  const safeResources = Array.isArray(resources) ? resources : [];
-
   const formatTimeAgo = (ts?: number) => {
-    if (!ts) return 'Never';
+    if (!ts || isNaN(ts) || ts <= 0) return 'Never';
     const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
     if (diffSec < 10) return 'Just now';
     if (diffSec < 60) return `${diffSec}s ago`;
@@ -158,68 +306,30 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
     return `${Math.floor(diffHours / 24)}d ago`;
   };
 
-  // Open & active incidents
-  const openIncidents = useMemo(() => {
-    return safeIncidents.filter(
-      (i) => i && (i.status === 'OPEN' || i.status === 'IN_PROGRESS' || i.status === 'ACKNOWLEDGED')
-    );
-  }, [safeIncidents]);
-
-  const criticalIncidents = useMemo(
-    () => openIncidents.filter((i) => i.severity === 'CRITICAL'),
-    [openIncidents]
-  );
-  const highIncidents = useMemo(
-    () => openIncidents.filter((i) => i.severity === 'HIGH'),
-    [openIncidents]
-  );
-  const inProgressIncidents = useMemo(
-    () => openIncidents.filter((i) => i.status === 'IN_PROGRESS'),
-    [openIncidents]
-  );
-
-  // Filtered incidents according to active tab
-  const displayedIncidents = useMemo(() => {
-    let list = openIncidents;
-    if (activeIncidentTab === 'critical') list = criticalIncidents;
-    else if (activeIncidentTab === 'high') list = highIncidents;
-    else if (activeIncidentTab === 'in_progress') list = inProgressIncidents;
-
-    if (clusterFilter !== 'all') {
-      list = list.filter((i) => i.clusterId === clusterFilter);
-    }
-    return list;
-  }, [openIncidents, criticalIncidents, highIncidents, inProgressIncidents, activeIncidentTab, clusterFilter]);
-
-  // Nodes, Pods, Workloads breakdown
-  const workloadKinds = ['Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob'];
-  const allPods = useMemo(() => safeResources.filter((r) => r.kind === 'Pod'), [safeResources]);
-  const allNodes = useMemo(() => safeResources.filter((r) => r.kind === 'Node'), [safeResources]);
-  const allWorkloads = useMemo(
-    () => safeResources.filter((r) => workloadKinds.includes(r.kind)),
-    [safeResources]
-  );
-
-  // Filter by selected cluster if applicable
-  const filteredPods = useMemo(() => {
-    if (clusterFilter === 'all') return allPods;
-    return allPods.filter((p) => p.clusterId === clusterFilter);
-  }, [allPods, clusterFilter]);
-
+  // Filtered nodes, pods, workloads for detailed breakdown cards
   const filteredNodes = useMemo(() => {
-    if (clusterFilter === 'all') return allNodes;
-    return allNodes.filter((n) => n.clusterId === clusterFilter);
-  }, [allNodes, clusterFilter]);
+    const list = safeResources.filter((r) => r.kind === 'Node');
+    return isSingleCluster ? list.filter((n) => n.clusterId === clusterFilter) : list;
+  }, [safeResources, isSingleCluster, clusterFilter]);
+
+  const filteredPods = useMemo(() => {
+    const list = safeResources.filter((r) => r.kind === 'Pod');
+    return isSingleCluster ? list.filter((p) => p.clusterId === clusterFilter) : list;
+  }, [safeResources, isSingleCluster, clusterFilter]);
 
   const filteredWorkloads = useMemo(() => {
-    if (clusterFilter === 'all') return allWorkloads;
-    return allWorkloads.filter((w) => w.clusterId === clusterFilter);
-  }, [allWorkloads, clusterFilter]);
+    const list = safeResources.filter((r) =>
+      ['Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob'].includes(r.kind)
+    );
+    return isSingleCluster ? list.filter((w) => w.clusterId === clusterFilter) : list;
+  }, [safeResources, isSingleCluster, clusterFilter]);
 
-  // Problematic resources
   const crashingPods = useMemo(() => {
-    return filteredPods.filter(
-      (p) =>
+    return filteredPods.filter((p) => {
+      const isCompleted = p.status === 'Completed' || p.status === 'Succeeded';
+      const isTerminating = p.status === 'Terminating' || Boolean((p as any).metadata?.deletionTimestamp);
+      if (isCompleted || isTerminating) return false;
+      return (
         p.health === 'CRITICAL' ||
         p.status === 'CrashLoopBackOff' ||
         p.status === 'ImagePullBackOff' ||
@@ -227,12 +337,9 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
         p.status === 'OOMKilled' ||
         p.status === 'Failed' ||
         p.status === 'Error'
-    );
+      );
+    });
   }, [filteredPods]);
-
-  const degradedWorkloads = useMemo(() => {
-    return filteredWorkloads.filter((w) => w.health === 'CRITICAL' || w.health === 'WARNING');
-  }, [filteredWorkloads]);
 
   const pressureNodes = useMemo(() => {
     return filteredNodes.filter((n) => {
@@ -249,22 +356,6 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
     });
   }, [filteredNodes]);
 
-  // Overall Global Health Status computation
-  const overallGlobalStatus = useMemo<'HEALTHY' | 'WARNING' | 'CRITICAL'>(() => {
-    if (criticalIncidents.length > 0 || crashingPods.length > 0 || (metrics?.criticalClusters ?? 0) > 0) {
-      return 'CRITICAL';
-    }
-    if (
-      highIncidents.length > 0 ||
-      degradedWorkloads.length > 0 ||
-      pressureNodes.length > 0 ||
-      (metrics?.warningClusters ?? 0) > 0
-    ) {
-      return 'WARNING';
-    }
-    return 'HEALTHY';
-  }, [criticalIncidents, crashingPods, metrics, highIncidents, degradedWorkloads, pressureNodes]);
-
   return (
     <div className="p-6 lg:p-8 space-y-8 max-w-7xl mx-auto font-sans text-zinc-100">
       {/* 1. Global Command Center Header */}
@@ -277,23 +368,27 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
             </h1>
             <span
               className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-bold flex items-center gap-1.5 border ${
-                overallGlobalStatus === 'HEALTHY'
+                healthAssessment.status === 'HEALTHY'
                   ? 'bg-emerald-950/70 text-emerald-300 border-emerald-800'
-                  : overallGlobalStatus === 'WARNING'
+                  : healthAssessment.status === 'WARNING'
                   ? 'bg-amber-950/70 text-amber-300 border-amber-800'
+                  : healthAssessment.status === 'DEGRADED' || healthAssessment.status === 'SYNCING'
+                  ? 'bg-sky-950/70 text-sky-300 border-sky-800'
                   : 'bg-rose-950/80 text-rose-300 border-rose-800 animate-pulse'
               }`}
             >
               <span
                 className={`w-2 h-2 rounded-full ${
-                  overallGlobalStatus === 'HEALTHY'
+                  healthAssessment.status === 'HEALTHY'
                     ? 'bg-emerald-400'
-                    : overallGlobalStatus === 'WARNING'
+                    : healthAssessment.status === 'WARNING'
                     ? 'bg-amber-400'
+                    : healthAssessment.status === 'DEGRADED' || healthAssessment.status === 'SYNCING'
+                    ? 'bg-sky-400'
                     : 'bg-rose-500'
                 }`}
               />
-              SYSTEM {overallGlobalStatus}
+              SYSTEM {healthAssessment.status}
             </span>
           </div>
           <p className="text-xs font-mono text-zinc-400 mt-1">
@@ -326,10 +421,10 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
             variant="outline"
             size="sm"
             onClick={onRefresh}
-            disabled={loading}
-            icon={<RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-sky-400' : ''}`} />}
+            disabled={loading || loadingResources}
+            icon={<RefreshCw className={`w-3.5 h-3.5 ${loading || loadingResources ? 'animate-spin text-sky-400' : ''}`} />}
           >
-            {loading ? 'Refreshing...' : 'Refresh Fleet'}
+            {loading || loadingResources ? 'Refreshing...' : 'Refresh Fleet'}
           </Button>
 
           <Button
@@ -349,12 +444,16 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
           className={`p-3 text-xs rounded-xl font-mono flex items-center justify-between border ${
             overviewNotice.type === 'success'
               ? 'bg-emerald-950/60 border-emerald-700/60 text-emerald-300'
+              : overviewNotice.type === 'info'
+              ? 'bg-sky-950/60 border-sky-700/60 text-sky-300'
               : 'bg-rose-950/60 border-rose-800 text-rose-300'
           }`}
         >
           <div className="flex items-center gap-2">
             {overviewNotice.type === 'success' ? (
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : overviewNotice.type === 'info' ? (
+              <Info className="w-4 h-4 text-sky-400 shrink-0" />
             ) : (
               <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
             )}
@@ -368,6 +467,49 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
           </button>
         </div>
       )}
+
+      {/* Operational Health Diagnosis Banner */}
+      <div
+        className={`p-4 rounded-xl border font-mono text-xs space-y-2.5 transition-colors ${
+          healthAssessment.status === 'HEALTHY'
+            ? 'bg-emerald-950/20 border-emerald-800/40 text-emerald-200'
+            : healthAssessment.status === 'WARNING'
+            ? 'bg-amber-950/25 border-amber-800/50 text-amber-200'
+            : healthAssessment.status === 'DEGRADED' || healthAssessment.status === 'SYNCING'
+            ? 'bg-sky-950/25 border-sky-800/50 text-sky-200'
+            : 'bg-rose-950/30 border-rose-800/60 text-rose-200'
+        }`}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2 font-bold text-sm text-white">
+            {healthAssessment.status === 'HEALTHY' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : healthAssessment.status === 'WARNING' ? (
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            ) : healthAssessment.status === 'DEGRADED' || healthAssessment.status === 'SYNCING' ? (
+              <Info className="w-4 h-4 text-sky-400 shrink-0" />
+            ) : (
+              <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0 animate-pulse" />
+            )}
+            <span>{healthAssessment.headline}</span>
+          </div>
+          <span className="text-[11px] text-zinc-400 shrink-0">
+            {healthAssessment.dataFreshnessText}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-zinc-400 pt-2 border-t border-zinc-800/40">
+          <span className="text-zinc-500 font-semibold uppercase tracking-wider text-[10px]">
+            Observations:
+          </span>
+          {healthAssessment.observations.map((obs, idx) => (
+            <span key={idx} className="flex items-center gap-1.5 text-zinc-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-zinc-500" />
+              <span>{obs}</span>
+            </span>
+          ))}
+        </div>
+      </div>
 
       {/* Prominent Empty State if NO clusters exist */}
       {safeClusters.length === 0 && (
@@ -404,12 +546,20 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
             <Server className="w-3.5 h-3.5 text-zinc-500" />
           </div>
           <div className="text-2xl font-bold font-mono text-white mt-2">
-            {metrics?.totalClusters ?? safeClusters.length}
+            {scopedMetrics.totalClustersCount}
           </div>
           <div className="text-[10px] font-mono text-zinc-500 mt-1 flex items-center gap-1.5">
-            <span className="text-emerald-400">{metrics?.healthyClusters ?? 0} healthy</span>
-            <span>•</span>
-            <span className="text-rose-400">{metrics?.criticalClusters ?? 0} crit</span>
+            {isSingleCluster ? (
+              <span className={selectedCluster?.status === 'HEALTHY' ? 'text-emerald-400' : 'text-amber-400'}>
+                {selectedCluster?.name || 'Selected'}
+              </span>
+            ) : (
+              <>
+                <span className="text-emerald-400">{scopedMetrics.healthyClustersCount} healthy</span>
+                <span>•</span>
+                <span className="text-rose-400">{scopedMetrics.criticalClustersCount} crit</span>
+              </>
+            )}
           </div>
         </div>
 
@@ -420,13 +570,15 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
             <Cpu className="w-3.5 h-3.5 text-zinc-500" />
           </div>
           <div className="text-2xl font-bold font-mono text-zinc-100 mt-2">
-            {metrics?.totalNodes ?? allNodes.length}
+            {scopedMetrics.totalNodesCount}
           </div>
           <div className="text-[10px] font-mono text-zinc-500 mt-1 flex items-center gap-1">
-            {pressureNodes.length > 0 ? (
-              <span className="text-amber-400 font-bold">{pressureNodes.length} with pressure</span>
+            {scopedMetrics.totalNodesCount === 0 ? (
+              <span className="text-zinc-500">No node telemetry</span>
+            ) : scopedMetrics.pressureNodesCount > 0 ? (
+              <span className="text-amber-400 font-bold">{scopedMetrics.pressureNodesCount} with pressure</span>
             ) : (
-              <span className="text-emerald-400">All nodes Ready</span>
+              <span className="text-emerald-400">{scopedMetrics.readyNodesCount} Ready</span>
             )}
           </div>
         </div>
@@ -434,23 +586,25 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
         {/* Total Pods & Failing Count */}
         <div
           className={`p-4 rounded-xl border flex flex-col justify-between ${
-            crashingPods.length > 0
+            scopedMetrics.crashingPodsCount > 0
               ? 'bg-rose-950/20 border-rose-900/50 text-rose-300'
               : 'bg-zinc-900/70 border-zinc-800/80 text-zinc-300'
           }`}
         >
           <div className="text-[11px] font-mono uppercase tracking-wider flex items-center justify-between">
-            <span className={crashingPods.length > 0 ? 'text-rose-400' : 'text-zinc-400'}>Pods</span>
+            <span className={scopedMetrics.crashingPodsCount > 0 ? 'text-rose-400' : 'text-zinc-400'}>Pods</span>
             <Boxes className="w-3.5 h-3.5" />
           </div>
           <div className="text-2xl font-bold font-mono text-white mt-2">
-            {metrics?.totalPods ?? allPods.length}
+            {scopedMetrics.totalPodsCount}
           </div>
           <div className="text-[10px] font-mono mt-1">
-            {crashingPods.length > 0 ? (
-              <span className="text-rose-400 font-bold">{crashingPods.length} failing / crashing</span>
+            {scopedMetrics.totalPodsCount === 0 ? (
+              <span className="text-zinc-500">No pod telemetry</span>
+            ) : scopedMetrics.crashingPodsCount > 0 ? (
+              <span className="text-rose-400 font-bold">{scopedMetrics.crashingPodsCount} failing / crashing</span>
             ) : (
-              <span className="text-emerald-400">0 crashing</span>
+              <span className="text-emerald-400">{scopedMetrics.healthyPodsCount} healthy</span>
             )}
           </div>
         </div>
@@ -462,13 +616,13 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
             <Layers className="w-3.5 h-3.5 text-zinc-500" />
           </div>
           <div className="text-2xl font-bold font-mono text-zinc-100 mt-2">
-            {metrics?.totalWorkloads ?? allWorkloads.length}
+            {scopedMetrics.totalWorkloadsCount}
           </div>
           <div className="text-[10px] font-mono text-zinc-500 mt-1">
-            {degradedWorkloads.length > 0 ? (
-              <span className="text-amber-400 font-semibold">{degradedWorkloads.length} degraded</span>
+            {scopedMetrics.degradedWorkloadsCount > 0 ? (
+              <span className="text-amber-400 font-semibold">{scopedMetrics.degradedWorkloadsCount} degraded</span>
             ) : (
-              <span className="text-emerald-400">0 degraded</span>
+              <span className="text-emerald-400">{scopedMetrics.nominalWorkloadsCount} nominal</span>
             )}
           </div>
         </div>
@@ -476,7 +630,7 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
         {/* Active Incidents */}
         <div
           className={`p-4 rounded-xl border flex flex-col justify-between ${
-            openIncidents.length > 0
+            scopedMetrics.openIncidentsCount > 0
               ? 'bg-purple-950/25 border-purple-800/60 text-purple-300'
               : 'bg-zinc-900/70 border-zinc-800/80'
           }`}
@@ -486,12 +640,12 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
             <AlertTriangle className="w-3.5 h-3.5" />
           </div>
           <div className="text-2xl font-bold font-mono text-white mt-2">
-            {openIncidents.length}
+            {scopedMetrics.openIncidentsCount}
           </div>
           <div className="text-[10px] font-mono text-zinc-400 mt-1 flex items-center gap-1.5">
-            <span className="text-rose-400">{criticalIncidents.length} crit</span>
+            <span className="text-rose-400">{scopedMetrics.criticalIncidentsCount} crit</span>
             <span>•</span>
-            <span className="text-amber-400">{highIncidents.length} high</span>
+            <span className="text-amber-400">{scopedMetrics.highIncidentsCount} high</span>
           </div>
         </div>
 
@@ -502,14 +656,14 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
             <Activity className="w-3.5 h-3.5 text-emerald-400" />
           </div>
           <div className="text-2xl font-bold font-mono text-emerald-400 mt-2 flex items-center gap-2">
-            <span>{metrics?.connectedAgents ?? safeClusters.filter((c) => c.agentStatus === 'CONNECTED').length}</span>
+            <span>{scopedMetrics.connectedAgentsCount}</span>
             <span className="text-xs font-mono font-normal text-zinc-500">
-              / {safeClusters.length}
+              / {isSingleCluster ? 1 : safeClusters.length}
             </span>
           </div>
           <div className="text-[10px] font-mono text-zinc-500 mt-1">
-            {metrics?.offlineAgents ? (
-              <span className="text-rose-400">{metrics.offlineAgents} agent(s) offline</span>
+            {scopedMetrics.offlineAgentsCount > 0 ? (
+              <span className="text-rose-400">{scopedMetrics.offlineAgentsCount} agent(s) offline</span>
             ) : (
               <span className="text-emerald-400 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -521,18 +675,18 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
       </div>
 
       {/* 3. Operational Attention Banner if Failing Resources or Critical Incidents */}
-      {(crashingPods.length > 0 || degradedWorkloads.length > 0 || criticalIncidents.length > 0) && (
+      {(crashingPods.length > 0 || scopedMetrics.degradedWorkloadsCount > 0 || scopedMetrics.criticalIncidentsCount > 0) && (
         <div className="p-4 rounded-xl bg-rose-950/30 border border-rose-800/60 font-mono text-xs space-y-3">
           <div className="flex items-center justify-between border-b border-rose-900/50 pb-2.5">
             <div className="flex items-center gap-2 text-rose-300 font-bold">
               <ShieldAlert className="w-4 h-4 text-rose-400 animate-pulse" />
               <span>
-                IMMEDIATE OPERATOR ATTENTION REQUIRED • {crashingPods.length} FAILING PODS •{' '}
-                {criticalIncidents.length} CRITICAL INCIDENTS
+                OPERATIONAL ATTENTION REQUIRED • {crashingPods.length} FAILING PODS •{' '}
+                {scopedMetrics.criticalIncidentsCount} CRITICAL INCIDENTS
               </span>
             </div>
             <span className="text-[11px] text-rose-400/80 hidden sm:inline">
-              Automated correlation active
+              Automated deterministic correlation active
             </span>
           </div>
 
@@ -552,7 +706,7 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
                 {p.clusterId && (
                   <button
                     onClick={() => onSelectCluster(p.clusterId)}
-                    className="px-2 py-1 rounded bg-rose-950 text-rose-200 border border-rose-800 text-[10px] hover:bg-rose-900 transition-colors shrink-0"
+                    className="px-2 py-1 rounded bg-rose-950 text-rose-200 border border-rose-800 text-[10px] hover:bg-rose-900 transition-colors shrink-0 cursor-pointer"
                   >
                     Inspect in Cluster →
                   </button>
@@ -570,11 +724,11 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-zinc-200 font-mono uppercase tracking-wider flex items-center gap-2">
               <Server className="w-4 h-4 text-sky-400" />
-              <span>Kubernetes Fleet Status ({safeClusters.length})</span>
+              <span>Kubernetes Fleet Status ({isSingleCluster ? 1 : safeClusters.length})</span>
             </h2>
             <button
               onClick={onOpenAddCluster}
-              className="text-xs font-mono text-sky-400 hover:text-sky-300 flex items-center gap-1"
+              className="text-xs font-mono text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer"
             >
               <span>+ Connect New</span>
             </button>
@@ -588,8 +742,8 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
             />
           ) : (
             <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-800/80">
-              {safeClusters.map((cluster) => {
-                const clusterPods = allPods.filter((p) => p.clusterId === cluster.id);
+              {(isSingleCluster && selectedCluster ? [selectedCluster] : safeClusters).map((cluster) => {
+                const clusterPods = safeResources.filter((p) => p.kind === 'Pod' && p.clusterId === cluster.id);
                 const clusterCrashing = clusterPods.filter(
                   (p) =>
                     p.health === 'CRITICAL' ||
@@ -661,24 +815,6 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
                           </>
                         )}
 
-                        {clusterZones.length > 0 && (
-                          <>
-                            <span className="text-zinc-600">•</span>
-                            <span className="text-zinc-300">
-                              AZ: <strong className="text-zinc-400 font-normal">{clusterZones.join(', ')}</strong>
-                            </span>
-                          </>
-                        )}
-
-                        {clusterInstanceTypes.length > 0 && (
-                          <>
-                            <span className="text-zinc-600">•</span>
-                            <span className="text-zinc-300">
-                              Type: <strong className="text-emerald-400 font-normal">{clusterInstanceTypes.join(', ')}</strong>
-                            </span>
-                          </>
-                        )}
-
                         {clusterCrashing.length > 0 && (
                           <>
                             <span className="text-zinc-600">•</span>
@@ -715,12 +851,12 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
           )}
         </div>
 
-        {/* Right Column (5 cols): Active Incident Triage Feed */}
+        {/* Right Column (5 cols): Active Incident Radar */}
         <div className="lg:col-span-5 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-zinc-200 font-mono uppercase tracking-wider flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-400" />
-              <span>Incident Radar ({displayedIncidents.length})</span>
+              <span>Prioritized Incident Radar ({displayedIncidents.length})</span>
             </h2>
             {openIncidents.length > 0 && (
               <Button
@@ -741,7 +877,7 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
           <div className="flex items-center gap-1 border-b border-zinc-800 pb-2 text-xs font-mono">
             <button
               onClick={() => setActiveIncidentTab('all')}
-              className={`px-2.5 py-1 rounded transition-colors ${
+              className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
                 activeIncidentTab === 'all'
                   ? 'bg-zinc-800 text-zinc-100 font-bold'
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -751,33 +887,33 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
             </button>
             <button
               onClick={() => setActiveIncidentTab('critical')}
-              className={`px-2.5 py-1 rounded transition-colors ${
+              className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
                 activeIncidentTab === 'critical'
                   ? 'bg-rose-950 text-rose-300 font-bold border border-rose-800'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              Critical ({criticalIncidents.length})
+              Critical ({scopedMetrics.criticalIncidentsCount})
             </button>
             <button
               onClick={() => setActiveIncidentTab('high')}
-              className={`px-2.5 py-1 rounded transition-colors ${
+              className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
                 activeIncidentTab === 'high'
                   ? 'bg-amber-950 text-amber-300 font-bold border border-amber-800'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              High ({highIncidents.length})
+              High ({scopedMetrics.highIncidentsCount})
             </button>
             <button
               onClick={() => setActiveIncidentTab('in_progress')}
-              className={`px-2.5 py-1 rounded transition-colors ${
+              className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
                 activeIncidentTab === 'in_progress'
                   ? 'bg-purple-950 text-purple-300 font-bold border border-purple-800'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              In Progress ({inProgressIncidents.length})
+              In Progress ({scopedMetrics.inProgressIncidentsCount})
             </button>
           </div>
 
@@ -797,16 +933,52 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
                   onClick={() => onSelectIncident(inc.id)}
                   className="p-3.5 hover:bg-zinc-850/60 transition-colors cursor-pointer space-y-2"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-sky-400">{inc.id}</span>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-sky-400 text-[10px] font-bold border border-zinc-700">
+                        Rank #{inc.priorityRank}
+                      </span>
                       <SeverityBadge severity={inc.severity} size="sm" />
                       <StatusBadge status={inc.status} size="sm" />
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${
+                          inc.certaintyLevel === 'CONFIRMED'
+                            ? 'bg-emerald-950/60 border-emerald-800 text-emerald-300'
+                            : inc.certaintyLevel === 'SUSPECTED_RELATED'
+                            ? 'bg-purple-950/60 border-purple-800 text-purple-300'
+                            : inc.certaintyLevel === 'INSUFFICIENT_EVIDENCE'
+                            ? 'bg-rose-950/60 border-rose-800 text-rose-300'
+                            : 'bg-zinc-800 border-zinc-700 text-zinc-300'
+                        }`}
+                      >
+                        {inc.certaintyLevel}
+                      </span>
+                      {inc.correlatedCount > 0 && (
+                        <span className="px-1.5 py-0.5 rounded bg-purple-950/70 border border-purple-800 text-purple-300 text-[10px] font-bold">
+                          +{inc.correlatedCount} correlated
+                        </span>
+                      )}
                     </div>
                     <span className="text-[10px] text-zinc-500">{formatTimeAgo(inc.lastSeenAt)}</span>
                   </div>
 
                   <div className="font-semibold text-zinc-200 truncate">{inc.title}</div>
+
+                  {/* Priority Explanation */}
+                  <div className="text-[10px] text-zinc-400 truncate flex items-center gap-1.5">
+                    <span className="text-zinc-500">Prioritization:</span>
+                    <span className="text-zinc-300">{inc.priorityExplanation}</span>
+                  </div>
+
+                  {/* Change-Aware Context if available */}
+                  {inc.changeContext?.hasChange && (
+                    <div className="text-[10px] text-sky-300 bg-sky-950/40 border border-sky-900/50 rounded px-2 py-1 flex items-center gap-1.5">
+                      <Clock className="w-3 h-3 text-sky-400 shrink-0" />
+                      <span className="truncate">
+                        {inc.changeContext.changeSummary} ({inc.changeContext.temporalDistance || 'recent'})
+                      </span>
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-800/40">
                     <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 truncate">
@@ -817,21 +989,37 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
                       <span className="text-zinc-300">{inc.namespace}</span>
                       <span className="text-zinc-600">/</span>
                       <span className="text-zinc-300">{inc.resourceKind}/{inc.resourceName}</span>
+                      {inc.affectedServices.length > 0 && (
+                        <>
+                          <span className="text-zinc-600">•</span>
+                          <span className="text-amber-400">svc: {inc.affectedServices.join(', ')}</span>
+                        </>
+                      )}
                     </div>
+
                     {inc.status !== 'RESOLVED' && inc.status !== 'CLOSED' && (
-                      <button
-                        onClick={(e) => handleQuickAutoHeal(e, inc.id)}
-                        disabled={healingIncidentId === inc.id}
-                        className="px-2 py-0.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 text-emerald-300 rounded text-[10px] transition-colors cursor-pointer flex items-center gap-1 font-mono font-bold shrink-0"
-                        title="Auto-heal this incident immediately"
-                      >
-                        {healingIncidentId === inc.id ? (
-                          <Loader2 className="w-2.5 h-2.5 animate-spin text-emerald-300" />
-                        ) : (
-                          <Zap className="w-2.5 h-2.5 text-amber-300" />
-                        )}
-                        <span>Auto-Heal</span>
-                      </button>
+                      inc.remediationEligibility.isEligible ? (
+                        <button
+                          onClick={(e) => handleQuickAutoHeal(e, inc.id)}
+                          disabled={healingIncidentId === inc.id}
+                          className="px-2 py-0.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 text-emerald-300 rounded text-[10px] transition-colors cursor-pointer flex items-center gap-1 font-mono font-bold shrink-0"
+                          title="Auto-heal this incident with closed-loop verification"
+                        >
+                          {healingIncidentId === inc.id ? (
+                            <Loader2 className="w-2.5 h-2.5 animate-spin text-emerald-300" />
+                          ) : (
+                            <Zap className="w-2.5 h-2.5 text-amber-300" />
+                          )}
+                          <span>Auto-Heal</span>
+                        </button>
+                      ) : (
+                        <span
+                          className="px-2 py-0.5 bg-zinc-800/80 border border-zinc-700 text-zinc-400 rounded text-[10px] font-mono shrink-0 cursor-help"
+                          title={inc.remediationEligibility.reason}
+                        >
+                          Manual Review
+                        </span>
+                      )
                     )}
                   </div>
                 </div>
@@ -841,7 +1029,7 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
         </div>
       </div>
 
-      {/* 5. Fleet Infrastructure Health & Pressure Breakdown */}
+      {/* 5. Fleet Infrastructure Health & Resource Diagnostics */}
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800/80 pb-3">
           <h2 className="text-sm font-bold text-zinc-200 font-mono uppercase tracking-wider flex items-center gap-2">
@@ -849,7 +1037,7 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
             <span>Infrastructure Resource Pressure & Node Diagnostics</span>
           </h2>
           <div className="text-xs font-mono text-zinc-400">
-            Evaluating {filteredNodes.length} nodes across {safeClusters.length} clusters
+            Evaluating {filteredNodes.length} nodes across {isSingleCluster ? 1 : safeClusters.length} cluster(s)
           </div>
         </div>
 
@@ -934,8 +1122,8 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
               </div>
               <div className="flex justify-between text-zinc-400">
                 <span>Degraded Replicas:</span>
-                <strong className={degradedWorkloads.length > 0 ? 'text-rose-400' : 'text-zinc-400'}>
-                  {degradedWorkloads.length}
+                <strong className={scopedMetrics.degradedWorkloadsCount > 0 ? 'text-rose-400' : 'text-zinc-400'}>
+                  {scopedMetrics.degradedWorkloadsCount}
                 </strong>
               </div>
               <div className="flex justify-between text-zinc-400">
@@ -949,7 +1137,66 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
         </div>
       </div>
 
-      {/* 6. Recent Audit & Activity Stream */}
+      {/* 6. Operational Compute Footprint & Efficiency (Estimated) */}
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800/80 pb-3">
+          <div className="flex items-center gap-2">
+            <DollarSign className="w-4 h-4 text-emerald-400" />
+            <h2 className="text-sm font-bold text-zinc-200 font-mono uppercase tracking-wider">
+              Operational Compute Footprint & Efficiency (Estimated)
+            </h2>
+          </div>
+          {onNavigateTab && (
+            <button
+              onClick={() => onNavigateTab('cost')}
+              className="text-xs font-mono text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer"
+            >
+              <span>Open Cost Intelligence</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs">
+          <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 space-y-2">
+            <div className="text-zinc-400 text-[11px] uppercase tracking-wider">
+              Estimated Monthly Compute
+            </div>
+            <div className="text-2xl font-bold text-zinc-100">
+              ${(costOverview?.estimatedMonthlyCostUsd ?? 0).toLocaleString()} <span className="text-xs text-zinc-500 font-normal">/mo</span>
+            </div>
+            <p className="text-[10px] text-zinc-500 leading-relaxed">
+              Estimated from active Kubernetes CPU/Memory requests ($0.040/vCPU-hr, $0.005/GiB-hr). Excludes custom provider discounts.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 space-y-2">
+            <div className="text-zinc-400 text-[11px] uppercase tracking-wider">
+              Potential Rightsizing Opportunity (Unrealized)
+            </div>
+            <div className="text-2xl font-bold text-emerald-400">
+              ${(costOverview?.potentialMonthlySavingsUsd ?? 0).toLocaleString()} <span className="text-xs text-zinc-500 font-normal">/mo</span>
+            </div>
+            <p className="text-[10px] text-zinc-500 leading-relaxed">
+              Unrealized opportunity identified from idle workloads and over-provisioned limits. Requires operator rightsizing approval.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 space-y-2">
+            <div className="text-zinc-400 text-[11px] uppercase tracking-wider">
+              Realized Verified Savings
+            </div>
+            <div className="text-2xl font-bold text-zinc-300">
+              $0 <span className="text-xs text-zinc-500 font-normal">/mo</span>
+            </div>
+            <p className="text-[10px] text-zinc-500 leading-relaxed">
+              Verified savings reflect only closed-loop mutated workload configurations in this billing cycle.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* 7. Recent Audit & Activity Stream */}
       <div className="space-y-3">
         <h2 className="text-sm font-bold text-zinc-200 font-mono uppercase tracking-wider flex items-center gap-2">
           <Activity className="w-4 h-4 text-sky-400" />
@@ -957,13 +1204,13 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
         </h2>
 
         <div className="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4">
-          {safeActivity.length === 0 ? (
+          {scopedActivity.length === 0 ? (
             <div className="text-xs font-mono text-zinc-500 py-2">
               No audit events recorded in this session.
             </div>
           ) : (
             <div className="space-y-3 font-mono text-xs">
-              {safeActivity.slice(0, 8).map((act) => (
+              {scopedActivity.slice(0, 8).map((act) => (
                 <div
                   key={act.id}
                   className="flex items-start gap-3 text-zinc-300 pb-2 border-b border-zinc-800/40 last:border-0"
@@ -976,7 +1223,7 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
                   {act.incidentId && (
                     <button
                       onClick={() => onSelectIncident(act.incidentId!)}
-                      className="text-sky-400 hover:text-sky-300 shrink-0 text-[11px] font-bold"
+                      className="text-sky-400 hover:text-sky-300 shrink-0 text-[11px] font-bold cursor-pointer"
                     >
                       {act.incidentId} →
                     </button>
@@ -987,6 +1234,78 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Auto-Heal Confirmation Modal */}
+      {showAutoHealConfirmModal && (
+        <Modal
+          isOpen={showAutoHealConfirmModal}
+          onClose={() => setShowAutoHealConfirmModal(false)}
+          title="Confirm Automated Fleet Remediation"
+          maxWidth="max-w-lg"
+        >
+          <div className="space-y-4 font-mono text-xs">
+            <div className="p-3 bg-amber-950/40 border border-amber-800/60 rounded-lg text-amber-200">
+              <div className="font-bold mb-1 flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>Operator Confirmation Required</span>
+              </div>
+              <p className="text-[11px] text-zinc-300 leading-relaxed">
+                You are initiating automated closed-loop healing for{' '}
+                <strong className="text-white">
+                  {clusterFilter !== 'all' ? `cluster "${selectedCluster?.name || clusterFilter}"` : 'all connected clusters'}
+                </strong>.
+                SkyOps will execute bounded safe mutations (e.g. RolloutRestart, RestartPod) and verify telemetry recovery.
+              </p>
+            </div>
+
+            <div className="space-y-2 border border-zinc-800 rounded-lg p-3 bg-zinc-900/50">
+              <div className="text-zinc-400 font-bold uppercase tracking-wider text-[10px]">
+                Target Incident Scope ({openIncidents.length} active)
+              </div>
+              <div className="max-h-40 overflow-y-auto space-y-1.5 divide-y divide-zinc-800/40">
+                {openIncidents.slice(0, 10).map((inc) => (
+                  <div key={inc.id} className="pt-1.5 first:pt-0 flex items-center justify-between text-[11px]">
+                    <span className="text-zinc-300 truncate max-w-[260px]">{inc.title}</span>
+                    <span className="text-emerald-400 font-semibold shrink-0">
+                      {inc.incidentType === 'ImagePullBackOff' ? 'RollbackDeployment' : 'RolloutRestart'}
+                    </span>
+                  </div>
+                ))}
+                {openIncidents.length > 10 && (
+                  <div className="text-[10px] text-zinc-500 pt-1">
+                    + {openIncidents.length - 10} additional eligible incidents...
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="text-[10px] text-zinc-400">
+              Incidents requiring manual architectural review or policy changes will be safely skipped.
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-800">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAutoHealConfirmModal(false)}
+                disabled={autoHealingAll}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleAutoHealAllConfirmed}
+                disabled={autoHealingAll}
+                icon={autoHealingAll ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
+              >
+                {autoHealingAll ? 'Executing Verified Healing...' : 'Confirm & Execute Auto-Heal'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

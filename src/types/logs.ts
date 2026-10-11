@@ -33,6 +33,11 @@ export interface LogOverviewStats {
   retentionDays: number;
   storageDaysRemaining: number;
   costOptimizationRecommendation?: string;
+  agentStatus?: 'CONNECTED' | 'OFFLINE' | 'PENDING' | 'STALE' | 'RECONNECTING';
+  lastIngestionTimeMs?: number;
+  oldestLogTimeMs?: number;
+  pipelineState?: 'ACTIVE' | 'IDLE' | 'DISCONNECTED' | 'EMPTY';
+  isStale?: boolean;
 }
 
 export interface PodLogSummary {
@@ -179,6 +184,7 @@ export interface LogQueryFilter {
   previous?: boolean;
   limit?: number;
   offset?: number;
+  order?: 'asc' | 'desc';
 }
 
 export interface LogSearchResult {

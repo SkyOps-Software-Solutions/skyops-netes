@@ -97,21 +97,33 @@ export const AppShell: React.FC<AppShellProps> = ({
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [isStale, setIsStale] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const fetchGlobalData = async (isManual = false) => {
     if (isManual) {
       setIsRefreshing(true);
+      setRefreshKey((prev) => prev + 1);
     }
     const startTime = Date.now();
+    let encounteredError = false;
+    let errorMessage = '';
+
     try {
       const [overviewData, incidentsData] = await Promise.all([
         api.getOverview().catch((err) => {
-          console.warn('Overview data fetch notice:', err?.message || err);
+          encounteredError = true;
+          errorMessage = err?.message || 'Failed to sync cluster fleet overview';
+          console.warn('Overview data fetch notice:', errorMessage);
           return null;
         }),
         api.getIncidents().catch((err) => {
-          console.warn('Incidents data fetch notice:', err?.message || err);
-          return [];
+          encounteredError = true;
+          errorMessage = err?.message || 'Failed to sync active incidents';
+          console.warn('Incidents data fetch notice:', errorMessage);
+          return null; // Do NOT return empty array on failure: preserve last-known-good data!
         })
       ]);
 
@@ -119,18 +131,30 @@ export const AppShell: React.FC<AppShellProps> = ({
         setMetrics(overviewData.metrics || defaultMetrics);
         setClusters(overviewData.clusters || []);
         setRecentActivity(overviewData.recentActivity || []);
-      } else if (!metrics) {
+      } else if (!metrics && !encounteredError) {
         setMetrics(defaultMetrics);
       }
 
-      if (incidentsData) {
+      // Only update incidents if a valid array was retrieved
+      if (incidentsData !== null) {
         setIncidents(incidentsData);
       }
-    } catch (err) {
-      console.warn('SkyOps state sync notice:', err);
-      if (!metrics) {
-        setMetrics(defaultMetrics);
+
+      if (overviewData || incidentsData !== null) {
+        setLastUpdatedAt(Date.now());
       }
+
+      if (encounteredError) {
+        setIsStale(true);
+        setFetchError(errorMessage || 'Telemetry sync failure');
+      } else {
+        setIsStale(false);
+        setFetchError(null);
+      }
+    } catch (err: any) {
+      console.warn('SkyOps state sync notice:', err);
+      setIsStale(true);
+      setFetchError(err?.message || 'Failed to sync SkyOps state');
     } finally {
       const elapsed = Date.now() - startTime;
       if (isManual && elapsed < 400) {
@@ -338,6 +362,10 @@ export const AppShell: React.FC<AppShellProps> = ({
               onRefresh={handleManualRefresh}
               loading={loading || isRefreshing}
               onNavigateTab={handleTabChange}
+              lastUpdatedAt={lastUpdatedAt}
+              fetchError={fetchError}
+              isStale={isStale}
+              refreshKey={refreshKey}
             />
           )}
 

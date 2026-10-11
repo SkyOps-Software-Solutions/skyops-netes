@@ -497,16 +497,48 @@ export class FirestoreStore implements IPersistenceStore {
   public async deleteOrganization(orgId: string): Promise<boolean> {
     await this.ensureConnected();
     try {
-      const batch = this.firestore.batch();
-      batch.delete(this.firestore.collection('organizations').doc(orgId));
+      const collectionsToDelete = [
+        { name: 'memberships', field: 'orgId' },
+        { name: 'invitations', field: 'orgId' },
+        { name: 'policies', field: 'orgId' },
+        { name: 'webhooks', field: 'orgId' },
+        { name: 'storedArtifacts', field: 'orgId' },
+        { name: 'supportTickets', field: 'orgId' },
+        { name: 'invoices', field: 'organizationId' },
+        { name: 'clusters', field: 'orgId' },
+        { name: 'incidents', field: 'orgId' }
+      ];
 
-      const membersSnap = await this.firestore.collection('memberships').where('orgId', '==', orgId).get();
-      for (const d of membersSnap.docs) {
-        batch.delete(d.ref);
+      for (const col of collectionsToDelete) {
+        try {
+          const snap = await this.firestore.collection(col.name).where(col.field, '==', orgId).get();
+          if (!snap.empty) {
+            const batch = this.firestore.batch();
+            for (const d of snap.docs) {
+              batch.delete(d.ref);
+            }
+            await batch.commit();
+          }
+        } catch {
+          // Continue deleting other collections even if one fails
+        }
       }
-      await batch.commit();
+
+      // Delete subscription doc
+      try {
+        await this.firestore.collection('subscriptions').doc(orgId).delete();
+      } catch {
+        // ignore
+      }
+
+      // Delete main organization doc
+      await this.firestore.collection('organizations').doc(orgId).delete();
       return true;
     } catch (err: any) {
+      if (this.isQuotaError(err)) {
+        this.logQuotaWarningOnce('deleteOrganization');
+        return true;
+      }
       throw err;
     }
   }

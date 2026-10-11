@@ -377,10 +377,16 @@ export async function requireOrgMembership(
     if (userOrgs.length === 0) {
       const isSessionEndpoint = req.path === '/api/v1/auth/session' || req.originalUrl?.includes('/api/v1/auth/session');
       if (isSessionEndpoint) {
-        // Auto-bootstrap an isolated personal workspace for a newly authenticated user during session creation.
-        const userWorkspaceName = req.user.name ? `${req.user.name.split(' ')[0]}'s Workspace` : 'Primary Workspace';
-        const newOrg = store.createOrganization(userWorkspaceName, req.user.id, req.user.email, req.user.name);
-        userOrgs = [newOrg];
+        // P0: Idempotent Workspace Initialization.
+        // We never silently bootstrap a duplicate workspace on every login, refresh, or callback.
+        // We return an empty workspace list so the user can be routed to an intentional creation flow or accept an invitation.
+        return res.json({
+          user: req.user,
+          currentOrg: null,
+          organizations: [],
+          role: 'OWNER',
+          members: []
+        });
       } else {
         return res.status(403).json({
           error: 'Organization membership required',

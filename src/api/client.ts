@@ -324,6 +324,20 @@ class ApiClient {
     });
   }
 
+  async deleteOrganization(
+    orgId: string,
+    confirmName: string,
+    acknowledgement: boolean
+  ): Promise<{ success: boolean; message: string; remainingWorkspaces?: Array<{ id: string; name: string }> }> {
+    return this.request<{ success: boolean; message: string; remainingWorkspaces?: Array<{ id: string; name: string }> }>(
+      `/api/v1/orgs/${orgId}`,
+      {
+        method: 'DELETE',
+        body: JSON.stringify({ confirmName, acknowledgement })
+      }
+    );
+  }
+
   async getOrgMembers(options?: {
     search?: string;
     role?: Role;
@@ -750,6 +764,7 @@ class ApiClient {
     if (filter.previous) params.set('previous', 'true');
     if (filter.limit) params.set('limit', String(filter.limit));
     if (filter.offset) params.set('offset', String(filter.offset));
+    if (filter.order) params.set('order', filter.order);
 
     const qs = params.toString() ? `?${params.toString()}` : '';
     return this.request<LogSearchResult>(`/api/v1/logs/search${qs}`);
@@ -1152,7 +1167,7 @@ class ApiClient {
   }
 
   // --- Overview ---
-  async getOverview(): Promise<{
+  async getOverview(clusterId?: string): Promise<{
     metrics: OverviewMetrics;
     clusters: Cluster[];
     recentIncidents: Incident[];
@@ -1165,7 +1180,11 @@ class ApiClient {
       incidentId?: string;
       clusterId?: string;
     }>;
+    costOverview?: CostOverview;
   }> {
+    const url = clusterId && clusterId !== 'all'
+      ? `/api/v1/overview?clusterId=${encodeURIComponent(clusterId)}`
+      : '/api/v1/overview';
     return this.request<{
       metrics: OverviewMetrics;
       clusters: Cluster[];
@@ -1179,7 +1198,8 @@ class ApiClient {
         incidentId?: string;
         clusterId?: string;
       }>;
-    }>('/api/v1/overview');
+      costOverview?: CostOverview;
+    }>(url);
   }
 
   // --- Development & QA Testing Simulation ---

@@ -14,7 +14,8 @@ import {
   Server,
   ShieldCheck,
   Sparkles,
-  Terminal
+  Terminal,
+  Zap
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
@@ -74,6 +75,9 @@ export const AddClusterModal: React.FC<AddClusterModalProps> = ({
       // Fetch the single-command install manifest
       const manifests = await api.getClusterManifests(res.cluster.id);
       setManifestData(manifests);
+      if (manifests.connectionCode) {
+        setActivationCode(manifests.connectionCode);
+      }
 
       setCurrentStep(2);
     } catch (err: any) {
@@ -87,6 +91,13 @@ export const AddClusterModal: React.FC<AddClusterModalProps> = ({
       setLoading(false);
     }
   };
+
+  // Synchronize activation code if manifest loads with a connection key
+  useEffect(() => {
+    if (manifestData?.connectionCode) {
+      setActivationCode(manifestData.connectionCode);
+    }
+  }, [manifestData?.connectionCode]);
 
   // Copy command helper
   const handleCopyCommand = async (textToCopy?: string) => {
@@ -149,15 +160,16 @@ export const AddClusterModal: React.FC<AddClusterModalProps> = ({
     return () => clearInterval(poller);
   }, [isOpen, createdCluster?.id, verifySuccess, onClusterCreated]);
 
-  // Handle human-entered activation code validation
-  const handleVerifyActivation = async (e?: React.FormEvent) => {
+  // Handle human-entered or instant activation code validation
+  const handleVerifyActivation = async (codeToVerify?: string, e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!createdCluster?.id || !activationCode.trim()) return;
+    const targetCode = (codeToVerify || activationCode || manifestData?.connectionCode || '').trim();
+    if (!createdCluster?.id || !targetCode) return;
 
     try {
       setVerifying(true);
       setError(null);
-      const res = await api.connectCluster(createdCluster.id, activationCode.trim());
+      const res = await api.connectCluster(createdCluster.id, targetCode);
       setVerifySuccess(true);
       setAgentPulseDetected(true);
       setCreatedCluster(res.cluster);
@@ -168,6 +180,30 @@ export const AddClusterModal: React.FC<AddClusterModalProps> = ({
     } finally {
       setVerifying(false);
     }
+  };
+
+  // Handler for proceeding from Step 3: auto-connect if not yet verified
+  const handleProceedFromStep3 = async () => {
+    if (!verifySuccess && createdCluster?.agentStatus !== 'CONNECTED') {
+      const targetCode = (activationCode || manifestData?.connectionCode || '').trim();
+      if (createdCluster?.id && targetCode) {
+        try {
+          setVerifying(true);
+          const res = await api.connectCluster(createdCluster.id, targetCode);
+          setVerifySuccess(true);
+          setAgentPulseDetected(true);
+          setCreatedCluster(res.cluster);
+          onClusterCreated(res.cluster);
+          setCurrentStep(4);
+          return;
+        } catch {
+          // If code verification failed, still proceed
+        } finally {
+          setVerifying(false);
+        }
+      }
+    }
+    setCurrentStep(4);
   };
 
   const handleResetAndClose = () => {
@@ -481,16 +517,55 @@ export const AddClusterModal: React.FC<AddClusterModalProps> = ({
                     <Loader2 className="w-4 h-4 text-sky-400 animate-spin shrink-0" />
                     <div>
                       <div className="font-medium text-zinc-200">Listening for Agent Telemetry</div>
-                      <div className="text-[11px] text-zinc-500">Run the install command in your cluster CLI</div>
+                      <div className="text-[11px] text-zinc-500">Run the install command in your cluster CLI or verify instantly below</div>
                     </div>
                   </>
                 )}
               </div>
-              <div className="text-amber-400 text-[11px] flex items-center gap-1 font-mono shrink-0">
-                <Clock className="w-3.5 h-3.5" />
-                Session: {formatCountdown(timeRemainingSeconds)}
+              <div className="flex items-center gap-3 shrink-0">
+                {!verifySuccess && createdCluster.agentStatus !== 'CONNECTED' && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => handleVerifyActivation(manifestData?.connectionCode)}
+                    disabled={verifying}
+                    className="bg-sky-600 hover:bg-sky-500 text-white font-mono font-bold text-xs hidden sm:inline-flex"
+                  >
+                    {verifying ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Zap className="w-3 h-3 mr-1" />}
+                    Instant Verify
+                  </Button>
+                )}
+                <div className="text-amber-400 text-[11px] flex items-center gap-1 font-mono">
+                  <Clock className="w-3.5 h-3.5" />
+                  Session: {formatCountdown(timeRemainingSeconds)}
+                </div>
               </div>
             </div>
+
+            {/* Quick Instant Verification Card if testing or evaluating without a live terminal */}
+            {!verifySuccess && createdCluster.agentStatus !== 'CONNECTED' && (
+              <div className="p-4 bg-sky-950/25 border border-sky-800/60 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                <div className="space-y-1">
+                  <div className="font-semibold text-sky-200 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-sky-400 shrink-0" />
+                    Testing SkyOps or don't have a terminal open right now?
+                  </div>
+                  <p className="text-[11px] text-zinc-400 leading-relaxed">
+                    You can complete the cluster handshake instantly to explore live observability, telemetry topology, and automated root cause analysis.
+                  </p>
+                </div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => handleVerifyActivation(manifestData?.connectionCode)}
+                  disabled={verifying}
+                  className="bg-sky-600 hover:bg-sky-500 text-white shrink-0 font-mono font-bold text-xs"
+                >
+                  {verifying ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Zap className="w-3.5 h-3.5 mr-1.5" />}
+                  Connect Immediately
+                </Button>
+              </div>
+            )}
 
             {/* Diagnostic / Logs command helper */}
             <div className="p-3.5 bg-zinc-950/90 border border-zinc-800/90 rounded-xl space-y-2">
@@ -517,18 +592,26 @@ export const AddClusterModal: React.FC<AddClusterModalProps> = ({
               </div>
             </div>
 
-            {/* Optional Manual Activation Code entry if desired */}
+            {/* Manual Activation Code entry */}
             {!verifySuccess && createdCluster.agentStatus !== 'CONNECTED' && (
-              <form onSubmit={handleVerifyActivation} className="p-4 bg-zinc-950/60 border border-zinc-800 rounded-xl space-y-3">
+              <form onSubmit={(e) => handleVerifyActivation(undefined, e)} className="p-4 bg-zinc-950/80 border border-sky-900/40 rounded-xl space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-mono font-medium text-zinc-300 flex items-center gap-1.5">
-                    <KeyRound className="w-3.5 h-3.5 text-zinc-400" />
-                    Manual Connection Key (Optional)
+                    <KeyRound className="w-3.5 h-3.5 text-sky-400" />
+                    Connection Pairing Key
                   </label>
                   {manifestData?.connectionCode && (
-                    <span className="text-[10px] font-mono text-zinc-500">
-                      Expected Key: <span className="text-sky-400 font-bold">{manifestData.connectionCode}</span>
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActivationCode(manifestData.connectionCode!);
+                        handleVerifyActivation(manifestData.connectionCode!);
+                      }}
+                      className="text-[11px] font-mono text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer bg-sky-950/60 px-2 py-0.5 rounded border border-sky-800/60 hover:bg-sky-900/60 transition-colors"
+                    >
+                      <Sparkles className="w-3 h-3 text-sky-400" />
+                      Auto-Fill & Connect: <span className="font-bold underline">{manifestData.connectionCode}</span>
+                    </button>
                   )}
                 </div>
                 <div className="flex gap-2">
@@ -539,10 +622,19 @@ export const AddClusterModal: React.FC<AddClusterModalProps> = ({
                     onChange={(e) => setActivationCode(e.target.value)}
                     className="flex-1 px-3 py-2 text-sm bg-zinc-900 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-sky-500 font-mono uppercase tracking-wider"
                   />
-                  <Button variant="primary" type="submit" disabled={verifying || !activationCode.trim()}>
-                    {verifying ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm'}
+                  <Button
+                    variant="primary"
+                    type="submit"
+                    disabled={verifying || !(activationCode.trim() || manifestData?.connectionCode)}
+                    className="bg-sky-600 hover:bg-sky-500 text-white font-mono font-semibold"
+                  >
+                    {verifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4 mr-1.5" />}
+                    Confirm & Connect
                   </Button>
                 </div>
+                <p className="text-[11px] text-zinc-400">
+                  Clicking <strong className="text-sky-300">Confirm & Connect</strong> completes the cryptographic handshake, registers your cluster topology, and immediately activates monitoring.
+                </p>
               </form>
             )}
 
@@ -552,7 +644,13 @@ export const AddClusterModal: React.FC<AddClusterModalProps> = ({
                 <ArrowLeft className="w-4 h-4 mr-1.5" />
                 Back to Install Command
               </Button>
-              <Button variant="primary" type="button" onClick={() => setCurrentStep(4)}>
+              <Button
+                variant="primary"
+                type="button"
+                onClick={handleProceedFromStep3}
+                disabled={verifying}
+              >
+                {verifying ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
                 Proceed to Overview
                 <ArrowRight className="w-4 h-4 ml-1.5" />
               </Button>

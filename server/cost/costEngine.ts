@@ -302,9 +302,13 @@ export class CostEngine {
 
   /**
    * Generate Cost Overview for an organization across all its clusters strictly from live telemetry.
+   * Can be scoped to a single cluster when clusterId is provided.
    */
-  public static getCostOverview(orgId: string): CostOverview {
-    const clusters = store.getClusters(orgId);
+  public static getCostOverview(orgId: string, clusterId?: string): CostOverview {
+    const allClusters = store.getClusters(orgId);
+    const clusters = clusterId && clusterId !== 'all'
+      ? allClusters.filter((c) => c.id === clusterId)
+      : allClusters;
     let totalCpuRequestedCores = 0;
     let totalCpuUsedCores = 0;
     let totalMemoryRequestedGib = 0;
@@ -374,12 +378,20 @@ export class CostEngine {
     const recommendations = this.getRightsizingRecommendations(orgId);
     const wasteItems = this.getCostWasteItems(orgId);
 
-    const recSavings = recommendations
+    const scopedRecommendations = clusterId && clusterId !== 'all'
+      ? recommendations.filter((r) => r.clusterId === clusterId)
+      : recommendations;
+
+    const scopedWasteItems = clusterId && clusterId !== 'all'
+      ? wasteItems.filter((w) => w.clusterId === clusterId)
+      : wasteItems;
+
+    const recSavings = scopedRecommendations
       .filter((r) => r.status === 'PENDING_REVIEW')
       .reduce((sum, r) => sum + r.estimatedMonthlySavingsUsd, 0);
 
-    const idleWasteSavings = wasteItems
-      .filter((w) => w.category === 'IDLE_WORKLOAD' && !recommendations.some((r) => r.workloadName === w.resourceName))
+    const idleWasteSavings = scopedWasteItems
+      .filter((w) => w.category === 'IDLE_WORKLOAD' && !scopedRecommendations.some((r) => r.workloadName === w.resourceName))
       .reduce((sum, w) => sum + w.potentialMonthlyWasteUsd, 0);
 
     const potentialMonthlySavingsUsd = Math.round(recSavings + idleWasteSavings);

@@ -366,32 +366,82 @@ export class LogManager {
 
   public inferSeverity(msg: string): LogSeverity {
     if (!msg) return 'INFO';
-    const lower = msg.toLowerCase();
-    if (lower.includes('fatal') || lower.includes('panic:') || lower.includes('oomkilled') || lower.includes('exitcode=137')) {
+    const trimmed = msg.trim();
+    const lower = trimmed.toLowerCase();
+
+    // 1. Structured JSON / Logfmt tokens
+    if (
+      /"level"\s*:\s*"(fatal|emerg|panic)"/i.test(trimmed) ||
+      /\b(level|severity|lvl)=(fatal|emerg|panic)\b/i.test(trimmed)
+    ) {
       return 'FATAL';
     }
     if (
-      lower.includes('error') ||
-      lower.includes('exception') ||
-      lower.includes('failed') ||
-      lower.includes('failure') ||
-      lower.includes('connection refused') ||
-      lower.includes('timed out') ||
-      lower.includes('timeout') ||
-      lower.includes('crashloop') ||
-      lower.includes('err ') ||
-      lower.includes('[err]') ||
-      lower.includes('level=error') ||
-      lower.includes('"level":"error"')
+      /"level"\s*:\s*"(error|err)"/i.test(trimmed) ||
+      /\b(level|severity|lvl)=(error|err)\b/i.test(trimmed)
     ) {
       return 'ERROR';
     }
-    if (lower.includes('warn') || lower.includes('warning') || lower.includes('level=warn') || lower.includes('"level":"warn"')) {
+    if (
+      /"level"\s*:\s*"(warn|warning)"/i.test(trimmed) ||
+      /\b(level|severity|lvl)=(warn|warning)\b/i.test(trimmed)
+    ) {
       return 'WARN';
     }
-    if (lower.includes('debug') || lower.includes('trace') || lower.includes('level=debug') || lower.includes('"level":"debug"')) {
+    if (
+      /"level"\s*:\s*"(debug|trace)"/i.test(trimmed) ||
+      /\b(level|severity|lvl)=(debug|trace)\b/i.test(trimmed)
+    ) {
       return 'DEBUG';
     }
+
+    // 2. Bracketed or prefix log levels (e.g. [ERROR], ERROR:, [FATAL], F0912, E0912)
+    if (/^\[FATAL\]|\bFATAL:|^F\d{4}\s/i.test(trimmed)) return 'FATAL';
+    if (/^\[ERROR\]|\bERROR:|^E\d{4}\s|^\[ERR\]|\bERR:/i.test(trimmed)) return 'ERROR';
+    if (/^\[WARN(?:ING)?\]|\bWARN(?:ING)?:|^W\d{4}\s/i.test(trimmed)) return 'WARN';
+    if (/^\[DEBUG\]|\bDEBUG:|^\[TRACE\]|\bTRACE:/i.test(trimmed)) return 'DEBUG';
+    if (/^\[INFO\]|\bINFO:|^I\d{4}\s/i.test(trimmed)) return 'INFO';
+
+    // 3. Unambiguous fatal signals
+    if (
+      lower.includes('oomkilled') ||
+      lower.includes('exitcode=137') ||
+      lower.includes('exit code 137') ||
+      lower.startsWith('panic:') ||
+      lower.includes('fatal error:')
+    ) {
+      return 'FATAL';
+    }
+
+    // 4. Benign occurrences: do not classify "0 errors" as error
+    const isBenignError = /\b(0 errors?|errors?:\s*0|no errors?|error_count:\s*0)\b/i.test(lower);
+
+    // 5. Unambiguous error signals
+    if (
+      !isBenignError &&
+      (lower.includes('connection refused') ||
+        lower.includes('timed out') ||
+        lower.includes('timeout') ||
+        lower.includes('crashloop') ||
+        lower.includes('unhandled exception') ||
+        lower.includes('back-off pulling image') ||
+        lower.includes('errimagepull') ||
+        lower.includes('context deadline exceeded') ||
+        /\b(error|exception|failed|failure)\b/i.test(lower))
+    ) {
+      return 'ERROR';
+    }
+
+    // 6. Warning signals
+    if (lower.includes('warning') || lower.includes('deprecated') || lower.includes('high latency')) {
+      return 'WARN';
+    }
+
+    // 7. Debug signals
+    if (lower.includes('debug') || lower.includes('trace') || lower.includes('verbose')) {
+      return 'DEBUG';
+    }
+
     return 'INFO';
   }
 
@@ -674,7 +724,7 @@ export class LogManager {
 
     const filtered = allRecords.filter((r) => {
       // Cluster filter
-      if (filter.clusterId && r.clusterId !== filter.clusterId) return false;
+      if (filter.clusterId && filter.clusterId !== 'all' && r.clusterId !== filter.clusterId) return false;
 
       // Namespace filter
       const targetNs = parsedNamespace || filter.namespace;
@@ -715,16 +765,38 @@ export class LogManager {
         }
       }
 
-      // Substring search
+      // Substring & multi-term search
       if (searchLower) {
         const matchesMsg = r.message.toLowerCase().includes(searchLower);
         const matchesRaw = r.raw.toLowerCase().includes(searchLower);
         const matchesPod = r.podName.toLowerCase().includes(searchLower);
         const matchesWl = r.workload.toLowerCase().includes(searchLower);
-        if (!matchesMsg && !matchesRaw && !matchesPod && !matchesWl) return false;
+        const matchesContainer = r.container.toLowerCase().includes(searchLower);
+        const matchesNode = r.nodeName ? r.nodeName.toLowerCase().includes(searchLower) : false;
+
+        if (matchesMsg || matchesRaw || matchesPod || matchesWl || matchesContainer || matchesNode) {
+          // direct substring match
+        } else {
+          // Check if all whitespace-delimited tokens match
+          const tokens = searchLower.split(/\s+/).filter(Boolean);
+          if (tokens.length > 1) {
+            const combined = `${r.message} ${r.raw} ${r.podName} ${r.workload} ${r.container} ${r.nodeName || ''}`.toLowerCase();
+            const allTokensMatch = tokens.every((tok) => combined.includes(tok));
+            if (!allTokensMatch) return false;
+          } else {
+            return false;
+          }
+        }
       }
 
       return true;
+    });
+
+    // Deterministic timestamp ordering (default: newest first / desc)
+    const sortAsc = filter.order === 'asc';
+    filtered.sort((a, b) => {
+      const diff = b.timestampMs - a.timestampMs;
+      return sortAsc ? -diff : diff;
     });
 
     const totalMatches = filtered.length;
@@ -733,6 +805,9 @@ export class LogManager {
 
     const paginated = filtered.slice(offset, offset + limit);
 
+    const earliestTimestamp = filtered.length ? Math.min(...filtered.map((f) => f.timestampMs)) : (startTime || now - 3600000);
+    const latestTimestamp = filtered.length ? Math.max(...filtered.map((f) => f.timestampMs)) : endTime;
+
     return {
       records: paginated,
       totalMatches,
@@ -740,8 +815,8 @@ export class LogManager {
       offset,
       hasMore: offset + limit < totalMatches,
       timeRangeMs: {
-        start: startTime || (filtered.length ? filtered[filtered.length - 1].timestampMs : now - 3600000),
-        end: endTime
+        start: startTime || earliestTimestamp,
+        end: endTime || latestTimestamp
       },
       queryDurationMs: Date.now() - startExecution
     };
@@ -925,6 +1000,32 @@ export class LogManager {
       warningChangePercent = 100;
     }
 
+    const lastIngestionTimeMs = logs.length > 0 ? Math.max(...logs.map((l) => l.timestampMs)) : undefined;
+    const oldestLogTimeMs = logs.length > 0 ? Math.min(...logs.map((l) => l.timestampMs)) : undefined;
+
+    let agentStatus: LogOverviewStats['agentStatus'] = 'OFFLINE';
+    if (clusterId && clusterId !== 'all') {
+      const cluster = store.getCluster(clusterId, orgId);
+      agentStatus = (cluster?.agentStatus as any) || 'OFFLINE';
+    } else {
+      const clusters = store.getClusters(orgId);
+      const anyConnected = clusters.some((c) => c.agentStatus === 'CONNECTED');
+      agentStatus = anyConnected ? 'CONNECTED' : (clusters.length ? 'OFFLINE' : 'PENDING');
+    }
+
+    let pipelineState: LogOverviewStats['pipelineState'] = 'DISCONNECTED';
+    if (agentStatus !== 'CONNECTED') {
+      pipelineState = 'DISCONNECTED';
+    } else if (totalLines === 0) {
+      pipelineState = 'EMPTY';
+    } else if (lastIngestionTimeMs && (now - lastIngestionTimeMs < 15 * 60 * 1000)) {
+      pipelineState = 'ACTIVE';
+    } else {
+      pipelineState = 'IDLE';
+    }
+
+    const isStale = Boolean(lastIngestionTimeMs && (now - lastIngestionTimeMs > 30 * 60 * 1000));
+
     return {
       totalVolumeMb: volumeMb,
       totalLogLines: totalLines,
@@ -941,7 +1042,12 @@ export class LogManager {
       storageDaysRemaining: todayGb > 0 ? Math.max(1, Math.round((50.0 - todayGb) / todayGb)) : 30,
       costOptimizationRecommendation: totalLines > 0
         ? 'Filter or sample high-volume non-prod namespaces to minimize ingestion cost.'
-        : 'Connect cluster agent to begin live operational log collection.'
+        : 'Connect cluster agent to begin live operational log collection.',
+      agentStatus,
+      lastIngestionTimeMs,
+      oldestLogTimeMs,
+      pipelineState,
+      isStale
     };
   }
 

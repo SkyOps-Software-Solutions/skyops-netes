@@ -326,6 +326,76 @@ app.patch(
   }
 );
 
+const DeleteOrgSchema = z.object({
+  confirmName: z.string(),
+  acknowledgement: z.boolean()
+});
+
+app.delete(
+  '/api/v1/orgs/:id',
+  requireUserAuth,
+  requireOrgMembership,
+  requireRole(['OWNER']),
+  (req: AuthenticatedUserRequest, res) => {
+    const orgId = req.params.id;
+    if (orgId !== req.orgId) {
+      return res.status(403).json({ error: 'Forbidden: Cannot delete a workspace outside your active context' });
+    }
+
+    const org = store.getOrganization(orgId);
+    if (!org) {
+      return res.status(404).json({ error: 'Workspace not found' });
+    }
+
+    // Verify user is actual owner or has OWNER role
+    if (req.userRole !== 'OWNER' && org.ownerUserId !== req.user!.id) {
+      return res.status(403).json({ error: 'Only the Workspace Owner can permanently delete this workspace' });
+    }
+
+    const parsed = DeleteOrgSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: 'Invalid deletion confirmation',
+        details: parsed.error.issues[0]?.message
+      });
+    }
+
+    if (parsed.data.confirmName.trim() !== org.name.trim()) {
+      return res.status(400).json({
+        error: 'Workspace name confirmation does not match',
+        expected: org.name,
+        provided: parsed.data.confirmName
+      });
+    }
+
+    if (!parsed.data.acknowledgement) {
+      return res.status(400).json({
+        error: 'Explicit acknowledgement of permanent data loss is required'
+      });
+    }
+
+    // Check if user has other workspaces
+    const userOrgs = store.getOrganizationsForUser(req.user!.id, req.user!.email);
+    const remainingOrgs = userOrgs.filter((o) => o.id !== orgId);
+
+    // Execute deletion
+    const success = store.deleteOrganization(orgId, {
+      id: req.user!.id,
+      name: req.user!.name || req.user!.email
+    });
+
+    if (!success) {
+      return res.status(500).json({ error: 'Failed to delete workspace' });
+    }
+
+    res.json({
+      success: true,
+      message: `Workspace "${org.name}" and all associated cluster telemetry, incidents, and resources have been permanently deleted.`,
+      remainingWorkspaces: remainingOrgs.map((o) => ({ id: o.id, name: o.name }))
+    });
+  }
+);
+
 // --- Organization Members ---
 app.get('/api/v1/orgs/members', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
   const search = typeof req.query.search === 'string' ? req.query.search : undefined;
@@ -2532,16 +2602,20 @@ app.get('/api/v1/reliability/metrics', requireUserAuth, requireOrgMembership, (r
 
 // --- Overview Dashboard Metrics ---
 app.get('/api/v1/overview', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
-  const metrics = store.getOverviewMetrics(req.orgId!);
+  const clusterId = typeof req.query.clusterId === 'string' && req.query.clusterId !== 'all' ? req.query.clusterId : undefined;
+  const metrics = store.getOverviewMetrics(req.orgId!, clusterId);
   const clusters = store.getClusters(req.orgId!);
-  const recentIncidents = store.getIncidents(req.orgId!).slice(0, 8);
-  const recentActivity = store.getRecentActivity(req.orgId!, 12);
+  const allIncidents = store.getIncidents(req.orgId!);
+  const recentIncidents = (clusterId ? allIncidents.filter((i) => i.clusterId === clusterId) : allIncidents).slice(0, 8);
+  const recentActivity = store.getRecentActivity(req.orgId!, 12, clusterId);
+  const costOverview = CostEngine.getCostOverview(req.orgId!, clusterId);
 
   res.json({
     metrics,
     clusters,
     recentIncidents,
-    recentActivity
+    recentActivity,
+    costOverview
   });
 });
 

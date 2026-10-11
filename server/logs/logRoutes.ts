@@ -36,24 +36,26 @@ logRouter.get('/search', requireUserAuth, requireOrgMembership, async (req: Auth
     endTimeMs,
     previous,
     limit,
-    offset
+    offset,
+    order
   } = req.query as Record<string, string | undefined>;
 
   const filter = {
-    clusterId,
-    namespace,
-    workload,
-    podName,
-    container,
-    nodeName,
-    severity: severity as any,
-    search,
+    clusterId: clusterId && clusterId !== 'all' ? clusterId : undefined,
+    namespace: namespace && namespace !== 'all' ? namespace : undefined,
+    workload: workload && workload !== 'all' ? workload : undefined,
+    podName: podName && podName !== 'all' ? podName : undefined,
+    container: container && container !== 'all' ? container : undefined,
+    nodeName: nodeName && nodeName !== 'all' ? nodeName : undefined,
+    severity: severity && severity !== 'ALL' ? (severity as any) : undefined,
+    search: search?.trim() || undefined,
     sinceSeconds: sinceSeconds ? parseInt(sinceSeconds, 10) : undefined,
     startTimeMs: startTimeMs ? parseInt(startTimeMs, 10) : undefined,
     endTimeMs: endTimeMs ? parseInt(endTimeMs, 10) : undefined,
     previous: previous === 'true' || previous === '1',
     limit: limit ? parseInt(limit, 10) : undefined,
-    offset: offset ? parseInt(offset, 10) : undefined
+    offset: offset ? parseInt(offset, 10) : undefined,
+    order: (order === 'asc' || order === 'desc') ? order : 'desc'
   };
 
   const results = await logManager.searchLogs(req.orgId!, filter);

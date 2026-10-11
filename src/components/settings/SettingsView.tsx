@@ -81,9 +81,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
 
   const checkIsCreatedByMe = (org: Organization | null | undefined): boolean => {
     if (!org) return false;
-    if (org.canLeave) return false;
+    if (org.canDelete === true && org.canLeave === false) return true;
+    if (org.canLeave === true && org.canDelete === false) return false;
     if (org.isCreatedByMe === true) return true;
-    if (org.canDelete && !org.canLeave) return true;
     const normUserEmail = (user?.email || '').trim().toLowerCase();
     const orgOwnerEmail = (org.ownerEmail || (org as any).creatorEmail || '').trim().toLowerCase();
     if (org.ownerUserId && user?.id && org.ownerUserId === user.id) return true;
@@ -177,11 +177,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
   const handleDeleteWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!workspaceToDelete) return;
-    const confirmInput = deleteConfirmName.trim().toLowerCase();
-    const matchesName = confirmInput === workspaceToDelete.name.trim().toLowerCase();
+    const normalizeQuotes = (s: string) =>
+      (s || '')
+        .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+        .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+        .trim()
+        .toLowerCase();
+
+    const confirmInput = normalizeQuotes(deleteConfirmName);
+    const targetNorm = normalizeQuotes(workspaceToDelete.name);
+    const matchesName = confirmInput === targetNorm;
     const matchesId = confirmInput === workspaceToDelete.id.trim().toLowerCase();
-    if (!matchesName && !matchesId) {
-      setDeleteWorkspaceError(`Workspace name does not match. Please type "${workspaceToDelete.name}" to confirm.`);
+    const matchesSlug = Boolean(workspaceToDelete.slug && confirmInput === workspaceToDelete.slug.trim().toLowerCase());
+    const matchesDelete = confirmInput === 'delete';
+
+    if (!matchesName && !matchesId && !matchesSlug && !matchesDelete) {
+      setDeleteWorkspaceError(`Please type "${workspaceToDelete.name}" or "delete" to confirm.`);
       return;
     }
     if (!deleteAcknowledged) {
@@ -200,7 +211,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
       setOrgSuccessMsg(
         res.remainingWorkspaces.length > 0
           ? `Workspace "${deletedName}" was permanently deleted.`
-          : `Workspace "${deletedName}" was permanently deleted.`
+          : `Workspace "${deletedName}" was permanently deleted. You can now create a new workspace.`
       );
       setTimeout(() => setOrgSuccessMsg(null), 5000);
       onRefresh();
@@ -1035,15 +1046,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
             )}
 
             <div>
-              <label className="block text-zinc-300 font-medium mb-1.5">
-                Type <span className="font-mono font-bold text-rose-300 select-all">{workspaceToDelete.name}</span> to confirm:
-              </label>
+              <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+                <label className="text-zinc-300 font-medium text-xs">
+                  Type <span className="font-mono font-bold text-rose-300 select-all">{workspaceToDelete.name}</span> or <span className="font-mono font-bold text-rose-300">delete</span> to confirm:
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setDeleteConfirmName(workspaceToDelete.name)}
+                    className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors cursor-pointer border border-zinc-700/60"
+                  >
+                    Fill Name
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteConfirmName('delete')}
+                    className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors cursor-pointer border border-zinc-700/60"
+                  >
+                    Fill "delete"
+                  </button>
+                </div>
+              </div>
               <input
                 type="text"
                 required
                 value={deleteConfirmName}
                 onChange={(e) => setDeleteConfirmName(e.target.value)}
-                placeholder={workspaceToDelete.name}
+                placeholder={`Type "${workspaceToDelete.name}" or "delete"`}
                 className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-rose-500 font-mono text-xs"
                 autoFocus
               />
@@ -1077,10 +1106,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
                 size="sm"
                 disabled={
                   deletingWorkspace ||
-                  (!deleteConfirmName.trim() ||
-                    (deleteConfirmName.trim().toLowerCase() !== workspaceToDelete.name.trim().toLowerCase() &&
-                     deleteConfirmName.trim().toLowerCase() !== workspaceToDelete.id.trim().toLowerCase())) ||
-                  !deleteAcknowledged
+                  !deleteAcknowledged ||
+                  (() => {
+                    const norm = (deleteConfirmName || '').replace(/[\u2018\u2019\u201A\u201B]/g, "'").replace(/[\u201C\u201D\u201E\u201F]/g, '"').trim().toLowerCase();
+                    const target = (workspaceToDelete.name || '').replace(/[\u2018\u2019\u201A\u201B]/g, "'").replace(/[\u201C\u201D\u201E\u201F]/g, '"').trim().toLowerCase();
+                    const matchesSlug = Boolean(workspaceToDelete.slug && norm === workspaceToDelete.slug.trim().toLowerCase());
+                    return norm !== target && norm !== workspaceToDelete.id.trim().toLowerCase() && norm !== 'delete' && !matchesSlug;
+                  })()
                 }
                 icon={<Trash2 className="w-3.5 h-3.5" />}
               >

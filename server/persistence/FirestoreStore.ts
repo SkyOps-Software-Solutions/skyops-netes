@@ -497,6 +497,12 @@ export class FirestoreStore implements IPersistenceStore {
   public async deleteOrganization(orgId: string): Promise<boolean> {
     await this.ensureConnected();
     try {
+      // Delete main organization doc first so concurrent queries never see it
+      await this.firestore.collection('organizations').doc(orgId).delete().catch(() => {});
+
+      // Delete subscription doc
+      await this.firestore.collection('subscriptions').doc(orgId).delete().catch(() => {});
+
       const collectionsToDelete = [
         { name: 'memberships', field: 'orgId' },
         { name: 'invitations', field: 'orgId' },
@@ -506,7 +512,8 @@ export class FirestoreStore implements IPersistenceStore {
         { name: 'supportTickets', field: 'orgId' },
         { name: 'invoices', field: 'organizationId' },
         { name: 'clusters', field: 'orgId' },
-        { name: 'incidents', field: 'orgId' }
+        { name: 'incidents', field: 'orgId' },
+        { name: 'logs', field: 'orgId' }
       ];
 
       for (const col of collectionsToDelete) {
@@ -524,15 +531,6 @@ export class FirestoreStore implements IPersistenceStore {
         }
       }
 
-      // Delete subscription doc
-      try {
-        await this.firestore.collection('subscriptions').doc(orgId).delete();
-      } catch {
-        // ignore
-      }
-
-      // Delete main organization doc
-      await this.firestore.collection('organizations').doc(orgId).delete();
       return true;
     } catch (err: any) {
       if (this.isQuotaError(err)) {

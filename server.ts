@@ -363,7 +363,7 @@ const DeleteOrgSchema = z.object({
 app.delete(
   ['/api/v1/orgs/:id', '/api/v1/organizations/:id'],
   requireUserAuth,
-  (req: AuthenticatedUserRequest, res) => {
+  async (req: AuthenticatedUserRequest, res) => {
     const orgId = req.params.id;
     const org = store.getOrganization(orgId);
     if (!org) {
@@ -408,14 +408,24 @@ app.delete(
       });
     }
 
-    const confirmName = (parsed.data.confirmName || '').trim().toLowerCase();
-    const matchesName = confirmName === org.name.trim().toLowerCase();
+    const normalizeQuotes = (s: string) =>
+      (s || '')
+        .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+        .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+        .trim()
+        .toLowerCase();
+
+    const rawConfirm = (parsed.data.confirmName || '').trim();
+    const confirmName = normalizeQuotes(rawConfirm);
+    const orgNameNorm = normalizeQuotes(org.name);
+    const matchesName = confirmName === orgNameNorm;
     const matchesId = confirmName === org.id.trim().toLowerCase();
     const matchesSlug = Boolean(org.slug && confirmName === org.slug.trim().toLowerCase());
+    const matchesDelete = confirmName === 'delete';
 
-    if (!matchesName && !matchesId && !matchesSlug) {
+    if (!matchesName && !matchesId && !matchesSlug && !matchesDelete) {
       return res.status(400).json({
-        error: `Workspace name confirmation does not match. Please type "${org.name}" to confirm.`,
+        error: `Workspace name confirmation does not match. Please type "${org.name}" or "delete" to confirm.`,
         expected: org.name,
         provided: parsed.data.confirmName
       });
@@ -425,8 +435,8 @@ app.delete(
     const userOrgs = store.getOrganizationsForUser(userId, req.user!.email);
     const remainingOrgs = userOrgs.filter((o) => o.id !== orgId);
 
-    // Execute deletion
-    const success = store.deleteOrganization(orgId, {
+    // Execute deletion (awaited to complete backend and persistence cleanup)
+    const success = await store.deleteOrganization(orgId, {
       id: userId,
       name: req.user!.name || req.user!.email
     });
@@ -446,10 +456,10 @@ app.delete(
 app.post(
   ['/api/v1/orgs/:id/leave', '/api/v1/organizations/:id/leave'],
   requireUserAuth,
-  (req: AuthenticatedUserRequest, res) => {
+  async (req: AuthenticatedUserRequest, res) => {
     const orgId = req.params.id;
     try {
-      const result = store.leaveOrganization(orgId, {
+      const result = await store.leaveOrganization(orgId, {
         id: req.user!.id,
         email: req.user!.email,
         name: req.user!.name || req.user!.email

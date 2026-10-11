@@ -100,6 +100,7 @@ export class DataStore {
   private users: Map<string, User> = new Map();
   private userNotificationSettings: Map<string, UserNotificationSettings> = new Map(); // userId -> settings
   private orgs: Map<string, Organization> = new Map();
+  private deletedOrgIds: Set<string> = new Set();
   private members: Map<string, OrgMember[]> = new Map(); // orgId -> members
   private invitations: Map<string, OrgInvitation> = new Map(); // invitationId -> OrgInvitation
   private supportTickets: Map<string, SupportTicket> = new Map(); // ticketId -> SupportTicket
@@ -402,6 +403,7 @@ export class DataStore {
   }
 
   public hydrateOrganization(org: Organization): void {
+    if (this.deletedOrgIds.has(org.id)) return;
     this.orgs.set(org.id, org);
   }
 
@@ -460,6 +462,9 @@ export class DataStore {
         if (data.deployments) this.deployments = new Map(Object.entries(data.deployments));
         if (data.postmortems) this.postmortems = new Map(Object.entries(data.postmortems));
         if (data.appliedRightsizing) this.appliedRightsizing = new Map(Object.entries(data.appliedRightsizing));
+        if (data.deletedOrgIds && Array.isArray(data.deletedOrgIds)) {
+          this.deletedOrgIds = new Set(data.deletedOrgIds);
+        }
         if (data.processedWebhookIds && Array.isArray(data.processedWebhookIds)) {
           this.processedWebhookIds = new Set(data.processedWebhookIds);
         }
@@ -545,6 +550,7 @@ export class DataStore {
           invoices: Object.fromEntries(this.invoices),
           deployments: Object.fromEntries(this.deployments),
           postmortems: Object.fromEntries(this.postmortems),
+          deletedOrgIds: Array.from(this.deletedOrgIds),
           processedWebhookIds: Array.from(this.processedWebhookIds),
           clusterMetricHistory: Object.fromEntries(this.clusterMetricHistory),
           telemetryStore: this.telemetryStore.exportSnapshot()
@@ -586,6 +592,7 @@ export class DataStore {
         deployments: Object.fromEntries(this.deployments),
         postmortems: Object.fromEntries(this.postmortems),
         appliedRightsizing: Object.fromEntries(this.appliedRightsizing),
+        deletedOrgIds: Array.from(this.deletedOrgIds),
         processedWebhookIds: Array.from(this.processedWebhookIds),
         clusterMetricHistory: Object.fromEntries(this.clusterMetricHistory),
         telemetryStore: this.telemetryStore.exportSnapshot()
@@ -889,7 +896,26 @@ export class DataStore {
     const orgOwnerEmail = (org.ownerEmail || (org as any).creatorEmail || '').trim().toLowerCase();
     const orgCreatorId = org.ownerUserId || (org as any).creatorUserId;
 
-    // Check if user has an accepted invitation to this org from someone else
+    // 1. Check if user is the direct creator/owner of this organization
+    const isDirectOwner =
+      Boolean(orgCreatorId && orgCreatorId === userId) ||
+      Boolean(normEmail && orgOwnerEmail && normEmail === orgOwnerEmail) ||
+      Boolean(normEmail && (org as any).creatorEmail && normEmail === (org as any).creatorEmail.toLowerCase());
+
+    if (isDirectOwner) {
+      if (userId && !org.ownerUserId) org.ownerUserId = userId;
+      if (userId && !(org as any).creatorUserId) (org as any).creatorUserId = userId;
+      if (normEmail && !org.ownerEmail) org.ownerEmail = normEmail;
+      return {
+        isCreator: true,
+        canDelete: true,
+        canLeave: false,
+        creatorName: 'You',
+        creatorEmail: normEmail || orgOwnerEmail
+      };
+    }
+
+    // 2. Check if user joined this organization via an accepted invitation from someone else
     const acceptedInvite = Array.from(this.invitations.values()).find(
       (inv) =>
         inv.orgId === orgId &&
@@ -907,14 +933,14 @@ export class DataStore {
     const isExplicitlyInvited = Boolean(
       acceptedInvite ||
       (userMember && ((userMember as any).joinedViaInvitation || userMember.membershipId?.includes('invite'))) ||
-      (userMember && userMember.role !== 'OWNER' && orgCreatorId && orgCreatorId !== userId)
+      (userMember && (userMember as any).invitedByUserId && (userMember as any).invitedByUserId !== userId)
     );
 
-    // If explicitly invited and there is a distinct owner/creator, user is an invited member
-    if (isExplicitlyInvited && (orgCreatorId !== userId || (normEmail && orgOwnerEmail && normEmail !== orgOwnerEmail))) {
+    if (isExplicitlyInvited) {
       const creatorName =
         acceptedInvite?.invitedByName ||
         acceptedInvite?.invitedByEmail ||
+        (userMember as any)?.invitedByEmail ||
         org.creatorName ||
         (org as any).creatorEmail ||
         org.ownerEmail ||
@@ -929,23 +955,22 @@ export class DataStore {
       };
     }
 
-    // Check if user is creator/owner
-    const isDirectOwner =
-      orgCreatorId === userId ||
-      Boolean(normEmail && orgOwnerEmail && normEmail === orgOwnerEmail) ||
-      Boolean(normEmail && (org as any).creatorEmail && normEmail === (org as any).creatorEmail.toLowerCase());
-
-    const isOwnerMember = Boolean(userMember && userMember.role === 'OWNER' && !isExplicitlyInvited);
+    // 3. Fallback for owner role, sole member, or creator flag
+    const isOwnerMember = Boolean(userMember && userMember.role === 'OWNER');
     const isSoleMember = Boolean(members.length <= 1);
-    const isCreatorFlag = Boolean(org.isCreatedByMe);
+    const isCreator = isOwnerMember || isSoleMember || Boolean(org.isCreatedByMe);
 
-    const isCreator = isDirectOwner || isOwnerMember || isSoleMember || isCreatorFlag;
+    if (isCreator) {
+      if (userId && !org.ownerUserId) org.ownerUserId = userId;
+      if (userId && !(org as any).creatorUserId) (org as any).creatorUserId = userId;
+      if (normEmail && !org.ownerEmail) org.ownerEmail = normEmail;
+    }
 
     const creatorName =
       (org as any).creatorName ||
       (org as any).creatorEmail ||
       org.ownerEmail ||
-      (isCreator ? 'You' : 'Workspace Admin');
+      (isCreator ? 'You' : 'the workspace administrator');
 
     return {
       isCreator,
@@ -1054,12 +1079,15 @@ export class DataStore {
     return org;
   }
 
-  public deleteOrganization(
+  public async deleteOrganization(
     orgId: string,
     actor?: { id: string; name: string }
-  ): boolean {
+  ): Promise<boolean> {
     const org = this.orgs.get(orgId);
     if (!org) return false;
+
+    // Track permanently deleted org ID to prevent resurrection from cached tokens or async queries
+    this.deletedOrgIds.add(orgId);
 
     // 1. Delete associated clusters and active agent tokens
     for (const [clusterId, cluster] of Array.from(this.clusters.entries())) {
@@ -1138,15 +1166,17 @@ export class DataStore {
 
     this.saveSnapshot();
 
-    // 5. Delete from persistent storage backend
-    this.persistence.deleteOrganization(orgId).catch((err) => {
+    // 5. Delete from persistent storage backend (awaited to prevent resurrection)
+    try {
+      await this.persistence.deleteOrganization(orgId);
+    } catch (err: any) {
       const msg = err?.message || String(err);
       if (isGlobalQuotaError(err)) {
         // Quota safely ignored
       } else {
         console.warn(`[DataStore] Async deleteOrganization failed for org ${orgId}:`, msg);
       }
-    });
+    }
 
     // 6. Record audit event for compliance
     auditService.record({
@@ -1164,10 +1194,10 @@ export class DataStore {
     return true;
   }
 
-  public leaveOrganization(
+  public async leaveOrganization(
     orgId: string,
     user: { id: string; email: string; name?: string }
-  ): { success: boolean; remainingWorkspaces: Organization[] } {
+  ): Promise<{ success: boolean; remainingWorkspaces: Organization[] }> {
     const org = this.orgs.get(orgId);
     if (!org) {
       throw new Error('Workspace not found');
@@ -1190,15 +1220,19 @@ export class DataStore {
       throw new Error('You are not an active member of this workspace');
     }
 
-    // Remove the user from members list
+    // Remove the user from members list in memory
     members.splice(memberIndex, 1);
     this.members.set(orgId, members);
     org.membersCount = Math.max(1, members.length);
 
     this.saveSnapshot();
-    this.persistence.setOrgMembers(orgId, members).catch((err) =>
-      console.warn(`[DataStore] Async setOrgMembers failed after leaving org ${orgId}:`, err?.message || err)
-    );
+
+    // Remove user membership from persistence (awaited)
+    try {
+      await this.persistence.removeOrgMember(orgId, user.id);
+    } catch (err: any) {
+      console.warn(`[DataStore] Async removeOrgMember failed after leaving org ${orgId}:`, err?.message || err);
+    }
 
     auditService.record({
       orgId,

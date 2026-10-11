@@ -1361,6 +1361,8 @@ export interface OverviewMetrics {
   warningClusters: number;
   criticalClusters: number;
   offlineClusters: number;
+  pendingClusters?: number;
+  degradedClusters?: number;
   openIncidents: number;
   criticalIncidents: number;
   highIncidents: number;
@@ -1372,8 +1374,55 @@ export interface OverviewMetrics {
   totalWorkloads?: number;
   degradedWorkloads?: number;
   crashingPods?: number;
+  pressureNodes?: number;
   connectedAgents?: number;
+  reconnectingAgents?: number;
   offlineAgents?: number;
+  staleAgents?: number;
+  pendingAgents?: number;
+  telemetryFreshness?: {
+    lastIngestionTimestamp: number | null;
+    isFresh: boolean;
+    state?: 'LIVE' | 'DELAYED' | 'OFFLINE' | 'PENDING' | 'NO_CLUSTERS';
+    statusText: string;
+  };
+  attentionCostIssue?: {
+    hasSignificantIssue: boolean;
+    message: string;
+    estimatedSavingsMonthly?: number;
+    realizedSavingsMonthly?: number;
+    potentialSavingsMonthly?: number;
+    workloadCount?: number;
+  };
+  attentionResourceIssue?: {
+    hasSignificantIssue: boolean;
+    message: string;
+    pressureNodesCount?: number;
+    crashingPodsCount?: number;
+    degradedWorkloadsCount?: number;
+  };
+  failingResources?: Array<{
+    id: string;
+    kind: string;
+    name: string;
+    namespace: string;
+    clusterId: string;
+    clusterName: string;
+    status: string;
+    reason?: string;
+    restartCount?: number;
+  }>;
+  investigateNext?: Array<{
+    id: string;
+    priority: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
+    title: string;
+    description: string;
+    actionLabel: string;
+    actionType: 'navigate_incident' | 'navigate_cluster' | 'navigate_tab' | 'add_cluster';
+    targetId?: string;
+    targetTab?: string;
+    commandHint?: string;
+  }>;
 }
 
 export interface AgentManifestsResponse {

@@ -81,14 +81,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
 
   const checkIsCreatedByMe = (org: Organization | null | undefined): boolean => {
     if (!org) return false;
+    // 1. Authoritative flags from backend
     if (org.canDelete === true && org.canLeave === false) return true;
     if (org.canLeave === true && org.canDelete === false) return false;
-    if (org.isCreatedByMe === true) return true;
+
     const normUserEmail = (user?.email || '').trim().toLowerCase();
     const orgOwnerEmail = (org.ownerEmail || (org as any).creatorEmail || '').trim().toLowerCase();
-    if (org.ownerUserId && user?.id && org.ownerUserId === user.id) return true;
-    if ((org as any).creatorUserId && user?.id && (org as any).creatorUserId === user.id) return true;
+    const creatorUserId = (org as any).creatorUserId || org.ownerUserId;
+
+    // 2. Direct user ownership matches
+    if (user?.id && creatorUserId && creatorUserId === user.id) return true;
     if (normUserEmail && orgOwnerEmail && normUserEmail === orgOwnerEmail) return true;
+
+    // 3. If workspace has another distinct owner, current user is an invited member
+    if (user?.id && creatorUserId && creatorUserId !== user.id) return false;
+    if (normUserEmail && orgOwnerEmail && normUserEmail !== orgOwnerEmail) return false;
+
+    if (org.isCreatedByMe === true) return true;
     return false;
   };
 
@@ -181,6 +190,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
       (s || '')
         .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
         .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+        .replace(/[\u0060\u00B4]/g, "'")
         .trim()
         .toLowerCase();
 
@@ -189,14 +199,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
     const matchesName = confirmInput === targetNorm;
     const matchesId = confirmInput === workspaceToDelete.id.trim().toLowerCase();
     const matchesSlug = Boolean(workspaceToDelete.slug && confirmInput === workspaceToDelete.slug.trim().toLowerCase());
-    const matchesDelete = confirmInput === 'delete';
+    const matchesDelete =
+      confirmInput === 'delete' ||
+      confirmInput === 'yes' ||
+      confirmInput === 'confirm' ||
+      confirmInput === 'permanently delete' ||
+      confirmInput === 'delete workspace';
 
-    if (!matchesName && !matchesId && !matchesSlug && !matchesDelete) {
-      setDeleteWorkspaceError(`Please type "${workspaceToDelete.name}" or "delete" to confirm.`);
+    if (!deleteAcknowledged) {
+      setDeleteWorkspaceError('Please check the confirmation box below acknowledging that this action is permanent.');
       return;
     }
-    if (!deleteAcknowledged) {
-      setDeleteWorkspaceError('Please acknowledge that workspace deletion is permanent.');
+
+    if (!matchesName && !matchesId && !matchesSlug && !matchesDelete) {
+      setDeleteWorkspaceError(`Please type "${workspaceToDelete.name}" or "delete" (or click Fill "delete" above) to confirm.`);
       return;
     }
 
@@ -204,7 +220,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
       setDeletingWorkspace(true);
       setDeleteWorkspaceError(null);
       const deletedName = workspaceToDelete.name;
-      const res = await deleteOrganization(workspaceToDelete.id, deleteConfirmName.trim(), true);
+      const res = await deleteOrganization(workspaceToDelete.id, deleteConfirmName.trim() || 'delete', true);
       setWorkspaceToDelete(null);
       setDeleteConfirmName('');
       setDeleteAcknowledged(false);
@@ -1053,14 +1069,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setDeleteConfirmName(workspaceToDelete.name)}
+                    onClick={() => {
+                      setDeleteConfirmName(workspaceToDelete.name);
+                      setDeleteAcknowledged(true);
+                      setDeleteWorkspaceError(null);
+                    }}
                     className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors cursor-pointer border border-zinc-700/60"
                   >
                     Fill Name
                   </button>
                   <button
                     type="button"
-                    onClick={() => setDeleteConfirmName('delete')}
+                    onClick={() => {
+                      setDeleteConfirmName('delete');
+                      setDeleteAcknowledged(true);
+                      setDeleteWorkspaceError(null);
+                    }}
                     className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors cursor-pointer border border-zinc-700/60"
                   >
                     Fill "delete"
@@ -1071,7 +1095,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
                 type="text"
                 required
                 value={deleteConfirmName}
-                onChange={(e) => setDeleteConfirmName(e.target.value)}
+                onChange={(e) => {
+                  setDeleteConfirmName(e.target.value);
+                  if (deleteWorkspaceError) setDeleteWorkspaceError(null);
+                }}
                 placeholder={`Type "${workspaceToDelete.name}" or "delete"`}
                 className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-rose-500 font-mono text-xs"
                 autoFocus
@@ -1082,7 +1109,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
               <input
                 type="checkbox"
                 checked={deleteAcknowledged}
-                onChange={(e) => setDeleteAcknowledged(e.target.checked)}
+                onChange={(e) => {
+                  setDeleteAcknowledged(e.target.checked);
+                  if (deleteWorkspaceError) setDeleteWorkspaceError(null);
+                }}
                 className="mt-0.5 w-4 h-4 rounded border-zinc-700 bg-zinc-950 text-rose-500 focus:ring-0 cursor-pointer"
               />
               <span className="text-zinc-300 text-xs leading-snug">
@@ -1104,16 +1134,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
                 type="submit"
                 variant="danger"
                 size="sm"
-                disabled={
-                  deletingWorkspace ||
-                  !deleteAcknowledged ||
-                  (() => {
-                    const norm = (deleteConfirmName || '').replace(/[\u2018\u2019\u201A\u201B]/g, "'").replace(/[\u201C\u201D\u201E\u201F]/g, '"').trim().toLowerCase();
-                    const target = (workspaceToDelete.name || '').replace(/[\u2018\u2019\u201A\u201B]/g, "'").replace(/[\u201C\u201D\u201E\u201F]/g, '"').trim().toLowerCase();
-                    const matchesSlug = Boolean(workspaceToDelete.slug && norm === workspaceToDelete.slug.trim().toLowerCase());
-                    return norm !== target && norm !== workspaceToDelete.id.trim().toLowerCase() && norm !== 'delete' && !matchesSlug;
-                  })()
-                }
+                disabled={deletingWorkspace}
                 icon={<Trash2 className="w-3.5 h-3.5" />}
               >
                 {deletingWorkspace ? 'Deleting Workspace...' : 'Delete Workspace Permanently'}

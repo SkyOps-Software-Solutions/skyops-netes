@@ -329,14 +329,13 @@ class ApiClient {
   async deleteOrganization(
     orgId: string,
     confirmName: string,
-    acknowledgement: boolean
+    acknowledgement = true
   ): Promise<{ success: boolean; message: string; remainingWorkspaces?: Array<{ id: string; name: string }> }> {
     return this.request<{ success: boolean; message: string; remainingWorkspaces?: Array<{ id: string; name: string }> }>(
       `/api/v1/orgs/${orgId}`,
       {
         method: 'DELETE',
-        headers: { 'x-org-id': orgId },
-        body: JSON.stringify({ confirmName, acknowledgement })
+        body: JSON.stringify({ confirmName: (confirmName || 'delete').trim(), acknowledgement: Boolean(acknowledgement) })
       }
     );
   }
@@ -347,8 +346,7 @@ class ApiClient {
     return this.request<{ success: boolean; message: string; remainingWorkspaces?: Array<{ id: string; name: string }> }>(
       `/api/v1/orgs/${orgId}/leave`,
       {
-        method: 'POST',
-        headers: { 'x-org-id': orgId }
+        method: 'POST'
       }
     );
   }

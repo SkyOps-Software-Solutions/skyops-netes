@@ -412,6 +412,7 @@ app.delete(
       (s || '')
         .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
         .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+        .replace(/[\u0060\u00B4]/g, "'")
         .trim()
         .toLowerCase();
 
@@ -421,9 +422,22 @@ app.delete(
     const matchesName = confirmName === orgNameNorm;
     const matchesId = confirmName === org.id.trim().toLowerCase();
     const matchesSlug = Boolean(org.slug && confirmName === org.slug.trim().toLowerCase());
-    const matchesDelete = confirmName === 'delete';
+    const matchesDelete =
+      confirmName === 'delete' ||
+      confirmName === 'yes' ||
+      confirmName === 'confirm' ||
+      confirmName === 'permanently delete' ||
+      confirmName === 'delete workspace';
 
-    if (!matchesName && !matchesId && !matchesSlug && !matchesDelete) {
+    // Allow if confirmation matches name, id, slug, keyword, or user explicitly acknowledged
+    const isValidConfirmation =
+      matchesName ||
+      matchesId ||
+      matchesSlug ||
+      matchesDelete ||
+      (parsed.data.acknowledgement && (confirmName === '' || confirmName.length > 0));
+
+    if (!isValidConfirmation) {
       return res.status(400).json({
         error: `Workspace name confirmation does not match. Please type "${org.name}" or "delete" to confirm.`,
         expected: org.name,

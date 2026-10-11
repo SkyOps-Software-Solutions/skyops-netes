@@ -104,14 +104,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const checkIsCreatedByMe = (org: Organization | null | undefined): boolean => {
     if (!org) return false;
+    // 1. Authoritative flags from backend
     if (org.canDelete === true && org.canLeave === false) return true;
     if (org.canLeave === true && org.canDelete === false) return false;
-    if (org.isCreatedByMe === true) return true;
+
     const normUserEmail = (user?.email || '').trim().toLowerCase();
     const orgOwnerEmail = (org.ownerEmail || (org as any).creatorEmail || '').trim().toLowerCase();
-    if (org.ownerUserId && user?.id && org.ownerUserId === user.id) return true;
-    if ((org as any).creatorUserId && user?.id && (org as any).creatorUserId === user.id) return true;
+    const creatorUserId = (org as any).creatorUserId || org.ownerUserId;
+
+    // 2. Direct user ownership matches
+    if (user?.id && creatorUserId && creatorUserId === user.id) return true;
     if (normUserEmail && orgOwnerEmail && normUserEmail === orgOwnerEmail) return true;
+
+    // 3. If workspace has another distinct owner, current user is an invited member
+    if (user?.id && creatorUserId && creatorUserId !== user.id) return false;
+    if (normUserEmail && orgOwnerEmail && normUserEmail !== orgOwnerEmail) return false;
+
+    if (org.isCreatedByMe === true) return true;
     return false;
   };
 
@@ -162,6 +171,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       (s || '')
         .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
         .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+        .replace(/[\u0060\u00B4]/g, "'")
         .trim()
         .toLowerCase();
 
@@ -170,21 +180,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const matchesName = confirmInput === targetNorm;
     const matchesId = confirmInput === orgToDelete.id.trim().toLowerCase();
     const matchesSlug = Boolean(orgToDelete.slug && confirmInput === orgToDelete.slug.trim().toLowerCase());
-    const matchesDelete = confirmInput === 'delete';
+    const matchesDelete =
+      confirmInput === 'delete' ||
+      confirmInput === 'yes' ||
+      confirmInput === 'confirm' ||
+      confirmInput === 'permanently delete' ||
+      confirmInput === 'delete workspace';
 
-    if (!matchesName && !matchesId && !matchesSlug && !matchesDelete) {
-      setDeleteOrgError(`Please type "${orgToDelete.name}" or "delete" to confirm deletion.`);
+    if (!deleteAcknowledged) {
+      setDeleteOrgError('Please check the confirmation box below acknowledging that this action is permanent.');
       return;
     }
-    if (!deleteAcknowledged) {
-      setDeleteOrgError('Please acknowledge that this action is permanent.');
+
+    if (!matchesName && !matchesId && !matchesSlug && !matchesDelete) {
+      setDeleteOrgError(`Please type "${orgToDelete.name}" or "delete" (or click Fill "delete" above) to confirm.`);
       return;
     }
 
     try {
       setIsDeletingOrg(true);
       setDeleteOrgError(null);
-      await deleteOrganization(orgToDelete.id, deleteConfirmName.trim(), true);
+      await deleteOrganization(orgToDelete.id, deleteConfirmName.trim() || 'delete', true);
       setOrgToDelete(null);
       setDeleteConfirmName('');
       setDeleteAcknowledged(false);
@@ -817,14 +833,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setDeleteConfirmName(orgToDelete.name)}
+                    onClick={() => {
+                      setDeleteConfirmName(orgToDelete.name);
+                      setDeleteAcknowledged(true);
+                      setDeleteOrgError(null);
+                    }}
                     className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors cursor-pointer border border-zinc-700/60"
                   >
                     Fill Name
                   </button>
                   <button
                     type="button"
-                    onClick={() => setDeleteConfirmName('delete')}
+                    onClick={() => {
+                      setDeleteConfirmName('delete');
+                      setDeleteAcknowledged(true);
+                      setDeleteOrgError(null);
+                    }}
                     className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors cursor-pointer border border-zinc-700/60"
                   >
                     Fill "delete"
@@ -835,7 +859,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 type="text"
                 required
                 value={deleteConfirmName}
-                onChange={(e) => setDeleteConfirmName(e.target.value)}
+                onChange={(e) => {
+                  setDeleteConfirmName(e.target.value);
+                  if (deleteOrgError) setDeleteOrgError(null);
+                }}
                 placeholder={`Type "${orgToDelete.name}" or "delete"`}
                 className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-rose-500 font-mono text-xs"
                 autoFocus
@@ -846,7 +873,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <input
                 type="checkbox"
                 checked={deleteAcknowledged}
-                onChange={(e) => setDeleteAcknowledged(e.target.checked)}
+                onChange={(e) => {
+                  setDeleteAcknowledged(e.target.checked);
+                  if (deleteOrgError) setDeleteOrgError(null);
+                }}
                 className="mt-0.5 w-4 h-4 rounded border-zinc-700 bg-zinc-950 text-rose-500 focus:ring-0 cursor-pointer"
               />
               <span className="text-zinc-300 text-xs leading-snug">
@@ -868,16 +898,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 type="submit"
                 variant="danger"
                 size="sm"
-                disabled={
-                  isDeletingOrg ||
-                  !deleteAcknowledged ||
-                  (() => {
-                    const norm = (deleteConfirmName || '').replace(/[\u2018\u2019\u201A\u201B]/g, "'").replace(/[\u201C\u201D\u201E\u201F]/g, '"').trim().toLowerCase();
-                    const target = (orgToDelete.name || '').replace(/[\u2018\u2019\u201A\u201B]/g, "'").replace(/[\u201C\u201D\u201E\u201F]/g, '"').trim().toLowerCase();
-                    const matchesSlug = Boolean(orgToDelete.slug && norm === orgToDelete.slug.trim().toLowerCase());
-                    return norm !== target && norm !== orgToDelete.id.trim().toLowerCase() && norm !== 'delete' && !matchesSlug;
-                  })()
-                }
+                disabled={isDeletingOrg}
                 icon={<Trash2 className="w-3.5 h-3.5" />}
               >
                 {isDeletingOrg ? 'Deleting Workspace...' : 'Delete Workspace Permanently'}

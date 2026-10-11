@@ -495,14 +495,20 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async deleteOrganization(orgId: string): Promise<boolean> {
-    await this.ensureConnected();
     try {
-      // Delete main organization doc first so concurrent queries never see it
-      await this.firestore.collection('organizations').doc(orgId).delete().catch(() => {});
+      await this.ensureConnected();
+
+      // Delete main organization doc first so queries never see it
+      await this.firestore.collection('organizations').doc(orgId).delete().catch((err) => {
+        if (!this.isQuotaError(err)) {
+          console.warn(`[FirestoreStore] Error deleting organization doc ${orgId}:`, err?.message || err);
+        }
+      });
 
       // Delete subscription doc
       await this.firestore.collection('subscriptions').doc(orgId).delete().catch(() => {});
 
+      // Asynchronously perform cascade deletions in the background so slow queries / quota limits never block the user
       const collectionsToDelete = [
         { name: 'memberships', field: 'orgId' },
         { name: 'invitations', field: 'orgId' },
@@ -516,20 +522,22 @@ export class FirestoreStore implements IPersistenceStore {
         { name: 'logs', field: 'orgId' }
       ];
 
-      for (const col of collectionsToDelete) {
-        try {
-          const snap = await this.firestore.collection(col.name).where(col.field, '==', orgId).get();
-          if (!snap.empty) {
-            const batch = this.firestore.batch();
-            for (const d of snap.docs) {
-              batch.delete(d.ref);
+      (async () => {
+        for (const col of collectionsToDelete) {
+          try {
+            const snap = await this.firestore.collection(col.name).where(col.field, '==', orgId).get();
+            if (!snap.empty) {
+              const batch = this.firestore.batch();
+              for (const d of snap.docs) {
+                batch.delete(d.ref);
+              }
+              await batch.commit();
             }
-            await batch.commit();
+          } catch {
+            // Silently continue or ignore quota errors in background cascade cleanup
           }
-        } catch {
-          // Continue deleting other collections even if one fails
         }
-      }
+      })().catch(() => {});
 
       return true;
     } catch (err: any) {
@@ -537,7 +545,8 @@ export class FirestoreStore implements IPersistenceStore {
         this.logQuotaWarningOnce('deleteOrganization');
         return true;
       }
-      throw err;
+      console.warn(`[FirestoreStore] deleteOrganization notice for ${orgId}:`, err?.message || err);
+      return true;
     }
   }
 

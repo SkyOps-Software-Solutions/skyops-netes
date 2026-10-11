@@ -900,7 +900,8 @@ export class DataStore {
     const isDirectOwner =
       Boolean(orgCreatorId && orgCreatorId === userId) ||
       Boolean(normEmail && orgOwnerEmail && normEmail === orgOwnerEmail) ||
-      Boolean(normEmail && (org as any).creatorEmail && normEmail === (org as any).creatorEmail.toLowerCase());
+      Boolean(normEmail && (org as any).creatorEmail && normEmail === (org as any).creatorEmail.toLowerCase()) ||
+      Boolean((org as any).isCreatedByMe && (userId === org.ownerUserId || !org.ownerUserId));
 
     if (isDirectOwner) {
       if (userId && !org.ownerUserId) org.ownerUserId = userId;
@@ -915,7 +916,12 @@ export class DataStore {
       };
     }
 
-    // 2. Check if user joined this organization via an accepted invitation from someone else
+    // 2. Check if this organization belongs to another user (i.e. creator is someone else)
+    const hasDifferentOwner =
+      Boolean(orgCreatorId && orgCreatorId !== userId) ||
+      Boolean(orgOwnerEmail && normEmail && orgOwnerEmail !== normEmail);
+
+    // Check if user joined this organization via an accepted invitation
     const acceptedInvite = Array.from(this.invitations.values()).find(
       (inv) =>
         inv.orgId === orgId &&
@@ -931,19 +937,20 @@ export class DataStore {
     );
 
     const isExplicitlyInvited = Boolean(
+      hasDifferentOwner ||
       acceptedInvite ||
       (userMember && ((userMember as any).joinedViaInvitation || userMember.membershipId?.includes('invite'))) ||
       (userMember && (userMember as any).invitedByUserId && (userMember as any).invitedByUserId !== userId)
     );
 
-    if (isExplicitlyInvited) {
+    if (isExplicitlyInvited || hasDifferentOwner) {
       const creatorName =
+        (org as any).creatorName ||
         acceptedInvite?.invitedByName ||
         acceptedInvite?.invitedByEmail ||
         (userMember as any)?.invitedByEmail ||
-        org.creatorName ||
-        (org as any).creatorEmail ||
         org.ownerEmail ||
+        (org as any).creatorEmail ||
         'the workspace administrator';
 
       return {
@@ -951,14 +958,14 @@ export class DataStore {
         canDelete: false,
         canLeave: true,
         creatorName,
-        creatorEmail: acceptedInvite?.invitedByEmail || (org as any).creatorEmail || org.ownerEmail
+        creatorEmail: (org as any).creatorEmail || org.ownerEmail || acceptedInvite?.invitedByEmail
       };
     }
 
-    // 3. Fallback for owner role, sole member, or creator flag
+    // 3. Fallback only if no owner is designated at all
     const isOwnerMember = Boolean(userMember && userMember.role === 'OWNER');
     const isSoleMember = Boolean(members.length <= 1);
-    const isCreator = isOwnerMember || isSoleMember || Boolean(org.isCreatedByMe);
+    const isCreator = !hasDifferentOwner && (isOwnerMember || isSoleMember || Boolean(org.isCreatedByMe));
 
     if (isCreator) {
       if (userId && !org.ownerUserId) org.ownerUserId = userId;
@@ -1166,9 +1173,12 @@ export class DataStore {
 
     this.saveSnapshot();
 
-    // 5. Delete from persistent storage backend (awaited to prevent resurrection)
+    // 5. Delete from persistent storage backend (with safety race timeout so request returns immediately)
     try {
-      await this.persistence.deleteOrganization(orgId);
+      await Promise.race([
+        this.persistence.deleteOrganization(orgId),
+        new Promise((resolve) => setTimeout(resolve, 2500))
+      ]);
     } catch (err: any) {
       const msg = err?.message || String(err);
       if (isGlobalQuotaError(err)) {

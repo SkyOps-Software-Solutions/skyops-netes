@@ -23,6 +23,7 @@ import {
   StoredArtifactLifecycleStatus,
   StorageUsageSummary
 } from '../../src/types/index';
+import { LogQueryFilter, LogRecord } from '../../src/types/logs';
 import {
   AuditEvent,
   AuditQueryFilters,
@@ -182,4 +183,10 @@ export interface IPersistenceStore {
   updateStoredArtifactStatus(orgId: string, id: string, status: StoredArtifactLifecycleStatus): Promise<StoredArtifact | null>;
   deleteStoredArtifact(orgId: string, id: string): Promise<boolean>;
   getStorageUsageSummary(orgId: string): Promise<StorageUsageSummary>;
+
+  // --- Operational Kubernetes Logs ---
+  saveLogRecords(orgId: string, clusterId: string, records: LogRecord[]): Promise<void>;
+  queryLogRecords(orgId: string, filter: LogQueryFilter): Promise<{ records: LogRecord[]; totalMatches: number }>;
+  getLogRecordCount(orgId: string, clusterId?: string): Promise<number>;
+  deleteExpiredLogs(orgId: string, retentionDays: number): Promise<number>;
 }

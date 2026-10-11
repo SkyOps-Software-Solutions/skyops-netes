@@ -37,16 +37,21 @@ export function determinePersistenceProvider(): 'firestore' | 'memory' {
     return 'firestore';
   }
 
-  // In development, default to in-memory store unless server GCP credentials are present
-  const hasGcpCreds = Boolean(
+  // Use Firestore whenever Firebase configuration or GCP credentials are present
+  const hasFirebaseConfig = Boolean(
+    process.env.SKYOPS_FIRESTORE_PROJECT_ID ||
+    process.env.FIREBASE_PROJECT_ID ||
+    process.env.VITE_FIREBASE_PROJECT_ID ||
+    fallbackConfig?.projectId ||
     process.env.GOOGLE_APPLICATION_CREDENTIALS ||
     process.env.FIREBASE_SERVICE_ACCOUNT_KEY
   );
-  if (!hasGcpCreds) {
-    return 'memory';
+
+  if (hasFirebaseConfig) {
+    return 'firestore';
   }
 
-  return 'firestore';
+  return 'memory';
 }
 
 export function getPersistenceStore(): IPersistenceStore {

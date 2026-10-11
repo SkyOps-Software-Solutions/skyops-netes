@@ -80,6 +80,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     switchOrganization,
     createOrganization,
     deleteOrganization,
+    leaveOrganization,
     role,
     user,
     signOut,
@@ -96,6 +97,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [deleteAcknowledged, setDeleteAcknowledged] = useState(false);
   const [isDeletingOrg, setIsDeletingOrg] = useState(false);
   const [deleteOrgError, setDeleteOrgError] = useState<string | null>(null);
+
+  const [orgToLeave, setOrgToLeave] = useState<Organization | null>(null);
+  const [isLeavingOrg, setIsLeavingOrg] = useState(false);
+  const [leaveOrgError, setLeaveOrgError] = useState<string | null>(null);
+
+  const checkIsCreatedByMe = (org: Organization | null | undefined): boolean => {
+    if (!org) return false;
+    if (org.canLeave) return false;
+    if (org.isCreatedByMe === true) return true;
+    if (org.canDelete && !org.canLeave) return true;
+    const normUserEmail = (user?.email || '').trim().toLowerCase();
+    const orgOwnerEmail = (org.ownerEmail || (org as any).creatorEmail || '').trim().toLowerCase();
+    if (org.ownerUserId && user?.id && org.ownerUserId === user.id) return true;
+    if ((org as any).creatorUserId && user?.id && (org as any).creatorUserId === user.id) return true;
+    if (normUserEmail && orgOwnerEmail && normUserEmail === orgOwnerEmail) return true;
+    return false;
+  };
 
   const handleCreateOrg = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,11 +133,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setIsOrgDropdownOpen(false);
   };
 
+  const openLeaveOrgModal = (org: Organization, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOrgToLeave(org);
+    setLeaveOrgError(null);
+    setIsOrgDropdownOpen(false);
+  };
+
+  const handleConfirmLeaveOrg = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!orgToLeave) return;
+    try {
+      setIsLeavingOrg(true);
+      setLeaveOrgError(null);
+      await leaveOrganization(orgToLeave.id);
+      setOrgToLeave(null);
+    } catch (err: any) {
+      setLeaveOrgError(err?.message || 'Failed to leave workspace');
+    } finally {
+      setIsLeavingOrg(false);
+    }
+  };
+
   const handleConfirmDeleteOrg = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!orgToDelete) return;
-    if (deleteConfirmName.trim() !== orgToDelete.name.trim()) {
-      setDeleteOrgError(`Please type "${orgToDelete.name}" exactly to confirm deletion.`);
+    const confirmInput = deleteConfirmName.trim().toLowerCase();
+    const matchesName = confirmInput === orgToDelete.name.trim().toLowerCase();
+    const matchesId = confirmInput === orgToDelete.id.trim().toLowerCase();
+    if (!matchesName && !matchesId) {
+      setDeleteOrgError(`Please type "${orgToDelete.name}" to confirm deletion.`);
       return;
     }
     if (!deleteAcknowledged) {
@@ -418,10 +461,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="max-h-52 overflow-y-auto divide-y divide-zinc-800/40">
                 {organizations.map((org) => {
                   const isCurrent = org.id === currentOrg?.id;
-                  const canDeleteThisOrg =
-                    org.ownerUserId === user?.id ||
-                    (org as any).ownerEmail?.toLowerCase() === user?.email?.toLowerCase() ||
-                    (isCurrent && role === 'OWNER');
+                  const isCreatedByMe = checkIsCreatedByMe(org);
 
                   return (
                     <div
@@ -436,22 +476,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           switchOrganization(org.id);
                           setIsOrgDropdownOpen(false);
                         }}
-                        className="flex-1 min-w-0 text-left flex items-center gap-2 cursor-pointer py-0.5"
+                        className="flex-1 min-w-0 text-left flex items-center gap-1.5 cursor-pointer py-0.5"
                       >
                         <span className="truncate font-medium">{org.name}</span>
                         {isCurrent && (
                           <CheckCircle2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                         )}
+                        {isCreatedByMe ? (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
+                            Creator
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0">
+                            Invited
+                          </span>
+                        )}
                       </button>
 
-                      {canDeleteThisOrg && (
+                      {isCreatedByMe ? (
                         <button
                           type="button"
                           onClick={(e) => openDeleteOrgModal(org, e)}
-                          title={`Delete workspace "${org.name}"`}
+                          title={`Delete workspace "${org.name}" (Created by you)`}
                           className="p-1 rounded text-zinc-500 hover:text-rose-400 hover:bg-rose-950/40 transition-colors cursor-pointer shrink-0"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => openLeaveOrgModal(org, e)}
+                          title={`Leave workspace "${org.name}" (Joined via invitation)`}
+                          className="p-1 rounded text-zinc-500 hover:text-amber-400 hover:bg-amber-950/40 transition-colors cursor-pointer shrink-0"
+                        >
+                          <LogOut className="w-3.5 h-3.5" />
                         </button>
                       )}
                     </div>
@@ -544,7 +602,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onClick={() => onSelectTab(item.id)}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition-all cursor-pointer group ${
                 isActive
-                  ? 'bg-sky-500/12 text-sky-300 border border-sky-500/25 shadow-xs'
+                  ? 'bg-sky-500/12 text-sky-300 border border-sky-500/25 border-l-2 border-l-sky-400 shadow-xs'
                   : 'text-zinc-300 hover:text-white hover:bg-zinc-900/80 border border-transparent'
               }`}
             >
@@ -783,12 +841,67 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 size="sm"
                 disabled={
                   isDeletingOrg ||
-                  deleteConfirmName.trim() !== orgToDelete.name.trim() ||
+                  (!deleteConfirmName.trim() ||
+                    (deleteConfirmName.trim().toLowerCase() !== orgToDelete.name.trim().toLowerCase() &&
+                     deleteConfirmName.trim().toLowerCase() !== orgToDelete.id.trim().toLowerCase())) ||
                   !deleteAcknowledged
                 }
                 icon={<Trash2 className="w-3.5 h-3.5" />}
               >
                 {isDeletingOrg ? 'Deleting Workspace...' : 'Delete Workspace Permanently'}
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Leave Organization Modal (For Invited Members) */}
+      <Modal
+        isOpen={Boolean(orgToLeave)}
+        onClose={() => !isLeavingOrg && setOrgToLeave(null)}
+        title="Leave Workspace"
+        maxWidth="max-w-md"
+      >
+        {orgToLeave && (
+          <form onSubmit={handleConfirmLeaveOrg} className="space-y-4 font-sans text-xs">
+            <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-800/60 space-y-2">
+              <div className="flex items-center gap-2 text-amber-300 font-semibold text-sm">
+                <LogOut className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>Leave "{orgToLeave.name}"?</span>
+              </div>
+              <p className="text-zinc-300 leading-relaxed text-xs">
+                You joined this workspace via invitation from <strong className="text-white">{orgToLeave.creatorName || (orgToLeave as any).ownerEmail || 'the workspace administrator'}</strong>.
+              </p>
+              <p className="text-zinc-400 leading-relaxed text-xs">
+                As an invited member, you cannot permanently delete this organization, but leaving it will remove it from your workspace list. You can be re-invited by an administrator at any time.
+              </p>
+            </div>
+
+            {leaveOrgError && (
+              <div className="p-2.5 rounded-lg bg-rose-950/60 border border-rose-800 text-rose-200 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>{leaveOrgError}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={isLeavingOrg}
+                onClick={() => setOrgToLeave(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="danger"
+                size="sm"
+                disabled={isLeavingOrg}
+                icon={<LogOut className="w-3.5 h-3.5" />}
+              >
+                {isLeavingOrg ? 'Leaving Workspace...' : 'Leave Workspace'}
               </Button>
             </div>
           </form>

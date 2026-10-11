@@ -24,7 +24,9 @@ import {
   Trash2,
   Users,
   Webhook,
-  Zap
+  Zap,
+  LogOut,
+  ShieldCheck
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
@@ -67,7 +69,7 @@ interface TabGroup {
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIncident, onRefresh }) => {
-  const { currentOrg, organizations, switchOrganization, createOrganization, deleteOrganization, role, user } = useAuth();
+  const { currentOrg, organizations, switchOrganization, createOrganization, deleteOrganization, leaveOrganization, role, user } = useAuth();
   const safeClusters = Array.isArray(clusters) ? clusters : [];
   const [activeTab, setActiveTab] = useState<SettingsTab>('org');
   const [selectedClusterId, setSelectedClusterId] = useState<string>(safeClusters[0]?.id || '');
@@ -76,10 +78,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
 
   // Org Settings Form state
   const isOwnerOrAdmin = role === 'OWNER' || role === 'ADMIN';
-  const isOwner =
-    role === 'OWNER' ||
-    currentOrg?.ownerUserId === user?.id ||
-    Boolean((currentOrg as any)?.ownerEmail && (currentOrg as any).ownerEmail.toLowerCase() === user?.email?.toLowerCase());
+
+  const checkIsCreatedByMe = (org: Organization | null | undefined): boolean => {
+    if (!org) return false;
+    if (org.canLeave) return false;
+    if (org.isCreatedByMe === true) return true;
+    if (org.canDelete && !org.canLeave) return true;
+    const normUserEmail = (user?.email || '').trim().toLowerCase();
+    const orgOwnerEmail = (org.ownerEmail || (org as any).creatorEmail || '').trim().toLowerCase();
+    if (org.ownerUserId && user?.id && org.ownerUserId === user.id) return true;
+    if ((org as any).creatorUserId && user?.id && (org as any).creatorUserId === user.id) return true;
+    if (normUserEmail && orgOwnerEmail && normUserEmail === orgOwnerEmail) return true;
+    return false;
+  };
+
+  const currentOrgIsCreatedByMe = checkIsCreatedByMe(currentOrg);
+  const isOwner = role === 'OWNER' || currentOrgIsCreatedByMe;
   const [orgName, setOrgName] = useState(currentOrg?.name || '');
   const [timezone, setTimezone] = useState(currentOrg?.settings?.general?.timezone || 'UTC');
   const [enforceMfa, setEnforceMfa] = useState(currentOrg?.settings?.security?.enforceMfa || false);
@@ -101,6 +115,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
   const [deleteAcknowledged, setDeleteAcknowledged] = useState(false);
   const [deletingWorkspace, setDeletingWorkspace] = useState(false);
   const [deleteWorkspaceError, setDeleteWorkspaceError] = useState<string | null>(null);
+
+  const [workspaceToLeave, setWorkspaceToLeave] = useState<Organization | null>(null);
+  const [leavingWorkspace, setLeavingWorkspace] = useState(false);
+  const [leaveWorkspaceError, setLeaveWorkspaceError] = useState<string | null>(null);
 
   const handleCreateWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,11 +146,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
     setDeleteWorkspaceError(null);
   };
 
+  const openLeaveWorkspaceModal = (org: Organization) => {
+    setWorkspaceToLeave(org);
+    setLeaveWorkspaceError(null);
+  };
+
+  const handleLeaveWorkspace = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!workspaceToLeave) return;
+    try {
+      setLeavingWorkspace(true);
+      setLeaveWorkspaceError(null);
+      const leftName = workspaceToLeave.name;
+      const res = await leaveOrganization(workspaceToLeave.id);
+      setWorkspaceToLeave(null);
+      setOrgSuccessMsg(
+        res.remainingWorkspaces.length > 0
+          ? `You have successfully left "${leftName}".`
+          : `You have left "${leftName}".`
+      );
+      setTimeout(() => setOrgSuccessMsg(null), 5000);
+      onRefresh();
+    } catch (err: any) {
+      setLeaveWorkspaceError(err?.message || 'Failed to leave workspace');
+    } finally {
+      setLeavingWorkspace(false);
+    }
+  };
+
   const handleDeleteWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!workspaceToDelete) return;
-    if (deleteConfirmName.trim() !== workspaceToDelete.name.trim()) {
-      setDeleteWorkspaceError(`Workspace name does not match. Please type "${workspaceToDelete.name}" exactly.`);
+    const confirmInput = deleteConfirmName.trim().toLowerCase();
+    const matchesName = confirmInput === workspaceToDelete.name.trim().toLowerCase();
+    const matchesId = confirmInput === workspaceToDelete.id.trim().toLowerCase();
+    if (!matchesName && !matchesId) {
+      setDeleteWorkspaceError(`Workspace name does not match. Please type "${workspaceToDelete.name}" to confirm.`);
       return;
     }
     if (!deleteAcknowledged) {
@@ -643,17 +692,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
             <div className="divide-y divide-zinc-800/80 border border-zinc-800/80 rounded-xl overflow-hidden bg-zinc-950/60">
               {organizations.map((org) => {
                 const isCurrent = org.id === currentOrg?.id;
-                const isOrgOwner =
-                  org.ownerUserId === user?.id ||
-                  Boolean((org as any).ownerEmail && (org as any).ownerEmail.toLowerCase() === user?.email?.toLowerCase()) ||
-                  (isCurrent && role === 'OWNER');
+                const isCreatedByMe = checkIsCreatedByMe(org);
 
                 return (
                   <div
                     key={org.id}
                     className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-zinc-900/40 transition-colors"
                   >
-                    <div className="space-y-1 min-w-0">
+                    <div className="space-y-1.5 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold text-zinc-100 truncate">
                           {org.name}
@@ -663,9 +709,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
                             ACTIVE WORKSPACE
                           </span>
                         )}
-                        {isOrgOwner && (
-                          <span className="px-2 py-0.5 rounded-md bg-zinc-900 text-zinc-400 border border-zinc-800 text-[10px] font-mono">
-                            OWNER
+                        {isCreatedByMe ? (
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-mono font-semibold flex items-center gap-1">
+                            <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                            CREATED BY YOU
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-mono font-semibold flex items-center gap-1">
+                            <Users className="w-3 h-3 text-amber-400" />
+                            INVITED MEMBER
                           </span>
                         )}
                       </div>
@@ -674,6 +726,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
                         {org.slug && <span>Slug: {org.slug}</span>}
                         {typeof org.membersCount === 'number' && (
                           <span>{org.membersCount} {org.membersCount === 1 ? 'member' : 'members'}</span>
+                        )}
+                        {!isCreatedByMe && (
+                          <span className="text-amber-400/90 font-sans text-[11px]">
+                            Admin: {org.creatorName || (org as any).ownerEmail || 'Workspace Admin'} (Only creator can delete)
+                          </span>
                         )}
                       </div>
                     </div>
@@ -689,7 +746,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
                           Switch to Workspace
                         </Button>
                       )}
-                      {isOrgOwner && (
+                      {isCreatedByMe ? (
                         <Button
                           type="button"
                           variant="danger"
@@ -697,7 +754,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
                           onClick={() => openDeleteWorkspaceModal(org)}
                           icon={<Trash2 className="w-3.5 h-3.5" />}
                         >
-                          Delete
+                          Delete Workspace
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => openLeaveWorkspaceModal(org)}
+                          icon={<LogOut className="w-3.5 h-3.5" />}
+                          className="text-amber-300 border-amber-800/60 hover:bg-amber-950/40"
+                        >
+                          Leave Workspace
                         </Button>
                       )}
                     </div>
@@ -707,8 +775,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
             </div>
           </div>
 
-          {/* Danger Zone: Delete Current Workspace */}
-          {currentOrg && isOwner && (
+          {/* Danger Zone: If currentOrg was created by user */}
+          {currentOrg && currentOrgIsCreatedByMe && (
             <div className="p-6 rounded-xl bg-rose-950/15 border border-rose-900/60 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="space-y-1">
@@ -730,6 +798,34 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
                   className="shrink-0"
                 >
                   Delete This Workspace
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Leave Section: If currentOrg was joined via invitation */}
+          {currentOrg && !currentOrgIsCreatedByMe && (
+            <div className="p-6 rounded-xl bg-amber-950/15 border border-amber-900/60 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <h3 className="text-xs font-bold text-amber-300 font-mono uppercase tracking-wider flex items-center gap-2">
+                    <LogOut className="w-4 h-4 text-amber-400" />
+                    Workspace Membership — Leave Workspace
+                  </h3>
+                  <p className="text-xs text-zinc-300 leading-relaxed max-w-2xl">
+                    You joined <strong className="text-white">{currentOrg.name}</strong> as an invited member. The workspace administrator is <strong className="text-white">{currentOrg.creatorName || (currentOrg as any).ownerEmail || 'the workspace administrator'}</strong>. You cannot delete this workspace, but you can leave it at any time.
+                  </p>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => openLeaveWorkspaceModal(currentOrg)}
+                  icon={<LogOut className="w-3.5 h-3.5" />}
+                  className="shrink-0 text-amber-300 border-amber-800/60 hover:bg-amber-950/40"
+                >
+                  Leave This Workspace
                 </Button>
               </div>
             </div>
@@ -981,12 +1077,69 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
                 size="sm"
                 disabled={
                   deletingWorkspace ||
-                  deleteConfirmName.trim() !== workspaceToDelete.name.trim() ||
+                  (!deleteConfirmName.trim() ||
+                    (deleteConfirmName.trim().toLowerCase() !== workspaceToDelete.name.trim().toLowerCase() &&
+                     deleteConfirmName.trim().toLowerCase() !== workspaceToDelete.id.trim().toLowerCase())) ||
                   !deleteAcknowledged
                 }
                 icon={<Trash2 className="w-3.5 h-3.5" />}
               >
                 {deletingWorkspace ? 'Deleting Workspace...' : 'Delete Workspace Permanently'}
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Leave Workspace Confirmation Modal (For Invited Members) */}
+      <Modal
+        isOpen={Boolean(workspaceToLeave)}
+        onClose={() => {
+          if (!leavingWorkspace) setWorkspaceToLeave(null);
+        }}
+        title="Leave Workspace"
+        maxWidth="max-w-md"
+      >
+        {workspaceToLeave && (
+          <form onSubmit={handleLeaveWorkspace} className="space-y-4 font-sans text-xs">
+            <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-800/60 space-y-2">
+              <div className="flex items-center gap-2 text-amber-300 font-semibold text-sm">
+                <LogOut className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>Leave "{workspaceToLeave.name}"?</span>
+              </div>
+              <p className="text-zinc-300 leading-relaxed text-xs">
+                You joined this workspace as an invited member. The workspace administrator is <strong className="text-white">{workspaceToLeave.creatorName || (workspaceToLeave as any).ownerEmail || 'the workspace administrator'}</strong>.
+              </p>
+              <p className="text-zinc-400 leading-relaxed text-xs">
+                Only the creator can permanently delete this workspace. Leaving this workspace will remove it from your workspace switcher. You can be re-invited by the administrator at any time.
+              </p>
+            </div>
+
+            {leaveWorkspaceError && (
+              <div className="p-2.5 rounded-lg bg-rose-950/60 border border-rose-800 text-rose-200 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>{leaveWorkspaceError}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={leavingWorkspace}
+                onClick={() => setWorkspaceToLeave(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="danger"
+                size="sm"
+                disabled={leavingWorkspace}
+                icon={<LogOut className="w-3.5 h-3.5" />}
+              >
+                {leavingWorkspace ? 'Leaving Workspace...' : 'Leave Workspace'}
               </Button>
             </div>
           </form>

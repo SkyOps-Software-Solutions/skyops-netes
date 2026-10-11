@@ -354,6 +354,31 @@
         "expiresAt": { "type": "number" }
       },
       "required": ["id", "orgId", "category", "storagePath", "storageBucket", "filename", "sizeBytes", "mimeType", "checksumSha256", "lifecycleStatus", "createdAt"]
+    },
+    "LogRecord": {
+      "title": "LogRecord",
+      "description": "Durable operational Kubernetes log record ingested by SkyOps",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "orgId": { "type": "string" },
+        "clusterId": { "type": "string" },
+        "clusterName": { "type": "string" },
+        "namespace": { "type": "string" },
+        "workload": { "type": "string" },
+        "podName": { "type": "string" },
+        "container": { "type": "string" },
+        "nodeName": { "type": "string" },
+        "severity": { "type": "string", "enum": ["FATAL", "ERROR", "WARN", "INFO", "DEBUG"] },
+        "timestamp": { "type": "string" },
+        "timestampMs": { "type": "number" },
+        "message": { "type": "string" },
+        "raw": { "type": "string" },
+        "isRedacted": { "type": "boolean" },
+        "isPrevious": { "type": "boolean" },
+        "storedAt": { "type": "number" }
+      },
+      "required": ["id", "orgId", "clusterId", "namespace", "workload", "podName", "container", "severity", "timestamp", "timestampMs", "message"]
     }
   },
   "firestore": {
@@ -380,7 +405,8 @@
     "/usage/{usageId}": { "schema": "Usage" },
     "/supportTickets/{ticketId}": { "schema": "SupportTicket" },
     "/userNotificationSettings/{userId}": { "schema": "UserNotificationSettings" },
-    "/storedArtifacts/{artifactId}": { "schema": "StoredArtifact" }
+    "/storedArtifacts/{artifactId}": { "schema": "StoredArtifact" },
+    "/logs/{logId}": { "schema": "LogRecord" }
   }
 }
 

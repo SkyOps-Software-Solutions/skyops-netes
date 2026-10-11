@@ -276,6 +276,99 @@ export class LogManager {
     return events.slice(0, limit);
   }
 
+  /**
+   * Evaluates active log alert rules against incoming records in real time.
+   * Dispatches trigger events and creates incident tickets if rule specifies createIncident.
+   */
+  public evaluateAlertRules(orgId: string, records: LogRecord[]): LogAlertTriggerEvent[] {
+    if (!records || records.length === 0) return [];
+    const rules = this.getAlertRules(orgId).filter((r) => r.enabled);
+    if (rules.length === 0) return [];
+
+    const triggeredEvents: LogAlertTriggerEvent[] = [];
+    const now = Date.now();
+
+    for (const rule of rules) {
+      // Cooldown check (don't re-trigger every 2 seconds if windowMinutes hasn't elapsed)
+      const windowMs = (rule.windowMinutes || 5) * 60 * 1000;
+      if (rule.lastTriggeredAt && now - rule.lastTriggeredAt < Math.min(windowMs, 60000)) {
+        continue;
+      }
+
+      // Filter matching records for this rule
+      const matchingRecords = records.filter((r) => {
+        if (rule.clusterId && rule.clusterId !== 'all' && r.clusterId !== rule.clusterId) return false;
+        if (rule.minSeverity) {
+          const severities = ['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'];
+          const ruleIdx = severities.indexOf(rule.minSeverity);
+          const recIdx = severities.indexOf(r.severity);
+          if (recIdx < ruleIdx) return false;
+        }
+        if (rule.pattern && rule.pattern.trim().length > 0) {
+          const pat = rule.pattern.toLowerCase().trim();
+          return r.message.toLowerCase().includes(pat) || r.raw.toLowerCase().includes(pat);
+        }
+        return true;
+      });
+
+      if (matchingRecords.length >= (rule.thresholdOccurrences || 1)) {
+        const clusterId = rule.clusterId || matchingRecords[0]?.clusterId || 'cluster-default';
+        const cluster = store.getCluster(clusterId, orgId);
+        rule.triggerCount = (rule.triggerCount || 0) + 1;
+        rule.lastTriggeredAt = now;
+
+        const event: LogAlertTriggerEvent = {
+          id: `alert-evt-${crypto.randomBytes(6).toString('hex')}`,
+          ruleId: rule.id,
+          ruleName: rule.name,
+          clusterId,
+          pattern: rule.pattern,
+          occurrences: matchingRecords.length,
+          windowMinutes: rule.windowMinutes || 5,
+          triggeredAt: now,
+          sampleLogs: matchingRecords.slice(0, 5).map((m) => ({
+            timestamp: m.timestamp,
+            podName: m.podName,
+            message: m.message
+          }))
+        };
+
+        if (rule.createIncident) {
+          try {
+            const first = matchingRecords[0];
+            const inc = this.createIncidentFromLogs(
+              orgId,
+              clusterId,
+              {
+                workload: first.workload || first.podName,
+                namespace: first.namespace,
+                errorPattern: rule.pattern,
+                occurrences: matchingRecords.length,
+                timeWindow: `${rule.windowMinutes}m`,
+                sampleLines: event.sampleLogs.map((s) => s.message)
+              },
+              { id: 'system-log-alert', name: `Log Alert: ${rule.name}` }
+            );
+            event.incidentId = (inc as any)?.id;
+          } catch (incErr) {
+            console.warn('[LogManager] Notice creating incident from log alert:', incErr);
+          }
+        }
+
+        triggeredEvents.push(event);
+
+        let orgEvents = this.alertEvents.get(orgId) || [];
+        orgEvents.unshift(event);
+        if (orgEvents.length > 200) {
+          orgEvents = orgEvents.slice(0, 200);
+        }
+        this.alertEvents.set(orgId, orgEvents);
+      }
+    }
+
+    return triggeredEvents;
+  }
+
   // --- Saved Searches Management ---
 
   public getSavedSearches(orgId: string): SavedLogSearch[] {
@@ -354,7 +447,11 @@ export class LogManager {
   public ingestLogRecords(orgId: string, records: LogRecord[]) {
     if (!records || !records.length) return;
     let current = this.collectedLogs.get(orgId) || [];
-    current.push(...records);
+    const existingIds = new Set(current.map((r) => r.id));
+    const newItems = records.filter((r) => !existingIds.has(r.id));
+    if (!newItems.length) return;
+
+    current.push(...newItems);
     // Sort chronologically (newest first)
     current.sort((a, b) => b.timestampMs - a.timestampMs);
     // Keep reasonable bounded buffer (e.g. 10000 records per org)
@@ -362,6 +459,9 @@ export class LogManager {
       current = current.slice(0, 10000);
     }
     this.collectedLogs.set(orgId, current);
+
+    // Evaluate active log alert rules against newly ingested records
+    this.evaluateAlertRules(orgId, newItems);
   }
 
   public inferSeverity(msg: string): LogSeverity {

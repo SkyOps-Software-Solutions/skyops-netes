@@ -23,6 +23,7 @@ import {
   StorageUsageSummary,
   StorageCategory
 } from '../../src/types/index';
+import { LogQueryFilter, LogRecord } from '../../src/types/logs';
 import {
   AuditEvent,
   AuditQueryFilters,
@@ -43,6 +44,7 @@ export class InMemoryStore implements IPersistenceStore {
   private invitations: Map<string, OrgInvitation> = new Map(); // id -> OrgInvitation
   private supportTickets: Map<string, SupportTicket> = new Map(); // id -> SupportTicket
   private clusters: Map<string, Cluster> = new Map(); // clusterId -> Cluster
+  private logs: Map<string, LogRecord[]> = new Map(); // orgId -> LogRecord[]
   private clusterTokens: Map<string, ClusterTokenRecord> = new Map(); // tokenHash -> Record
   private clusterResources: Map<string, ClusterResourcesRecord> = new Map(); // clusterId -> Record
   private clusterMetricHistory: Map<string, { clusterId: string; orgId: string; history: MetricHistoryPoint[] }> = new Map();
@@ -708,5 +710,101 @@ export class InMemoryStore implements IPersistenceStore {
       categoryBreakdown,
       lastUpdatedAt: Date.now()
     };
+  }
+
+  // --- Operational Kubernetes Logs ---
+  public async saveLogRecords(orgId: string, clusterId: string, records: LogRecord[]): Promise<void> {
+    if (!records || records.length === 0) return;
+    const existing = this.logs.get(orgId) || [];
+    const existingMap = new Map(existing.map((r) => [r.id, r]));
+
+    for (const r of records) {
+      existingMap.set(r.id, {
+        ...r,
+        clusterId: r.clusterId || clusterId
+      });
+    }
+
+    const updated = Array.from(existingMap.values());
+    updated.sort((a, b) => b.timestampMs - a.timestampMs);
+    // Keep bounded in-memory buffer (e.g. 15,000 records per org in dev/test)
+    if (updated.length > 15000) {
+      this.logs.set(orgId, updated.slice(0, 15000));
+    } else {
+      this.logs.set(orgId, updated);
+    }
+  }
+
+  public async queryLogRecords(orgId: string, filter: LogQueryFilter): Promise<{ records: LogRecord[]; totalMatches: number }> {
+    const list = this.logs.get(orgId) || [];
+    let matches = list;
+
+    if (filter.clusterId && filter.clusterId !== 'all') {
+      matches = matches.filter((r) => r.clusterId === filter.clusterId);
+    }
+    if (filter.namespace && filter.namespace !== 'all') {
+      matches = matches.filter((r) => r.namespace.toLowerCase() === filter.namespace!.toLowerCase());
+    }
+    if (filter.workload && filter.workload !== 'all') {
+      matches = matches.filter((r) => r.workload.toLowerCase() === filter.workload!.toLowerCase());
+    }
+    if (filter.podName && filter.podName !== 'all') {
+      matches = matches.filter((r) => r.podName.toLowerCase() === filter.podName!.toLowerCase());
+    }
+    if (filter.container && filter.container !== 'all') {
+      matches = matches.filter((r) => r.container.toLowerCase() === filter.container!.toLowerCase());
+    }
+    if (filter.nodeName && filter.nodeName !== 'all') {
+      matches = matches.filter((r) => r.nodeName && r.nodeName.toLowerCase() === filter.nodeName!.toLowerCase());
+    }
+    if (filter.severity && filter.severity !== 'ALL' as any) {
+      if (filter.severity === 'WARNINGS_AND_ERRORS' as any) {
+        matches = matches.filter((r) => r.severity === 'WARN' || r.severity === 'ERROR' || r.severity === 'FATAL');
+      } else if (filter.severity === 'ERRORS_ONLY' as any) {
+        matches = matches.filter((r) => r.severity === 'ERROR' || r.severity === 'FATAL');
+      } else {
+        matches = matches.filter((r) => r.severity === filter.severity);
+      }
+    }
+    if (filter.previous !== undefined) {
+      matches = matches.filter((r) => Boolean(r.isPrevious) === filter.previous);
+    }
+    if (filter.startTimeMs) {
+      matches = matches.filter((r) => r.timestampMs >= filter.startTimeMs!);
+    }
+    if (filter.endTimeMs) {
+      matches = matches.filter((r) => r.timestampMs <= filter.endTimeMs!);
+    }
+    if (filter.sinceSeconds) {
+      const cutoff = Date.now() - filter.sinceSeconds * 1000;
+      matches = matches.filter((r) => r.timestampMs >= cutoff);
+    }
+    if (filter.search && filter.search.trim()) {
+      const q = filter.search.toLowerCase();
+      matches = matches.filter((r) => r.message.toLowerCase().includes(q) || r.raw.toLowerCase().includes(q));
+    }
+
+    const totalMatches = matches.length;
+    const offset = Math.max(0, filter.offset || 0);
+    const limitCount = Math.min(1000, Math.max(1, filter.limit || 100));
+    const paginated = matches.slice(offset, offset + limitCount);
+
+    return { records: paginated, totalMatches };
+  }
+
+  public async getLogRecordCount(orgId: string, clusterId?: string): Promise<number> {
+    const list = this.logs.get(orgId) || [];
+    if (!clusterId || clusterId === 'all') return list.length;
+    return list.filter((r) => r.clusterId === clusterId).length;
+  }
+
+  public async deleteExpiredLogs(orgId: string, retentionDays: number): Promise<number> {
+    if (retentionDays <= 0) return 0;
+    const list = this.logs.get(orgId) || [];
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    const kept = list.filter((r) => r.timestampMs >= cutoff);
+    const deletedCount = list.length - kept.length;
+    this.logs.set(orgId, kept);
+    return deletedCount;
   }
 }

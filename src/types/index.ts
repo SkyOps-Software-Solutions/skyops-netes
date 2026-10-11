@@ -71,6 +71,13 @@ export interface Organization {
   updatedAt?: number;
   membersCount: number;
   ownerUserId?: string;
+  ownerEmail?: string;
+  creatorUserId?: string;
+  creatorEmail?: string;
+  creatorName?: string;
+  isCreatedByMe?: boolean;
+  canDelete?: boolean;
+  canLeave?: boolean;
   settings?: OrganizationSettings;
 }
 
@@ -1905,6 +1912,7 @@ export interface ServiceHealthRecord {
 
 export interface DeploymentRecord {
   id: string;
+  orgId?: string;
   name: string;
   namespace: string;
   clusterId: string;

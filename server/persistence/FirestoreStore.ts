@@ -46,6 +46,7 @@ import {
   StoredArtifactLifecycleStatus,
   StorageUsageSummary
 } from '../../src/types/index';
+import { LogQueryFilter, LogRecord } from '../../src/types/logs';
 import {
   AuditEvent,
   AuditQueryFilters,
@@ -64,23 +65,17 @@ export function isGlobalQuotaError(err: any): boolean {
   return (
     msg.includes('Quota limit exceeded') ||
     msg.includes('Quota exceeded') ||
-    msg.includes('quota') ||
     msg.includes('RESOURCE_EXHAUSTED') ||
-    msg.includes('PERMISSION_DENIED') ||
-    msg.includes('Missing or insufficient permissions') ||
-    msg.includes('permission-denied') ||
-    err?.code === 7 ||
     err?.code === 8 ||
-    err?.code === 'permission-denied' ||
     err?.code === 'resource-exhausted'
   );
 }
 
-export function logGlobalQuotaWarningOnce(op: string): void {
+export function logGlobalQuotaWarningOnce(op: string, err?: any): void {
   if (!hasLoggedGlobalQuotaWarning) {
     hasLoggedGlobalQuotaWarning = true;
     console.warn(
-      `[FirestoreStore] Remote Firestore write access restricted (${op}). Seamlessly operating with authoritative local memory & disk snapshot store.`
+      `[FirestoreStore] Remote Firestore quota restricted (${op}): ${err?.message || err}. Ensure quota limits or plan accommodates workload.`
     );
   }
 }
@@ -94,8 +89,7 @@ class DocRefWrapper {
       return { exists: snap.exists(), data: () => snap.data() };
     } catch (err: any) {
       if (isGlobalQuotaError(err)) {
-        logGlobalQuotaWarningOnce('DocRefWrapper.get');
-        return { exists: false, data: () => undefined };
+        logGlobalQuotaWarningOnce('DocRefWrapper.get', err);
       }
       throw err;
     }
@@ -106,8 +100,7 @@ class DocRefWrapper {
       await setDoc(this.docRef, data, options || {});
     } catch (err: any) {
       if (isGlobalQuotaError(err)) {
-        logGlobalQuotaWarningOnce('DocRefWrapper.set');
-        return;
+        logGlobalQuotaWarningOnce('DocRefWrapper.set', err);
       }
       throw err;
     }
@@ -118,8 +111,7 @@ class DocRefWrapper {
       await updateDoc(this.docRef, data);
     } catch (err: any) {
       if (isGlobalQuotaError(err)) {
-        logGlobalQuotaWarningOnce('DocRefWrapper.update');
-        return;
+        logGlobalQuotaWarningOnce('DocRefWrapper.update', err);
       }
       throw err;
     }
@@ -130,8 +122,7 @@ class DocRefWrapper {
       await deleteDoc(this.docRef);
     } catch (err: any) {
       if (isGlobalQuotaError(err)) {
-        logGlobalQuotaWarningOnce('DocRefWrapper.delete');
-        return;
+        logGlobalQuotaWarningOnce('DocRefWrapper.delete', err);
       }
       throw err;
     }
@@ -179,8 +170,7 @@ class CollectionRefWrapper {
       };
     } catch (err: any) {
       if (isGlobalQuotaError(err)) {
-        logGlobalQuotaWarningOnce(`CollectionRefWrapper.get(${this.name})`);
-        return { empty: true, size: 0, docs: [] };
+        logGlobalQuotaWarningOnce(`CollectionRefWrapper.get(${this.name})`, err);
       }
       throw err;
     }
@@ -205,8 +195,7 @@ class BatchWrapper {
       await this.batch.commit();
     } catch (err: any) {
       if (isGlobalQuotaError(err)) {
-        logGlobalQuotaWarningOnce('BatchWrapper.commit');
-        return;
+        logGlobalQuotaWarningOnce('BatchWrapper.commit', err);
       }
       throw err;
     }
@@ -316,13 +305,19 @@ export class FirestoreStore implements IPersistenceStore {
   }
 
   public async ensureConnected(): Promise<void> {
-    if (!this.connected) {
+    const apps = getApps();
+    const app = apps.length > 0 ? apps[0] : null;
+    if (app) {
+      const auth = getAuth(app);
+      if (!auth.currentUser || !this.connected) {
+        await this.init();
+      }
+    } else if (!this.connected) {
       await this.init();
     }
   }
 
   public async init(): Promise<void> {
-    this.connected = true;
     try {
       const apps = getApps();
       const app = apps.length > 0 ? apps[0] : null;
@@ -333,11 +328,16 @@ export class FirestoreStore implements IPersistenceStore {
             auth,
             process.env.SKYOPS_INTERNAL_SERVICE_EMAIL || 'server-internal@skyops.io',
             process.env.SKYOPS_INTERNAL_SERVICE_PASSWORD || 'SkyOpsServerInternal2026!'
-          ).catch(() => {});
+          );
         }
       }
-    } catch {}
-    console.log(`[FirestoreStore] Connected to Firestore project="${this.projectId}", database="${this.databaseId}"`);
+      this.connected = true;
+      console.log(`[FirestoreStore] Authenticated & connected to Firestore project="${this.projectId}", database="${this.databaseId}"`);
+    } catch (err: any) {
+      this.connected = false;
+      console.error(`[FirestoreStore] Failed to authenticate to Firestore:`, err?.message || err);
+      throw new Error(`[FirestoreStore] Failed to authenticate to Firestore: ${err?.message || err}`);
+    }
   }
 
   public async close(): Promise<void> {
@@ -1631,5 +1631,130 @@ export class FirestoreStore implements IPersistenceStore {
     } catch (err: any) {
       throw err;
     }
+  }
+
+  // --- Operational Kubernetes Logs ---
+  public async saveLogRecords(orgId: string, clusterId: string, records: LogRecord[]): Promise<void> {
+    if (!records || records.length === 0) return;
+    await this.ensureConnected();
+
+    // Firestore batch write limit is 500 operations
+    const chunkSize = 400;
+    for (let i = 0; i < records.length; i += chunkSize) {
+      const chunk = records.slice(i, i + chunkSize);
+      const batch = this.firestore.batch();
+      for (const rec of chunk) {
+        // Idempotent doc ID: `${clusterId}_${rec.id}` sanitized
+        const docId = `${clusterId}_${rec.id}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const docRef = this.firestore.collection('logs').doc(docId);
+        const payload = this.sanitize({
+          ...rec,
+          orgId,
+          clusterId: rec.clusterId || clusterId,
+          timestampMs: rec.timestampMs || (rec.timestamp ? Date.parse(rec.timestamp) : Date.now()),
+          storedAt: Date.now()
+        });
+        batch.set(docRef, payload, { merge: true });
+      }
+      await batch.commit();
+    }
+  }
+
+  public async queryLogRecords(orgId: string, filter: LogQueryFilter): Promise<{ records: LogRecord[]; totalMatches: number }> {
+    await this.ensureConnected();
+
+    let queryRef = this.firestore.collection('logs').where('orgId', '==', orgId);
+    if (filter.clusterId && filter.clusterId !== 'all') {
+      queryRef = queryRef.where('clusterId', '==', filter.clusterId);
+    }
+    if (filter.namespace && filter.namespace !== 'all') {
+      queryRef = queryRef.where('namespace', '==', filter.namespace);
+    }
+
+    const snap = await queryRef.get();
+    let records = snap.docs.map((d: any) => d.data() as LogRecord);
+
+    if (filter.workload && filter.workload !== 'all') {
+      records = records.filter((r) => r.workload?.toLowerCase() === filter.workload!.toLowerCase());
+    }
+    if (filter.podName && filter.podName !== 'all') {
+      records = records.filter((r) => r.podName?.toLowerCase() === filter.podName!.toLowerCase());
+    }
+    if (filter.container && filter.container !== 'all') {
+      records = records.filter((r) => r.container?.toLowerCase() === filter.container!.toLowerCase());
+    }
+    if (filter.nodeName && filter.nodeName !== 'all') {
+      records = records.filter((r) => r.nodeName && r.nodeName.toLowerCase() === filter.nodeName!.toLowerCase());
+    }
+    if (filter.severity && filter.severity !== 'ALL' as any) {
+      if (filter.severity === 'WARNINGS_AND_ERRORS' as any) {
+        records = records.filter((r) => r.severity === 'WARN' || r.severity === 'ERROR' || r.severity === 'FATAL');
+      } else if (filter.severity === 'ERRORS_ONLY' as any) {
+        records = records.filter((r) => r.severity === 'ERROR' || r.severity === 'FATAL');
+      } else {
+        records = records.filter((r) => r.severity === filter.severity);
+      }
+    }
+    if (filter.previous !== undefined) {
+      records = records.filter((r) => Boolean(r.isPrevious) === filter.previous);
+    }
+    if (filter.startTimeMs) {
+      records = records.filter((r) => r.timestampMs >= filter.startTimeMs!);
+    }
+    if (filter.endTimeMs) {
+      records = records.filter((r) => r.timestampMs <= filter.endTimeMs!);
+    }
+    if (filter.sinceSeconds) {
+      const cutoff = Date.now() - filter.sinceSeconds * 1000;
+      records = records.filter((r) => r.timestampMs >= cutoff);
+    }
+    if (filter.search && filter.search.trim()) {
+      const q = filter.search.toLowerCase();
+      records = records.filter((r) => r.message?.toLowerCase().includes(q) || r.raw?.toLowerCase().includes(q));
+    }
+
+    records.sort((a, b) => b.timestampMs - a.timestampMs);
+    const totalMatches = records.length;
+    const offset = Math.max(0, filter.offset || 0);
+    const limitCount = Math.min(1000, Math.max(1, filter.limit || 100));
+    const paginated = records.slice(offset, offset + limitCount);
+
+    return { records: paginated, totalMatches };
+  }
+
+  public async getLogRecordCount(orgId: string, clusterId?: string): Promise<number> {
+    await this.ensureConnected();
+    let queryRef = this.firestore.collection('logs').where('orgId', '==', orgId);
+    if (clusterId && clusterId !== 'all') {
+      queryRef = queryRef.where('clusterId', '==', clusterId);
+    }
+    const snap = await queryRef.get();
+    return snap.size;
+  }
+
+  public async deleteExpiredLogs(orgId: string, retentionDays: number): Promise<number> {
+    if (retentionDays <= 0) return 0;
+    await this.ensureConnected();
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    const snap = await this.firestore.collection('logs').where('orgId', '==', orgId).get();
+    const toDelete = snap.docs.filter((d: any) => {
+      const data = d.data();
+      return (data.timestampMs || 0) < cutoff;
+    });
+
+    if (toDelete.length === 0) return 0;
+
+    const chunkSize = 400;
+    let deletedCount = 0;
+    for (let i = 0; i < toDelete.length; i += chunkSize) {
+      const chunk = toDelete.slice(i, i + chunkSize);
+      const batch = this.firestore.batch();
+      for (const d of chunk) {
+        batch.delete(d.ref);
+      }
+      await batch.commit();
+      deletedCount += chunk.length;
+    }
+    return deletedCount;
   }
 }

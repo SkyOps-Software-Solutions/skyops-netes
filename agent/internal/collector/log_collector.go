@@ -2,7 +2,10 @@ package collector
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,7 +14,7 @@ import (
 	"github.com/skyops-io/skyops/agent/internal/transport"
 )
 
-// LogCollector coordinates on-demand and diagnostic Kubernetes container log retrieval
+// LogCollector coordinates continuous log streaming, on-demand pod log retrieval, and diagnostic capture
 type LogCollector struct {
 	cfg            *config.Config
 	client         *transport.Client
@@ -21,6 +24,11 @@ type LogCollector struct {
 	workersRunning bool
 	workerWg       sync.WaitGroup
 	mu             sync.Mutex
+
+	// Continuous collection tracking
+	checkpointsMu sync.RWMutex
+	checkpoints   map[string]int64 // key: namespace/pod/container -> last collected epoch seconds
+	restartCounts map[string]int   // key: namespace/pod/container -> last observed restart count
 }
 
 func NewLogCollector(cfg *config.Config, client *transport.Client, k8sClient *InClusterK8sClient, m *metrics.Registry) *LogCollector {
@@ -28,15 +36,17 @@ func NewLogCollector(cfg *config.Config, client *transport.Client, k8sClient *In
 		m = metrics.Default
 	}
 	return &LogCollector{
-		cfg:       cfg,
-		client:    client,
-		k8sClient: k8sClient,
-		metrics:   m,
-		reqQueue:  make(chan transport.LogRequest, 32), // Bounded worker channel to prevent unbounded memory growth
+		cfg:           cfg,
+		client:        client,
+		k8sClient:     k8sClient,
+		metrics:       m,
+		reqQueue:      make(chan transport.LogRequest, 32), // Bounded worker channel to prevent unbounded memory growth
+		checkpoints:   make(map[string]int64),
+		restartCounts: make(map[string]int),
 	}
 }
 
-// Start begins periodic polling for on-demand pod log retrieval requests
+// Start begins periodic polling for on-demand pod log requests and starts continuous container log collection
 func (l *LogCollector) Start(ctx context.Context) {
 	if l.k8sClient == nil {
 		slog.Warn("Log collector disabled (no in-cluster Kubernetes client available)")
@@ -76,6 +86,16 @@ func (l *LogCollector) Start(ctx context.Context) {
 			}
 		}(i)
 	}
+
+	// Launch continuous container log collection background routine
+	continuousInterval := 10 * time.Second
+	if l.cfg.TelemetryInterval > 0 {
+		continuousInterval = l.cfg.TelemetryInterval
+	}
+	if continuousInterval < 5*time.Second {
+		continuousInterval = 5 * time.Second
+	}
+	go l.runContinuousCollectionLoop(ctx, continuousInterval)
 
 	defer func() {
 		l.mu.Lock()
@@ -256,5 +276,230 @@ func (l *LogCollector) processLogRequest(ctx context.Context, req transport.LogR
 			"previous", req.Previous,
 		)
 	}
+}
+
+func (l *LogCollector) isNamespaceAllowed(ns string) bool {
+	if ns == "" {
+		return true
+	}
+	if strings.HasPrefix(ns, "kube-node-lease") {
+		return false
+	}
+	for _, excl := range l.cfg.ExcludedNamespaces {
+		if strings.EqualFold(strings.TrimSpace(excl), ns) {
+			return false
+		}
+	}
+	if len(l.cfg.IncludedNamespaces) > 0 {
+		for _, incl := range l.cfg.IncludedNamespaces {
+			if strings.EqualFold(strings.TrimSpace(incl), ns) {
+				return true
+			}
+		}
+		return false
+	}
+	return true
+}
+
+func (l *LogCollector) runContinuousCollectionLoop(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	// Initial collection pass after short delay to let cluster connection settle
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(1 * time.Second):
+		l.collectContinuousLogs(ctx)
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			l.collectContinuousLogs(ctx)
+		}
+	}
+}
+
+func (l *LogCollector) collectContinuousLogs(ctx context.Context) {
+	if l.k8sClient == nil {
+		return
+	}
+
+	// 1. Discover pods across namespaces with bounded timeout
+	listCtx, listCancel := context.WithTimeout(ctx, 15*time.Second)
+	var podList K8sPodList
+	status, err := l.k8sClient.GetJSONWithStatus(listCtx, "/api/v1/pods", &podList)
+	listCancel()
+
+	if err != nil {
+		if status == http.StatusUnauthorized || status == http.StatusForbidden {
+			slog.Debug("Continuous log collection skipped: permission denied on /api/v1/pods")
+		} else {
+			slog.Debug("Continuous log collection pod discovery notice", "status", status, "error", err)
+		}
+		return
+	}
+
+	if len(podList.Items) == 0 {
+		return
+	}
+
+	nowSec := time.Now().Unix()
+	activeKeys := make(map[string]bool)
+
+	// Bounded concurrency pool for continuous log scraping (max 4 concurrent fetches)
+	sem := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+
+	for _, pod := range podList.Items {
+		ns := pod.Metadata.Namespace
+		if ns == "" {
+			ns = "default"
+		}
+
+		if !l.isNamespaceAllowed(ns) {
+			continue
+		}
+
+		// Track restart counts per container
+		restarts := make(map[string]int)
+		for _, cs := range pod.Status.ContainerStatuses {
+			restarts[cs.Name] = cs.RestartCount
+		}
+
+		for _, c := range pod.Spec.Containers {
+			containerName := c.Name
+			key := fmt.Sprintf("%s/%s/%s", ns, pod.Metadata.Name, containerName)
+			activeKeys[key] = true
+
+			l.checkpointsMu.RLock()
+			lastCollectedSec, exists := l.checkpoints[key]
+			lastRestartCount, hasRestart := l.restartCounts[key]
+			l.checkpointsMu.RUnlock()
+
+			currentRestart := restarts[containerName]
+			shouldCollectPrevious := hasRestart && currentRestart > lastRestartCount
+
+			var sinceSec int
+			var tailLines int
+			if !exists {
+				// First scrape: bounded recent history (last 5 min or 100 lines)
+				sinceSec = 300
+				tailLines = 100
+			} else {
+				diff := int(nowSec - lastCollectedSec)
+				if diff < 2 {
+					diff = 2
+				}
+				sinceSec = diff + 3 // 3-second grace overlap to avoid gaps
+				if sinceSec > 600 {
+					sinceSec = 600
+				}
+				tailLines = 250
+			}
+
+			// If container restarted, collect previous container crash logs
+			if shouldCollectPrevious {
+				wg.Add(1)
+				go func(pNamespace, pPod, pContainer string) {
+					defer wg.Done()
+					select {
+					case <-ctx.Done():
+						return
+					case sem <- struct{}{}:
+					}
+					defer func() { <-sem }()
+
+					prevCtx, prevCancel := context.WithTimeout(ctx, 10*time.Second)
+					defer prevCancel()
+
+					prevRes, prevErr := l.k8sClient.GetPodLogs(prevCtx, pNamespace, pPod, PodLogOptions{
+						Container:    pContainer,
+						Previous:     true,
+						TailLines:    150,
+						Timestamps:   true,
+						SinceSeconds: 600,
+						LimitBytes:   256 * 1024,
+					})
+					if prevErr == nil && prevRes != nil && len(prevRes.Logs) > 0 {
+						sendCtx, sendCancel := context.WithTimeout(ctx, 10*time.Second)
+						_ = l.client.SendPodLogs(sendCtx, transport.LogIngestPayload{
+							Namespace: pNamespace,
+							PodName:   pPod,
+							Container: pContainer,
+							Logs:      prevRes.Logs,
+							Previous:  true,
+							Status:    prevRes.Status,
+						})
+						sendCancel()
+					}
+				}(ns, pod.Metadata.Name, containerName)
+			}
+
+			// Scrape current logs
+			wg.Add(1)
+			go func(pNamespace, pPod, pContainer string, pSinceSec, pTailLines, pCurrentRestart int, pKey string) {
+				defer wg.Done()
+				select {
+				case <-ctx.Done():
+					return
+				case sem <- struct{}{}:
+				}
+				defer func() { <-sem }()
+
+				fetchCtx, fetchCancel := context.WithTimeout(ctx, 10*time.Second)
+				defer fetchCancel()
+
+				res, fetchErr := l.k8sClient.GetPodLogs(fetchCtx, pNamespace, pPod, PodLogOptions{
+					Container:    pContainer,
+					Previous:     false,
+					TailLines:    pTailLines,
+					Timestamps:   true,
+					SinceSeconds: pSinceSec,
+					LimitBytes:   256 * 1024,
+				})
+
+				if fetchErr == nil && res != nil {
+					if len(res.Logs) > 0 {
+						sendCtx, sendCancel := context.WithTimeout(ctx, 10*time.Second)
+						sendErr := l.client.SendPodLogs(sendCtx, transport.LogIngestPayload{
+							Namespace: pNamespace,
+							PodName:   pPod,
+							Container: pContainer,
+							Logs:      res.Logs,
+							Previous:  false,
+							Status:    res.Status,
+						})
+						sendCancel()
+						if sendErr != nil {
+							slog.Debug("Continuous log forward notice", "key", pKey, "error", sendErr)
+						}
+					}
+
+					if res.Status == "SUCCESS" || res.Status == "NO_LOGS" || res.Status == "EMPTY_LOGS" {
+						l.checkpointsMu.Lock()
+						l.checkpoints[pKey] = time.Now().Unix()
+						l.restartCounts[pKey] = pCurrentRestart
+						l.checkpointsMu.Unlock()
+					}
+				}
+			}(ns, pod.Metadata.Name, containerName, sinceSec, tailLines, currentRestart, key)
+		}
+	}
+
+	wg.Wait()
+
+	// Prune inactive pod checkpoints to prevent memory growth
+	l.checkpointsMu.Lock()
+	for k := range l.checkpoints {
+		if !activeKeys[k] {
+			delete(l.checkpoints, k)
+			delete(l.restartCounts, k)
+		}
+	}
+	l.checkpointsMu.Unlock()
 }
 

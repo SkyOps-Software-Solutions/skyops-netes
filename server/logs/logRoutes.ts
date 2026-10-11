@@ -55,7 +55,7 @@ logRouter.get('/search', requireUserAuth, requireOrgMembership, async (req: Auth
     previous: previous === 'true' || previous === '1',
     limit: limit ? parseInt(limit, 10) : undefined,
     offset: offset ? parseInt(offset, 10) : undefined,
-    order: (order === 'asc' || order === 'desc') ? order : 'desc'
+    order: (order === 'asc' ? 'asc' : 'desc') as 'asc' | 'desc'
   };
 
   const results = await logManager.searchLogs(req.orgId!, filter);

@@ -262,36 +262,48 @@ export class DataStore {
         for (const org of orgs) {
           this.orgs.set(org.id, org);
 
-          try {
-            const members = await this.persistence.getOrgMembers(org.id);
-            if (members && members.length > 0) {
-              this.members.set(org.id, members);
-            }
-          } catch {
-            // retain existing members if available
-          }
-
-          try {
-            const sub = await this.persistence.getSubscription(org.id);
-            if (sub) {
-              this.subscriptions.set(org.id, sub);
-            }
-          } catch {
-            // retain existing subscription
-          }
-
-          if (typeof this.persistence.listInvoices === 'function') {
-            const orgInvoices = await this.persistence.listInvoices(org.id);
-            for (const inv of (orgInvoices || [])) {
-              this.invoices.set(inv.id, inv);
+          if (!this.members.has(org.id)) {
+            try {
+              const members = await this.persistence.getOrgMembers(org.id);
+              if (members && members.length > 0) {
+                this.members.set(org.id, members);
+              }
+            } catch {
+              // retain existing members if available
             }
           }
 
-          if (typeof this.persistence.listPolicies === 'function') {
-            const orgPolicies = await this.persistence.listPolicies(org.id);
-            for (const pol of (orgPolicies || [])) {
-              const polKey = pol.clusterId ? `${pol.orgId}:${pol.clusterId}` : pol.orgId;
-              this.policies.set(polKey, pol);
+          if (!this.subscriptions.has(org.id)) {
+            try {
+              const sub = await this.persistence.getSubscription(org.id);
+              if (sub) {
+                this.subscriptions.set(org.id, sub);
+              }
+            } catch {
+              // retain existing subscription
+            }
+          }
+
+          if (typeof this.persistence.listInvoices === 'function' && !this.invoices.has(org.id)) {
+            try {
+              const orgInvoices = await this.persistence.listInvoices(org.id);
+              for (const inv of (orgInvoices || [])) {
+                this.invoices.set(inv.id, inv);
+              }
+            } catch {
+              // retain existing invoices
+            }
+          }
+
+          if (typeof this.persistence.listPolicies === 'function' && !this.policies.has(org.id)) {
+            try {
+              const orgPolicies = await this.persistence.listPolicies(org.id);
+              for (const pol of (orgPolicies || [])) {
+                const polKey = pol.clusterId ? `${pol.orgId}:${pol.clusterId}` : pol.orgId;
+                this.policies.set(polKey, pol);
+              }
+            } catch {
+              // retain existing policies
             }
           }
         }
@@ -313,13 +325,15 @@ export class DataStore {
             }
           }
 
-          try {
-            const persistedResources = await this.persistence.getClusterResources(cluster.id, cluster.orgId);
-            if (Array.isArray(persistedResources) && persistedResources.length > 0) {
-              this.resources.set(cluster.id, persistedResources);
+          if (!this.resources.has(cluster.id)) {
+            try {
+              const persistedResources = await this.persistence.getClusterResources(cluster.id, cluster.orgId);
+              if (Array.isArray(persistedResources) && persistedResources.length > 0) {
+                this.resources.set(cluster.id, persistedResources);
+              }
+            } catch {
+              // retain in-memory resources
             }
-          } catch {
-            // retain in-memory resources
           }
         }
 
@@ -333,17 +347,25 @@ export class DataStore {
             }
           }
 
-          if (typeof this.persistence.getAIAnalysis === 'function') {
-            const analysis = await this.persistence.getAIAnalysis(inc.id, inc.orgId);
-            if (analysis) {
-              this.aiAnalyses.set(inc.id, analysis);
+          if (typeof this.persistence.getAIAnalysis === 'function' && !this.aiAnalyses.has(inc.id)) {
+            try {
+              const analysis = await this.persistence.getAIAnalysis(inc.id, inc.orgId);
+              if (analysis) {
+                this.aiAnalyses.set(inc.id, analysis);
+              }
+            } catch {
+              // retain in-memory
             }
           }
 
-          if (typeof this.persistence.getRemediation === 'function') {
-            const remediation = await this.persistence.getRemediation(inc.id, inc.orgId);
-            if (remediation) {
-              this.remediations.set(inc.id, remediation);
+          if (typeof this.persistence.getRemediation === 'function' && !this.remediations.has(inc.id)) {
+            try {
+              const remediation = await this.persistence.getRemediation(inc.id, inc.orgId);
+              if (remediation) {
+                this.remediations.set(inc.id, remediation);
+              }
+            } catch {
+              // retain in-memory
             }
           }
         }
@@ -489,7 +511,8 @@ export class DataStore {
   private getSanitizedClustersForSnapshot(): Record<string, any> {
     const sanitized: Record<string, any> = {};
     for (const [id, cluster] of this.clusters.entries()) {
-      const { agentToken, agentTokenEncrypted, ...clean } = cluster as any;
+      // Strip raw plaintext agentToken for security, but retain agentTokenEncrypted so agent auth recovers across restarts
+      const { agentToken, ...clean } = cluster as any;
       sanitized[id] = clean;
     }
     return sanitized;
@@ -839,7 +862,98 @@ export class DataStore {
       }
     }
 
-    return userOrgs;
+    return userOrgs.map((org) => {
+      const creatorInfo = this.isUserOrganizationCreator(org.id, userId, userEmail);
+      return {
+        ...org,
+        isCreatedByMe: creatorInfo.isCreator,
+        canDelete: creatorInfo.canDelete,
+        canLeave: creatorInfo.canLeave,
+        creatorName: creatorInfo.creatorName,
+        creatorEmail: creatorInfo.creatorEmail
+      };
+    });
+  }
+
+  public isUserOrganizationCreator(
+    orgId: string,
+    userId: string,
+    userEmail?: string
+  ): { isCreator: boolean; canDelete: boolean; canLeave: boolean; creatorName: string; creatorEmail?: string } {
+    const org = this.orgs.get(orgId);
+    if (!org) {
+      return { isCreator: false, canDelete: false, canLeave: false, creatorName: 'Unknown' };
+    }
+
+    const normEmail = (userEmail || '').trim().toLowerCase();
+    const orgOwnerEmail = (org.ownerEmail || (org as any).creatorEmail || '').trim().toLowerCase();
+    const orgCreatorId = org.ownerUserId || (org as any).creatorUserId;
+
+    // Check if user has an accepted invitation to this org from someone else
+    const acceptedInvite = Array.from(this.invitations.values()).find(
+      (inv) =>
+        inv.orgId === orgId &&
+        inv.status === 'ACCEPTED' &&
+        ((normEmail && inv.email.trim().toLowerCase() === normEmail) || (inv as any).acceptedByUserId === userId) &&
+        inv.invitedByUserId !== userId &&
+        (normEmail ? inv.invitedByEmail.trim().toLowerCase() !== normEmail : true)
+    );
+
+    const members = this.members.get(orgId) || [];
+    const userMember = members.find(
+      (m) => m.userId === userId || (normEmail && m.email && m.email.trim().toLowerCase() === normEmail)
+    );
+
+    const isExplicitlyInvited = Boolean(
+      acceptedInvite ||
+      (userMember && ((userMember as any).joinedViaInvitation || userMember.membershipId?.includes('invite'))) ||
+      (userMember && userMember.role !== 'OWNER' && orgCreatorId && orgCreatorId !== userId)
+    );
+
+    // If explicitly invited and there is a distinct owner/creator, user is an invited member
+    if (isExplicitlyInvited && (orgCreatorId !== userId || (normEmail && orgOwnerEmail && normEmail !== orgOwnerEmail))) {
+      const creatorName =
+        acceptedInvite?.invitedByName ||
+        acceptedInvite?.invitedByEmail ||
+        org.creatorName ||
+        (org as any).creatorEmail ||
+        org.ownerEmail ||
+        'the workspace administrator';
+
+      return {
+        isCreator: false,
+        canDelete: false,
+        canLeave: true,
+        creatorName,
+        creatorEmail: acceptedInvite?.invitedByEmail || (org as any).creatorEmail || org.ownerEmail
+      };
+    }
+
+    // Check if user is creator/owner
+    const isDirectOwner =
+      orgCreatorId === userId ||
+      Boolean(normEmail && orgOwnerEmail && normEmail === orgOwnerEmail) ||
+      Boolean(normEmail && (org as any).creatorEmail && normEmail === (org as any).creatorEmail.toLowerCase());
+
+    const isOwnerMember = Boolean(userMember && userMember.role === 'OWNER' && !isExplicitlyInvited);
+    const isSoleMember = Boolean(members.length <= 1);
+    const isCreatorFlag = Boolean(org.isCreatedByMe);
+
+    const isCreator = isDirectOwner || isOwnerMember || isSoleMember || isCreatorFlag;
+
+    const creatorName =
+      (org as any).creatorName ||
+      (org as any).creatorEmail ||
+      org.ownerEmail ||
+      (isCreator ? 'You' : 'Workspace Admin');
+
+    return {
+      isCreator,
+      canDelete: isCreator,
+      canLeave: !isCreator,
+      creatorName,
+      creatorEmail: (org as any).creatorEmail || org.ownerEmail
+    };
   }
 
   public createOrganization(
@@ -870,6 +984,13 @@ export class DataStore {
       updatedAt: Date.now(),
       membersCount: 1,
       ownerUserId,
+      ownerEmail: email,
+      creatorUserId: ownerUserId,
+      creatorEmail: email,
+      creatorName: memberName,
+      isCreatedByMe: true,
+      canDelete: true,
+      canLeave: false,
       settings: {
         general: { name, timezone: 'UTC' },
         notifications: { incidentEmailEnabled: true, digestEmailEnabled: false, alertSeverityThreshold: 'HIGH' },
@@ -877,6 +998,9 @@ export class DataStore {
       }
     };
     (org as any).ownerEmail = email;
+    (org as any).creatorUserId = ownerUserId;
+    (org as any).creatorEmail = email;
+    (org as any).creatorName = memberName;
     this.orgs.set(orgId, org);
 
     this.members.set(orgId, [
@@ -1038,6 +1162,58 @@ export class DataStore {
     });
 
     return true;
+  }
+
+  public leaveOrganization(
+    orgId: string,
+    user: { id: string; email: string; name?: string }
+  ): { success: boolean; remainingWorkspaces: Organization[] } {
+    const org = this.orgs.get(orgId);
+    if (!org) {
+      throw new Error('Workspace not found');
+    }
+
+    const normEmail = (user.email || '').trim().toLowerCase();
+    const creatorInfo = this.isUserOrganizationCreator(orgId, user.id, user.email);
+    if (creatorInfo.isCreator) {
+      throw new Error(
+        'As the creator of this workspace, you cannot leave it. You can permanently delete the workspace if it is no longer needed.'
+      );
+    }
+
+    const members = this.members.get(orgId) || [];
+    const memberIndex = members.findIndex(
+      (m) => m.userId === user.id || (normEmail && m.email?.trim().toLowerCase() === normEmail)
+    );
+
+    if (memberIndex === -1) {
+      throw new Error('You are not an active member of this workspace');
+    }
+
+    // Remove the user from members list
+    members.splice(memberIndex, 1);
+    this.members.set(orgId, members);
+    org.membersCount = Math.max(1, members.length);
+
+    this.saveSnapshot();
+    this.persistence.setOrgMembers(orgId, members).catch((err) =>
+      console.warn(`[DataStore] Async setOrgMembers failed after leaving org ${orgId}:`, err?.message || err)
+    );
+
+    auditService.record({
+      orgId,
+      actorId: user.id,
+      actorName: user.name || user.email,
+      actorType: 'USER',
+      action: 'member.leave' as any,
+      resourceType: 'ORGANIZATION',
+      resourceId: orgId,
+      result: 'SUCCESS',
+      details: { email: user.email }
+    });
+
+    const remaining = this.getOrganizationsForUser(user.id, user.email);
+    return { success: true, remainingWorkspaces: remaining };
   }
 
   // --- Subscription & Billing Management ---
@@ -1575,8 +1751,12 @@ export class DataStore {
       existing.status = 'ACTIVE';
       existing.updatedAt = Date.now();
       existing.lastActiveAt = Date.now();
+      (existing as any).joinedViaInvitation = true;
+      (existing as any).invitedByUserId = inv.invitedByUserId;
+      (existing as any).invitedByEmail = inv.invitedByEmail;
     } else {
       members.push({
+        membershipId: `mem-${inv.orgId}-invite-${user.id.substring(0, 8)}`,
         userId: user.id,
         orgId: inv.orgId,
         email: user.email,
@@ -1586,14 +1766,18 @@ export class DataStore {
         joinedAt: Date.now(),
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        lastActiveAt: Date.now()
-      });
+        lastActiveAt: Date.now(),
+        joinedViaInvitation: true,
+        invitedByUserId: inv.invitedByUserId,
+        invitedByEmail: inv.invitedByEmail
+      } as any);
       this.members.set(inv.orgId, members);
       org.membersCount = members.filter((m) => m.status !== 'REMOVED').length;
     }
 
     inv.status = 'ACCEPTED';
     inv.acceptedAt = Date.now();
+    (inv as any).acceptedByUserId = user.id;
     this.saveSnapshot();
     this.persistence.saveInvitation(inv).catch((err) =>
       console.warn('[DataStore] Failed to persist accepted invitation:', err?.message || err)

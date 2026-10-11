@@ -16,6 +16,7 @@ if (typeof process !== 'undefined' && process.stderr && (process.stderr as any).
 }
 
 import cors from 'cors';
+import crypto from 'crypto';
 import dotenv from 'dotenv';
 import express, { NextFunction, Request, Response } from 'express';
 import path from 'path';
@@ -57,6 +58,8 @@ import { getBillingConfig } from './server/billing/provider';
 import { PLANS, BILLING_INTERVALS, DEFAULT_TRIAL_DAYS } from './src/config/plans';
 import { storageRouter } from './server/storageRoutes';
 import { logRouter } from './server/logs/logRoutes';
+import { logManager } from './server/logs/logManager';
+import { parseLogLines } from './server/logs';
 import { CostEngine } from './server/cost/costEngine';
 import { SecurityEngine } from './server/security/securityEngine';
 import { ROLE_PERMISSIONS } from './server/auth';
@@ -65,7 +68,7 @@ import { RoleCapabilitySummary } from './src/types/enterprise';
 dotenv.config({ override: true });
 
 const app = express();
-const PORT = 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 export { app };
 
@@ -221,20 +224,29 @@ app.get('/api/v1/auth/me', requireUserAuth, requireOrgMembership, (req: Authenti
 });
 
 // --- Organizations ---
-app.get('/api/v1/orgs', requireUserAuth, (req: AuthenticatedUserRequest, res) => {
+app.get(['/api/v1/orgs', '/api/v1/organizations'], requireUserAuth, (req: AuthenticatedUserRequest, res) => {
   const orgs = store.getOrganizationsForUser(req.user!.id, req.user!.email);
   res.json({ organizations: orgs });
 });
 
-app.get('/api/v1/orgs/current', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+app.get(['/api/v1/orgs/current', '/api/v1/organizations/current'], requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
   const org = store.getOrganization(req.orgId!);
   if (!org) {
     return res.status(404).json({ error: 'Organization not found' });
   }
-  res.json({ organization: org, role: req.userRole });
+  const creatorInfo = store.isUserOrganizationCreator(org.id, req.user!.id, req.user!.email);
+  const enrichedOrg = {
+    ...org,
+    isCreatedByMe: creatorInfo.isCreator,
+    canDelete: creatorInfo.canDelete,
+    canLeave: creatorInfo.canLeave,
+    creatorName: creatorInfo.creatorName,
+    creatorEmail: creatorInfo.creatorEmail
+  };
+  res.json({ organization: enrichedOrg, role: req.userRole });
 });
 
-app.get('/api/v1/orgs/:id', requireUserAuth, (req: AuthenticatedUserRequest, res) => {
+app.get(['/api/v1/orgs/:id', '/api/v1/organizations/:id'], requireUserAuth, (req: AuthenticatedUserRequest, res) => {
   const access = store.checkUserOrgAccess(req.user!.id, req.params.id, req.user!.email);
   if (!access.hasAccess) {
     return res.status(403).json({ error: 'Forbidden: You do not have access to this organization' });
@@ -243,14 +255,23 @@ app.get('/api/v1/orgs/:id', requireUserAuth, (req: AuthenticatedUserRequest, res
   if (!org) {
     return res.status(404).json({ error: 'Organization not found' });
   }
-  res.json({ organization: org, role: access.role });
+  const creatorInfo = store.isUserOrganizationCreator(org.id, req.user!.id, req.user!.email);
+  const enrichedOrg = {
+    ...org,
+    isCreatedByMe: creatorInfo.isCreator,
+    canDelete: creatorInfo.canDelete,
+    canLeave: creatorInfo.canLeave,
+    creatorName: creatorInfo.creatorName,
+    creatorEmail: creatorInfo.creatorEmail
+  };
+  res.json({ organization: enrichedOrg, role: access.role });
 });
 
 const CreateOrgSchema = z.object({
   name: z.string().min(2, 'Organization name must be at least 2 characters').max(60)
 });
 
-app.post('/api/v1/orgs', requireUserAuth, (req: AuthenticatedUserRequest, res) => {
+app.post(['/api/v1/orgs', '/api/v1/organizations'], requireUserAuth, (req: AuthenticatedUserRequest, res) => {
   const parsed = CreateOrgSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid organization payload' });
@@ -262,7 +283,15 @@ app.post('/api/v1/orgs', requireUserAuth, (req: AuthenticatedUserRequest, res) =
     req.user!.email,
     req.user!.name
   );
-  res.status(201).json({ organization: org });
+  const enrichedOrg = {
+    ...org,
+    isCreatedByMe: true,
+    canDelete: true,
+    canLeave: false,
+    creatorName: req.user!.name || req.user!.email || 'You',
+    creatorEmail: req.user!.email
+  };
+  res.status(201).json({ organization: enrichedOrg });
 });
 
 const UpdateOrgSchema = z.object({
@@ -328,11 +357,11 @@ app.patch(
 
 const DeleteOrgSchema = z.object({
   confirmName: z.string(),
-  acknowledgement: z.boolean()
+  acknowledgement: z.boolean().optional().default(true)
 });
 
 app.delete(
-  '/api/v1/orgs/:id',
+  ['/api/v1/orgs/:id', '/api/v1/organizations/:id'],
   requireUserAuth,
   (req: AuthenticatedUserRequest, res) => {
     const orgId = req.params.id;
@@ -341,19 +370,34 @@ app.delete(
       return res.status(404).json({ error: 'Workspace not found' });
     }
 
-    const access = store.checkUserOrgAccess(req.user!.id, orgId, req.user!.email);
-    const isOwner =
-      access.role === 'OWNER' ||
-      org.ownerUserId === req.user!.id ||
-      Boolean((org as any).ownerEmail && (org as any).ownerEmail.toLowerCase() === req.user!.email.toLowerCase());
+    const userId = req.user!.id;
+    const userEmail = (req.user!.email || '').trim().toLowerCase();
 
-    if (!access.hasAccess && !isOwner) {
+    // Check creator status using centralized authority
+    const creatorInfo = store.isUserOrganizationCreator(orgId, userId, userEmail);
+    const isCreator = creatorInfo.isCreator;
+
+    const access = store.checkUserOrgAccess(userId, orgId, req.user!.email);
+
+    if (!access.hasAccess && !isCreator) {
       return res.status(403).json({ error: 'Forbidden: You do not have access to this workspace' });
     }
 
-    // Verify user is actual owner or has OWNER role
-    if (!isOwner) {
-      return res.status(403).json({ error: 'Only the Workspace Owner can permanently delete this workspace' });
+    // A user can ONLY delete a workspace they personally created.
+    // If they accepted an invitation to another workspace, they cannot delete it even if they have an admin/owner role.
+    if (!isCreator) {
+      const creatorName =
+        creatorInfo.creatorName ||
+        (org as any).creatorName ||
+        (org as any).creatorEmail ||
+        org.ownerEmail ||
+        'the workspace administrator';
+      return res.status(403).json({
+        error: `You cannot delete "${org.name}" because you joined via an invitation from ${creatorName}. Only the person who created this workspace can delete it. You can leave this workspace instead.`,
+        code: 'CANNOT_DELETE_INVITED_WORKSPACE',
+        canLeave: true,
+        creatorName
+      });
     }
 
     const parsed = DeleteOrgSchema.safeParse(req.body);
@@ -364,27 +408,26 @@ app.delete(
       });
     }
 
-    if (parsed.data.confirmName.trim() !== org.name.trim()) {
+    const confirmName = (parsed.data.confirmName || '').trim().toLowerCase();
+    const matchesName = confirmName === org.name.trim().toLowerCase();
+    const matchesId = confirmName === org.id.trim().toLowerCase();
+    const matchesSlug = Boolean(org.slug && confirmName === org.slug.trim().toLowerCase());
+
+    if (!matchesName && !matchesId && !matchesSlug) {
       return res.status(400).json({
-        error: 'Workspace name confirmation does not match',
+        error: `Workspace name confirmation does not match. Please type "${org.name}" to confirm.`,
         expected: org.name,
         provided: parsed.data.confirmName
       });
     }
 
-    if (!parsed.data.acknowledgement) {
-      return res.status(400).json({
-        error: 'Explicit acknowledgement of permanent data loss is required'
-      });
-    }
-
     // Check if user has other workspaces
-    const userOrgs = store.getOrganizationsForUser(req.user!.id, req.user!.email);
+    const userOrgs = store.getOrganizationsForUser(userId, req.user!.email);
     const remainingOrgs = userOrgs.filter((o) => o.id !== orgId);
 
     // Execute deletion
     const success = store.deleteOrganization(orgId, {
-      id: req.user!.id,
+      id: userId,
       name: req.user!.name || req.user!.email
     });
 
@@ -397,6 +440,28 @@ app.delete(
       message: `Workspace "${org.name}" and all associated cluster telemetry, incidents, and resources have been permanently deleted.`,
       remainingWorkspaces: remainingOrgs.map((o) => ({ id: o.id, name: o.name }))
     });
+  }
+);
+
+app.post(
+  ['/api/v1/orgs/:id/leave', '/api/v1/organizations/:id/leave'],
+  requireUserAuth,
+  (req: AuthenticatedUserRequest, res) => {
+    const orgId = req.params.id;
+    try {
+      const result = store.leaveOrganization(orgId, {
+        id: req.user!.id,
+        email: req.user!.email,
+        name: req.user!.name || req.user!.email
+      });
+      res.json({
+        success: true,
+        message: 'Successfully left the workspace.',
+        remainingWorkspaces: result.remainingWorkspaces.map((o) => ({ id: o.id, name: o.name }))
+      });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || 'Failed to leave workspace' });
+    }
   }
 );
 
@@ -1629,7 +1694,7 @@ app.get('/api/v1/agent/logs/requests', requireAgentAuth, (req: AuthenticatedAgen
   res.json({ requests });
 });
 
-const AgentLogIngestSchema = z.object({
+const AgentLogItemSchema = z.object({
   requestId: z.string().optional(),
   namespace: z.string().min(1),
   podName: z.string().min(1),
@@ -1657,16 +1722,79 @@ const AgentLogIngestSchema = z.object({
   waitingMessage: z.string().optional()
 });
 
+const AgentLogIngestSchema = z.union([
+  AgentLogItemSchema,
+  z.object({
+    entries: z.array(AgentLogItemSchema)
+  }),
+  z.array(AgentLogItemSchema)
+]);
+
 app.post('/api/v1/agent/logs', requireAgentAuth, (req: AuthenticatedAgentRequest, res) => {
   const parsed = AgentLogIngestSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid log ingestion payload' });
   }
 
-  const { namespace, podName, container, logs, previous, status, errorMessage, waitingReason, waitingMessage } = parsed.data;
-  store.storePodLogs(req.clusterId!, namespace, podName, container, logs || '', !!previous, status as any, errorMessage, waitingReason, waitingMessage);
+  const items = Array.isArray(parsed.data)
+    ? parsed.data
+    : 'entries' in parsed.data
+      ? parsed.data.entries
+      : [parsed.data];
 
-  res.json({ success: true, message: 'Pod logs ingested successfully' });
+  const cluster = store.getCluster(req.clusterId!) || (req.orgId ? store.getCluster(req.clusterId!, req.orgId) : null);
+  const orgId = req.orgId || cluster?.orgId || 'org-default';
+  const resources = store.getClusterResources(req.clusterId!, orgId);
+  const deployments = resources.filter((r) => r.kind === 'Deployment');
+  const statefulSets = resources.filter((r) => r.kind === 'StatefulSet');
+  const daemonSets = resources.filter((r) => r.kind === 'DaemonSet');
+
+  const newRecords: any[] = [];
+
+  for (const item of items) {
+    const { namespace, podName, container, logs, previous, status, errorMessage, waitingReason, waitingMessage } = item;
+    store.storePodLogs(req.clusterId!, namespace, podName, container, logs || '', !!previous, status as any, errorMessage, waitingReason, waitingMessage);
+
+    if (logs && logs.trim().length > 0) {
+      const matchingPod = resources.find((r) => r.kind === 'Pod' && r.name === podName && r.namespace === namespace);
+      const workload = matchingPod ? logManager.resolveWorkloadNameForPod(matchingPod, deployments, statefulSets, daemonSets) : podName;
+      const parsedLines = parseLogLines(logs);
+
+      for (let i = 0; i < parsedLines.length; i++) {
+        const line = parsedLines[i];
+        let timestampMs = Date.now();
+        if (line.timestamp) {
+          const parsedMs = Date.parse(line.timestamp);
+          if (!isNaN(parsedMs)) timestampMs = parsedMs;
+        }
+        const sev = logManager.inferSeverity(line.message);
+        const lineHash = crypto.createHash('md5').update(`${req.clusterId}:${namespace}:${podName}:${container}:${previous ? 'prev' : 'curr'}:${timestampMs}:${line.message}`).digest('hex').substring(0, 10);
+        newRecords.push({
+          id: `log-${req.clusterId!.slice(0, 8)}-${lineHash}-${i}`,
+          clusterId: req.clusterId!,
+          clusterName: cluster?.name || 'Kubernetes Cluster',
+          namespace,
+          workload,
+          podName,
+          container,
+          nodeName: (matchingPod as any)?.nodeName || 'unknown-node',
+          severity: sev,
+          timestamp: new Date(timestampMs).toISOString(),
+          timestampMs,
+          message: line.message,
+          raw: line.raw,
+          isRedacted: line.raw.includes('[REDACTED'),
+          isPrevious: !!previous
+        });
+      }
+    }
+  }
+
+  if (newRecords.length > 0) {
+    logManager.ingestLogRecords(orgId, newRecords);
+  }
+
+  res.json({ success: true, count: items.length, message: 'Pod logs ingested successfully' });
 });
 
 // Agent Metrics Server Verification Request Polling & Ingestion
@@ -3634,18 +3762,6 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 // VITE MIDDLEWARE / SPA STATIC HANDLER
 // ==========================================
 async function startServer() {
-  try {
-    await verifyProductionPersistence();
-  } catch (err: any) {
-    console.warn('[SkyOps Server] Persistence verification notice:', err?.message || err);
-  }
-
-  try {
-    await store.initPersistence();
-  } catch (err: any) {
-    console.warn('[SkyOps Server] Store persistence init notice:', err?.message || err);
-  }
-
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -3660,9 +3776,23 @@ async function startServer() {
     });
   }
 
+  // Bind and listen on port IMMEDIATELY so TCP startup and liveness probes pass without delay!
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[SkyOps Server] Listening on http://0.0.0.0:${PORT}`);
   });
+
+  // Verify and hydrate persistence asynchronously without blocking the TCP listening socket
+  try {
+    await verifyProductionPersistence();
+  } catch (err: any) {
+    console.warn('[SkyOps Server] Persistence verification notice:', err?.message || err);
+  }
+
+  try {
+    await store.initPersistence();
+  } catch (err: any) {
+    console.warn('[SkyOps Server] Store persistence init notice:', err?.message || err);
+  }
 }
 
 if (process.env.NODE_ENV !== 'test') {

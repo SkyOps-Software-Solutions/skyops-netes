@@ -42,6 +42,7 @@ import { PWAInstallButton } from '../common/PWAInstallButton';
 
 export type NavigationTab =
   | 'overview'
+  | 'operations'
   | 'infrastructure'
   | 'services'
   | 'clusters'
@@ -234,6 +235,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Clusters',
       subtitle: 'Connected K8s environments',
       icon: <Server className="w-4 h-4" />
+    },
+    {
+      id: 'operations',
+      label: 'Operations',
+      subtitle: 'Unified K8s control plane',
+      icon: <Terminal className="w-4 h-4" />
     },
     {
       id: 'infrastructure',

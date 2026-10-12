@@ -433,6 +433,21 @@ const ClusterDetailViewInner: React.FC<ClusterDetailViewProps> = ({ clusterId, o
             </Button>
           )}
           <Button
+            id="cluster-operations-btn"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                window.history.pushState({}, '', `/operations?clusterId=${encodeURIComponent(cluster.id)}`);
+                window.dispatchEvent(new PopStateEvent('popstate'));
+              }
+            }}
+            icon={<Terminal className="w-3.5 h-3.5 text-sky-400" />}
+            title="Open Unified Kubernetes Operations Workspace for this cluster"
+          >
+            Operations Workspace
+          </Button>
+          <Button
             id="cluster-refresh-telemetry-btn"
             variant="outline"
             size="sm"

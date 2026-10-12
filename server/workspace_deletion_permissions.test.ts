@@ -1,3 +1,6 @@
+process.env.NODE_ENV = 'test';
+process.env.SKYOPS_ALLOW_DEMO_AUTH = 'true';
+
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { store } from './store';

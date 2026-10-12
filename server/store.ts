@@ -2566,70 +2566,75 @@ export class DataStore {
     // If cluster has no resources yet, seed starter operational topology
     const existingRes = this.resources.get(clusterId) || [];
     if (existingRes.length === 0) {
-      const now = Date.now();
-      const initialResources: KubernetesResource[] = [
-        {
-          id: `${clusterId}:Node:control-plane-01`,
-          clusterId,
-          clusterName: cluster.name,
-          kind: 'Node',
-          name: 'control-plane-01',
-          namespace: '',
-          status: 'Ready',
-          health: 'HEALTHY',
-          labels: { 'node-role.kubernetes.io/control-plane': '' },
-          createdAt: now - 3600000,
-          updatedAt: now,
-          conditions: [{ type: 'Ready', status: 'True' } as any]
-        },
-        {
-          id: `${clusterId}:Node:worker-01`,
-          clusterId,
-          clusterName: cluster.name,
-          kind: 'Node',
-          name: 'worker-01',
-          namespace: '',
-          status: 'Ready',
-          health: 'HEALTHY',
-          labels: { 'node-role.kubernetes.io/worker': '' },
-          createdAt: now - 3600000,
-          updatedAt: now,
-          conditions: [{ type: 'Ready', status: 'True' } as any]
-        },
-        {
-          id: `${clusterId}:Pod:skyops-system:skyops-agent-0`,
-          clusterId,
-          clusterName: cluster.name,
-          kind: 'Pod',
-          name: 'skyops-agent-0',
-          namespace: 'skyops-system',
-          status: 'Running',
-          health: 'HEALTHY',
-          nodeName: 'worker-01',
-          createdAt: now - 60000,
-          updatedAt: now,
-          containers: [{ name: 'agent', image: 'ghcr.io/skyops/agent:v1.4.2', ready: true, restartCount: 0 } as any],
-          conditions: [{ type: 'Ready', status: 'True' } as any]
-        },
-        {
-          id: `${clusterId}:Pod:kube-system:coredns-0`,
-          clusterId,
-          clusterName: cluster.name,
-          kind: 'Pod',
-          name: 'coredns-0',
-          namespace: 'kube-system',
-          status: 'Running',
-          health: 'HEALTHY',
-          nodeName: 'control-plane-01',
-          createdAt: now - 3600000,
-          updatedAt: now,
-          containers: [{ name: 'coredns', image: 'registry.k8s.io/coredns:v1.11.1', ready: true, restartCount: 0 } as any],
-          conditions: [{ type: 'Ready', status: 'True' } as any]
-        }
-      ];
-      this.resources.set(clusterId, initialResources);
-      cluster.nodeCount = 2;
-      cluster.podCount = 2;
+      if (cluster.isSimulated || process.env.NODE_ENV !== 'production' || process.env.ENABLE_DEV_SIMULATION === 'true') {
+        const fullResources = this.ensureDefaultClusterResources(cluster);
+        this.resources.set(clusterId, fullResources);
+      } else {
+        const now = Date.now();
+        const initialResources: KubernetesResource[] = [
+          {
+            id: `${clusterId}:Node:control-plane-01`,
+            clusterId,
+            clusterName: cluster.name,
+            kind: 'Node',
+            name: 'control-plane-01',
+            namespace: '',
+            status: 'Ready',
+            health: 'HEALTHY',
+            labels: { 'node-role.kubernetes.io/control-plane': '' },
+            createdAt: now - 3600000,
+            updatedAt: now,
+            conditions: [{ type: 'Ready', status: 'True' } as any]
+          },
+          {
+            id: `${clusterId}:Node:worker-01`,
+            clusterId,
+            clusterName: cluster.name,
+            kind: 'Node',
+            name: 'worker-01',
+            namespace: '',
+            status: 'Ready',
+            health: 'HEALTHY',
+            labels: { 'node-role.kubernetes.io/worker': '' },
+            createdAt: now - 3600000,
+            updatedAt: now,
+            conditions: [{ type: 'Ready', status: 'True' } as any]
+          },
+          {
+            id: `${clusterId}:Pod:skyops-system:skyops-agent-0`,
+            clusterId,
+            clusterName: cluster.name,
+            kind: 'Pod',
+            name: 'skyops-agent-0',
+            namespace: 'skyops-system',
+            status: 'Running',
+            health: 'HEALTHY',
+            nodeName: 'worker-01',
+            createdAt: now - 60000,
+            updatedAt: now,
+            containers: [{ name: 'agent', image: 'ghcr.io/skyops/agent:v1.4.2', ready: true, restartCount: 0 } as any],
+            conditions: [{ type: 'Ready', status: 'True' } as any]
+          },
+          {
+            id: `${clusterId}:Pod:kube-system:coredns-0`,
+            clusterId,
+            clusterName: cluster.name,
+            kind: 'Pod',
+            name: 'coredns-0',
+            namespace: 'kube-system',
+            status: 'Running',
+            health: 'HEALTHY',
+            nodeName: 'control-plane-01',
+            createdAt: now - 3600000,
+            updatedAt: now,
+            containers: [{ name: 'coredns', image: 'registry.k8s.io/coredns:v1.11.1', ready: true, restartCount: 0 } as any],
+            conditions: [{ type: 'Ready', status: 'True' } as any]
+          }
+        ];
+        this.resources.set(clusterId, initialResources);
+        cluster.nodeCount = 2;
+        cluster.podCount = 2;
+      }
       if (!cluster.k8sVersion || cluster.k8sVersion === 'Unknown') {
         cluster.k8sVersion = 'v1.30.2';
       }
@@ -6217,11 +6222,196 @@ export class DataStore {
       }
     ];
 
+    const defaultServices: KubernetesResource[] = [
+      {
+        id: `${clusterId}:Service:default:checkout-service`,
+        clusterId,
+        kind: 'Service',
+        name: 'checkout-service',
+        namespace: 'default',
+        status: 'Active',
+        health: 'HEALTHY',
+        createdAt: now - 86400000,
+        updatedAt: now,
+        specSummary: {
+          type: 'ClusterIP',
+          clusterIP: '10.96.14.88',
+          ports: [{ name: 'http', port: 80, targetPort: 8080, protocol: 'TCP' }],
+          selector: { app: 'checkout-api' }
+        },
+        statusSummary: {
+          readyEndpoints: 2,
+          totalEndpoints: 2,
+          endpointCount: 2
+        }
+      },
+      {
+        id: `${clusterId}:Service:default:frontend-service`,
+        clusterId,
+        kind: 'Service',
+        name: 'frontend-service',
+        namespace: 'default',
+        status: 'Active',
+        health: 'HEALTHY',
+        createdAt: now - 86400000,
+        updatedAt: now,
+        specSummary: {
+          type: 'LoadBalancer',
+          clusterIP: '10.96.220.10',
+          ports: [{ name: 'http', port: 80, targetPort: 3000, protocol: 'TCP' }],
+          selector: { app: 'frontend' }
+        },
+        statusSummary: {
+          loadBalancer: { ingress: [{ ip: '34.120.45.19' }] },
+          readyEndpoints: 3,
+          totalEndpoints: 3,
+          endpointCount: 3
+        }
+      },
+      {
+        id: `${clusterId}:Service:kube-system:kube-dns`,
+        clusterId,
+        kind: 'Service',
+        name: 'kube-dns',
+        namespace: 'kube-system',
+        status: 'Active',
+        health: 'HEALTHY',
+        createdAt: now - 86400000,
+        updatedAt: now,
+        specSummary: {
+          type: 'ClusterIP',
+          clusterIP: '10.96.0.10',
+          ports: [{ name: 'dns', port: 53, targetPort: 53, protocol: 'UDP' }],
+          selector: { 'k8s-app': 'kube-dns' }
+        },
+        statusSummary: {
+          readyEndpoints: 2,
+          totalEndpoints: 2,
+          endpointCount: 2
+        }
+      }
+    ];
+
+    const defaultNamespaces: KubernetesResource[] = [
+      {
+        id: `${clusterId}:Namespace::default`,
+        clusterId,
+        kind: 'Namespace',
+        name: 'default',
+        namespace: '',
+        status: 'Active',
+        health: 'HEALTHY',
+        createdAt: now - 86400000,
+        updatedAt: now,
+        statusSummary: { phase: 'Active' }
+      },
+      {
+        id: `${clusterId}:Namespace::production`,
+        clusterId,
+        kind: 'Namespace',
+        name: 'production',
+        namespace: '',
+        status: 'Active',
+        health: 'HEALTHY',
+        createdAt: now - 86400000,
+        updatedAt: now,
+        statusSummary: { phase: 'Active' }
+      },
+      {
+        id: `${clusterId}:Namespace::kube-system`,
+        clusterId,
+        kind: 'Namespace',
+        name: 'kube-system',
+        namespace: '',
+        status: 'Active',
+        health: 'HEALTHY',
+        createdAt: now - 86400000,
+        updatedAt: now,
+        statusSummary: { phase: 'Active' }
+      },
+      {
+        id: `${clusterId}:Namespace::ingress-nginx`,
+        clusterId,
+        kind: 'Namespace',
+        name: 'ingress-nginx',
+        namespace: '',
+        status: 'Active',
+        health: 'HEALTHY',
+        createdAt: now - 86400000,
+        updatedAt: now,
+        statusSummary: { phase: 'Active' }
+      }
+    ];
+
+    const defaultConfigMaps: KubernetesResource[] = [
+      {
+        id: `${clusterId}:ConfigMap:default:checkout-config`,
+        clusterId,
+        kind: 'ConfigMap',
+        name: 'checkout-config',
+        namespace: 'default',
+        status: 'Active',
+        health: 'HEALTHY',
+        createdAt: now - 86400000,
+        updatedAt: now,
+        dataKeys: ['APP_ENV', 'FEATURE_FLAGS', 'CACHE_TTL', 'MAX_RETRIES']
+      },
+      {
+        id: `${clusterId}:ConfigMap:kube-system:coredns`,
+        clusterId,
+        kind: 'ConfigMap',
+        name: 'coredns',
+        namespace: 'kube-system',
+        status: 'Active',
+        health: 'HEALTHY',
+        createdAt: now - 86400000,
+        updatedAt: now,
+        dataKeys: ['Corefile']
+      }
+    ];
+
+    const defaultSecrets: KubernetesResource[] = [
+      {
+        id: `${clusterId}:Secret:default:checkout-db-credentials`,
+        clusterId,
+        kind: 'Secret',
+        name: 'checkout-db-credentials',
+        namespace: 'default',
+        status: 'Active',
+        health: 'HEALTHY',
+        createdAt: now - 86400000,
+        updatedAt: now,
+        dataKeys: ['DB_USER', 'DB_PASSWORD', 'DB_HOST', 'DB_PORT'],
+        annotations: { 'skyops.io/secret-type': 'Opaque' }
+      },
+      {
+        id: `${clusterId}:Secret:default:tls-ingress-cert`,
+        clusterId,
+        kind: 'Secret',
+        name: 'tls-ingress-cert',
+        namespace: 'default',
+        status: 'Active',
+        health: 'HEALTHY',
+        createdAt: now - 86400000,
+        updatedAt: now,
+        dataKeys: ['tls.crt', 'tls.key'],
+        annotations: { 'skyops.io/secret-type': 'kubernetes.io/tls' }
+      }
+    ];
+
     // Combine any existing resources with defaults, avoiding duplicates
     const combined = [...existing];
     const existingKeys = new Set(existing.map((r) => `${r.kind}:${r.namespace || ''}:${r.name}`));
 
-    for (const item of [...defaultNodes, ...defaultWorkloads, ...defaultPods]) {
+    for (const item of [
+      ...defaultNodes,
+      ...defaultWorkloads,
+      ...defaultPods,
+      ...defaultServices,
+      ...defaultNamespaces,
+      ...defaultConfigMaps,
+      ...defaultSecrets
+    ]) {
       const key = `${item.kind}:${item.namespace || ''}:${item.name}`;
       if (!existingKeys.has(key)) {
         combined.push(item);
@@ -8890,6 +9080,463 @@ export class DataStore {
 
     this.saveSnapshot();
     return action;
+  }
+
+  public executeClusterResourceOperation(
+    clusterId: string,
+    orgId: string,
+    operator: { id: string; name: string; email?: string },
+    payload: {
+      actionType:
+        | 'RolloutRestart'
+        | 'RestartPod'
+        | 'DeletePod'
+        | 'ScaleDeployment'
+        | 'ScaleWorkload'
+        | 'RollbackDeployment'
+        | 'CordonNode'
+        | 'UncordonNode'
+        | 'DrainNode'
+        | 'SuspendCronJob'
+        | 'ResumeCronJob'
+        | 'TriggerCronJob'
+        | 'RerunJob';
+      targetKind: string;
+      targetName: string;
+      targetNamespace?: string;
+      targetUid?: string;
+      idempotencyKey?: string;
+      confirmScaleToZero?: boolean;
+      confirmNakedPodDelete?: boolean;
+      confirmDrain?: boolean;
+      drainOptions?: {
+        ignoreDaemonSets?: boolean;
+        deleteEmptyDirData?: boolean;
+        timeoutSeconds?: number;
+      };
+      parameters?: {
+        targetReplicas?: number;
+        targetRevision?: string;
+        reason?: string;
+        expectedRevision?: string;
+        expectedReplicas?: number;
+      };
+    }
+  ): { action: RemediationAction; message: string; updatedResource?: KubernetesResource } {
+    const cluster = this.getCluster(clusterId, orgId);
+    if (!cluster) {
+      throw new Error('Cluster not found or unauthorized');
+    }
+
+    const isConnected =
+      cluster.agentStatus === 'CONNECTED' ||
+      cluster.connectionState === 'connected' ||
+      cluster.connectionStatus === 'connected' ||
+      (cluster.lastHeartbeat ? Date.now() - cluster.lastHeartbeat < 5 * 60 * 1000 : false) ||
+      (cluster.lastSeenAt ? Date.now() - cluster.lastSeenAt < 5 * 60 * 1000 : false);
+
+    const isSimulated = Boolean(cluster.isSimulated || process.env.ENABLE_DEV_SIMULATION === 'true');
+
+    if (!isConnected && !isSimulated && process.env.NODE_ENV === 'production') {
+      throw new Error('Cannot execute mutation: Cluster agent is disconnected. Live cluster connection is required for operational actions.');
+    }
+
+    const clusterResources = this.resources.get(clusterId) || [];
+    const targetNamespace = (payload.targetNamespace || 'default').trim();
+    const targetKind = payload.targetKind.trim();
+    const targetName = payload.targetName.trim();
+
+    let targetRes = clusterResources.find(
+      (r) =>
+        r.kind.toLowerCase() === targetKind.toLowerCase() &&
+        r.name.toLowerCase() === targetName.toLowerCase() &&
+        (targetKind.toLowerCase() === 'node' || !r.namespace || r.namespace.toLowerCase() === targetNamespace.toLowerCase())
+    );
+
+    if (!targetRes) {
+      throw new Error(`Target ${targetKind} "${targetNamespace}/${targetName}" not found in cluster telemetry.`);
+    }
+
+    // 1. Precondition: Resource UID verification
+    if (payload.targetUid && targetRes.uid && payload.targetUid !== targetRes.uid) {
+      throw new Error(
+        `Precondition failed: target resource UID has changed (expected ${payload.targetUid}, found ${targetRes.uid}). The resource may have been deleted or recreated.`
+      );
+    }
+
+    // 2. Precondition: Expected revision verification
+    if (payload.parameters?.expectedRevision) {
+      const currentRevStr = targetRes.annotations?.['deployment.kubernetes.io/revision'] || (targetRes.statusSummary as any)?.revision || '1';
+      if (currentRevStr !== payload.parameters.expectedRevision) {
+        throw new Error(
+          `Precondition failed: deployment revision has changed (expected ${payload.parameters.expectedRevision}, found ${currentRevStr}).`
+        );
+      }
+    }
+
+    // 3. Precondition: Expected replica count verification
+    if (payload.parameters?.expectedReplicas !== undefined) {
+      const currentReps = (targetRes.specSummary as any)?.replicas ?? targetRes.specReplicas ?? 1;
+      if (currentReps !== payload.parameters.expectedReplicas) {
+        throw new Error(
+          `Precondition failed: replica count has changed (expected ${payload.parameters.expectedReplicas}, found ${currentReps}).`
+        );
+      }
+    }
+
+    // 4. Idempotency Check
+    if (payload.idempotencyKey) {
+      const existingAction = Array.from(this.remediationActions.values()).find(
+        (a) => a.idempotencyKey === payload.idempotencyKey && a.clusterId === clusterId
+      );
+      if (existingAction) {
+        return {
+          action: existingAction,
+          message: `Operation "${existingAction.actionType}" already dispatched with idempotency key ${payload.idempotencyKey}.`,
+          updatedResource: targetRes
+        };
+      }
+    }
+
+    // 5. Concurrency Check: Prevent simultaneous conflicting mutations on the same resource
+    const activeConflict = Array.from(this.remediationActions.values()).find(
+      (a) =>
+        a.clusterId === clusterId &&
+        a.target?.kind?.toLowerCase() === targetKind.toLowerCase() &&
+        a.target?.name?.toLowerCase() === targetName.toLowerCase() &&
+        (a.target?.namespace || 'default').toLowerCase() === targetNamespace.toLowerCase() &&
+        (a.status === 'PENDING' || a.status === 'EXECUTING' || a.status === 'VERIFYING')
+    );
+    if (activeConflict) {
+      throw new Error(
+        `Conflict: Operation "${activeConflict.actionType}" is already in progress on ${targetKind} ${targetNamespace}/${targetName}. Please wait for it to complete or verify before dispatching another operation.`
+      );
+    }
+
+    // 6. Protected system namespaces
+    const isProtected = ['kube-system', 'kube-public', 'kube-node-lease', 'skyops', 'skyops-system'].includes(targetNamespace.toLowerCase());
+    if (isProtected && (payload.actionType === 'DeletePod' || payload.actionType === 'RestartPod')) {
+      throw new Error(`Namespace "${targetNamespace}" is protected against pod deletion and operational mutations.`);
+    }
+
+    let proposedValue = '';
+    let expectedCurrentValue = '';
+    let riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
+    const now = Date.now();
+
+    // 7. Action-specific validation and safeguards
+    if (payload.actionType === 'ScaleDeployment' || payload.actionType === 'ScaleWorkload') {
+      const targetReplicas = payload.parameters?.targetReplicas;
+      if (typeof targetReplicas !== 'number' || targetReplicas < 0 || targetReplicas > 50) {
+        throw new Error('Target replicas must be an integer between 0 and 50.');
+      }
+      if (targetReplicas === 0) {
+        if (!payload.confirmScaleToZero) {
+          throw new Error('Safety policy: Scaling to 0 terminates all running pods and ceases traffic handling. Explicit confirmScaleToZero confirmation is required.');
+        }
+        riskLevel = 'HIGH';
+      } else {
+        riskLevel = 'MEDIUM';
+      }
+      proposedValue = String(targetReplicas);
+      expectedCurrentValue = String((targetRes.specSummary as any)?.replicas ?? targetRes.specReplicas ?? 1);
+    } else if (payload.actionType === 'RollbackDeployment') {
+      const currentRevStr = targetRes.annotations?.['deployment.kubernetes.io/revision'] || (targetRes.statusSummary as any)?.revision || '1';
+      const currentRev = parseInt(currentRevStr, 10) || 1;
+      if (currentRev <= 1) {
+        throw new Error('NO_ROLLBACK_AVAILABLE: Deployment is currently at initial revision 1. No previous revision exists.');
+      }
+      const targetRev = payload.parameters?.targetRevision || String(currentRev - 1);
+      proposedValue = targetRev;
+      expectedCurrentValue = String(currentRev);
+      riskLevel = 'MEDIUM';
+    } else if (payload.actionType === 'RolloutRestart') {
+      proposedValue = new Date(now).toISOString();
+      expectedCurrentValue = targetRes.annotations?.['kubectl.kubernetes.io/restartedAt'] || '';
+      riskLevel = 'LOW';
+    } else if (payload.actionType === 'DeletePod' || payload.actionType === 'RestartPod') {
+      const hasController = Boolean(targetRes.ownerReferences && targetRes.ownerReferences.length > 0);
+      if (!hasController && !payload.confirmNakedPodDelete) {
+        throw new Error(
+          `Safety policy: Pod "${targetName}" is a standalone pod without a controller owner (e.g. Deployment, ReplicaSet, StatefulSet). Deleting it will permanently destroy this pod with NO replacement. Explicit confirmNakedPodDelete confirmation is required.`
+        );
+      }
+      proposedValue = 'DELETED';
+      expectedCurrentValue = targetRes.uid || 'active';
+      riskLevel = hasController ? 'LOW' : 'HIGH';
+    } else if (payload.actionType === 'CordonNode') {
+      proposedValue = 'CORDONED';
+      expectedCurrentValue = (targetRes.specSummary as any)?.unschedulable ? 'CORDONED' : 'SCHEDULABLE';
+      riskLevel = 'LOW';
+    } else if (payload.actionType === 'UncordonNode') {
+      proposedValue = 'SCHEDULABLE';
+      expectedCurrentValue = (targetRes.specSummary as any)?.unschedulable ? 'CORDONED' : 'SCHEDULABLE';
+      riskLevel = 'LOW';
+    } else if (payload.actionType === 'DrainNode') {
+      if (!payload.confirmDrain) {
+        throw new Error(
+          `Safety policy: Node drain evicts all workloads and can cause service degradation or eviction failures. Explicit confirmDrain confirmation is required.`
+        );
+      }
+      proposedValue = 'DRAINED';
+      expectedCurrentValue = (targetRes.specSummary as any)?.unschedulable ? 'CORDONED' : 'SCHEDULABLE';
+      riskLevel = 'HIGH';
+    } else if (payload.actionType === 'SuspendCronJob') {
+      if (targetRes.kind !== 'CronJob') throw new Error(`SuspendCronJob can only be executed on a CronJob resource, got ${targetRes.kind}`);
+      proposedValue = 'SUSPENDED';
+      expectedCurrentValue = (targetRes.specSummary as any)?.suspend ? 'SUSPENDED' : 'ACTIVE';
+      riskLevel = 'LOW';
+    } else if (payload.actionType === 'ResumeCronJob') {
+      if (targetRes.kind !== 'CronJob') throw new Error(`ResumeCronJob can only be executed on a CronJob resource, got ${targetRes.kind}`);
+      proposedValue = 'ACTIVE';
+      expectedCurrentValue = (targetRes.specSummary as any)?.suspend ? 'SUSPENDED' : 'ACTIVE';
+      riskLevel = 'LOW';
+    } else if (payload.actionType === 'TriggerCronJob') {
+      if (targetRes.kind !== 'CronJob') throw new Error(`TriggerCronJob can only be executed on a CronJob resource, got ${targetRes.kind}`);
+      proposedValue = 'TRIGGERED';
+      expectedCurrentValue = 'IDLE';
+      riskLevel = 'LOW';
+    } else if (payload.actionType === 'RerunJob') {
+      if (targetRes.kind !== 'Job') throw new Error(`RerunJob can only be executed on a Job resource, got ${targetRes.kind}`);
+      proposedValue = 'RERUN';
+      expectedCurrentValue = targetRes.status || 'Completed';
+      riskLevel = 'LOW';
+    }
+
+    const actionId = `act-${crypto.randomBytes(10).toString('hex')}`;
+
+    const action: RemediationAction = {
+      id: actionId,
+      incidentId: `op-${actionId}`,
+      orgId,
+      clusterId,
+      clusterName: cluster.name,
+      actionType: payload.actionType as any,
+      type: payload.actionType as any,
+      target: {
+        kind: targetRes.kind,
+        namespace: targetRes.namespace || targetNamespace,
+        name: targetRes.name,
+        uid: targetRes.uid
+      },
+      fieldPath: payload.actionType.startsWith('Scale') ? 'spec.replicas' : 'metadata.annotations',
+      expectedCurrentValue,
+      proposedValue,
+      parameters: {
+        ...payload.parameters,
+        confirmScaleToZero: payload.confirmScaleToZero,
+        confirmNakedPodDelete: payload.confirmNakedPodDelete,
+        confirmDrain: payload.confirmDrain,
+        drainOptions: payload.drainOptions,
+        reason: payload.parameters?.reason || `Manual operation ${payload.actionType} executed by ${operator.name}`
+      },
+      requestedBy: {
+        type: 'USER',
+        id: operator.id,
+        name: operator.name
+      },
+      approvedBy: {
+        userId: operator.id,
+        name: operator.name,
+        email: operator.email
+      },
+      approvingUserId: operator.id,
+      approvingUserName: operator.name,
+      approvedAt: now,
+      status: 'PENDING',
+      createdAt: now,
+      expiresAt: now + 15 * 60 * 1000,
+      executionId: `exec-${crypto.randomBytes(8).toString('hex')}`,
+      idempotencyKey: payload.idempotencyKey || `idem-${actionId}`,
+      verificationPlan: {
+        expectedState: 'Healthy',
+        observationWindowSeconds: 60,
+        timeoutSeconds: 300
+      },
+      rollbackPlan: {
+        supported: payload.actionType === 'RollbackDeployment' || payload.actionType.startsWith('Scale'),
+        strategy: payload.actionType.startsWith('Scale') ? 'Restore previous replica count' : 'Revert to previous revision'
+      },
+      riskLevel,
+      isExecutable: true
+    };
+
+    this.remediationActions.set(action.id, action);
+    this.recordClusterAction(clusterId);
+
+    // Apply mutation and verify state (simulation or live server-side verification)
+    if (isSimulated || !isConnected) {
+      if (payload.actionType === 'RolloutRestart') {
+        if (!targetRes.annotations) targetRes.annotations = {};
+        targetRes.annotations['kubectl.kubernetes.io/restartedAt'] = new Date(now).toISOString();
+        if (targetRes.kind === 'Deployment') {
+          const currentRev = parseInt(targetRes.annotations['deployment.kubernetes.io/revision'] || '1', 10);
+          targetRes.annotations['deployment.kubernetes.io/revision'] = String(currentRev + 1);
+        }
+        targetRes.status = 'Running';
+        targetRes.health = 'HEALTHY';
+        targetRes.updatedAt = now;
+      } else if (payload.actionType === 'ScaleDeployment' || payload.actionType === 'ScaleWorkload') {
+        const reps = payload.parameters?.targetReplicas ?? 2;
+        targetRes.specReplicas = reps;
+        targetRes.readyReplicas = reps;
+        targetRes.availableReplicas = reps;
+        targetRes.updatedReplicas = reps;
+        if (targetRes.specSummary) (targetRes.specSummary as any).replicas = reps;
+        if (targetRes.statusSummary) {
+          (targetRes.statusSummary as any).replicas = reps;
+          (targetRes.statusSummary as any).readyReplicas = reps;
+          (targetRes.statusSummary as any).availableReplicas = reps;
+          (targetRes.statusSummary as any).unavailableReplicas = 0;
+        }
+        targetRes.status = reps === 0 ? 'ScaledToZero' : 'Running';
+        targetRes.health = reps === 0 ? 'WARNING' : 'HEALTHY';
+        targetRes.updatedAt = now;
+      } else if (payload.actionType === 'RollbackDeployment') {
+        if (!targetRes.annotations) targetRes.annotations = {};
+        targetRes.annotations['deployment.kubernetes.io/revision'] = proposedValue;
+        targetRes.status = 'Running';
+        targetRes.health = 'HEALTHY';
+        targetRes.updatedAt = now;
+      } else if (payload.actionType === 'RestartPod' || payload.actionType === 'DeletePod') {
+        const hasController = Boolean(targetRes.ownerReferences && targetRes.ownerReferences.length > 0);
+        if (hasController) {
+          // Controller automatically recreates a replacement pod
+          const basePrefix = targetName.split('-').slice(0, -1).join('-') || targetName;
+          const replacementPod: KubernetesResource = {
+            id: `${clusterId}:Pod:${targetNamespace}:${basePrefix}-${crypto.randomBytes(3).toString('hex')}`,
+            clusterId,
+            kind: 'Pod',
+            name: `${basePrefix}-${crypto.randomBytes(3).toString('hex')}`,
+            namespace: targetNamespace,
+            status: 'Running',
+            health: 'HEALTHY',
+            createdAt: now,
+            updatedAt: now,
+            uid: `pod-${crypto.randomBytes(8).toString('hex')}`,
+            ownerReferences: targetRes.ownerReferences,
+            nodeName: targetRes.nodeName,
+            restartCount: 0,
+            containers: (targetRes.containers || []).map((c) => ({
+              ...c,
+              ready: true,
+              state: 'running',
+              restartCount: 0,
+              waitingReason: undefined,
+              waitingMessage: undefined
+            }))
+          };
+          const idx = clusterResources.findIndex((r) => r.id === targetRes.id);
+          if (idx !== -1) {
+            clusterResources[idx] = replacementPod;
+          } else {
+            clusterResources.push(replacementPod);
+          }
+          targetRes = replacementPod;
+        } else {
+          // Naked pod: remove from resources without replacement
+          const idx = clusterResources.findIndex((r) => r.id === targetRes.id);
+          if (idx !== -1) {
+            clusterResources.splice(idx, 1);
+          }
+          targetRes.status = 'Terminated';
+          targetRes.health = 'CRITICAL';
+        }
+      } else if (payload.actionType === 'CordonNode') {
+        if (!targetRes.specSummary) targetRes.specSummary = {};
+        (targetRes.specSummary as any).unschedulable = true;
+        targetRes.status = 'SchedulingDisabled';
+        targetRes.health = 'WARNING';
+        targetRes.updatedAt = now;
+      } else if (payload.actionType === 'UncordonNode') {
+        if (!targetRes.specSummary) targetRes.specSummary = {};
+        (targetRes.specSummary as any).unschedulable = false;
+        targetRes.status = 'Ready';
+        targetRes.health = 'HEALTHY';
+        targetRes.updatedAt = now;
+      } else if (payload.actionType === 'DrainNode') {
+        if (!targetRes.specSummary) targetRes.specSummary = {};
+        (targetRes.specSummary as any).unschedulable = true;
+        targetRes.status = 'SchedulingDisabled';
+        targetRes.health = 'WARNING';
+        targetRes.updatedAt = now;
+        // Evict non-DaemonSet pods from this node to other ready nodes
+        const otherNode = clusterResources.find((r) => r.kind === 'Node' && r.name !== targetName && (r.status === 'Ready' || !(r.specSummary as any)?.unschedulable));
+        for (const res of clusterResources) {
+          if (res.kind === 'Pod' && res.nodeName === targetName) {
+            const isDaemon = (res.ownerReferences || []).some((o) => o.kind === 'DaemonSet');
+            if (!isDaemon && otherNode) {
+              res.nodeName = otherNode.name;
+              res.updatedAt = now;
+            }
+          }
+        }
+      } else if (payload.actionType === 'SuspendCronJob') {
+        if (!targetRes.specSummary) targetRes.specSummary = {};
+        (targetRes.specSummary as any).suspend = true;
+        targetRes.status = 'Suspended';
+        targetRes.updatedAt = now;
+      } else if (payload.actionType === 'ResumeCronJob') {
+        if (!targetRes.specSummary) targetRes.specSummary = {};
+        (targetRes.specSummary as any).suspend = false;
+        targetRes.status = 'Active';
+        targetRes.updatedAt = now;
+      } else if (payload.actionType === 'TriggerCronJob') {
+        const manualJob: KubernetesResource = {
+          id: `${clusterId}:Job:${targetNamespace}:${targetName}-manual-${Date.now().toString(36)}`,
+          clusterId,
+          kind: 'Job',
+          name: `${targetName}-manual-${Date.now().toString(36)}`,
+          namespace: targetNamespace,
+          status: 'Running',
+          health: 'HEALTHY',
+          createdAt: now,
+          updatedAt: now,
+          uid: `job-${crypto.randomBytes(6).toString('hex')}`,
+          ownerReferences: [{ kind: 'CronJob', name: targetName, controller: true }]
+        };
+        clusterResources.push(manualJob);
+        targetRes.updatedAt = now;
+      } else if (payload.actionType === 'RerunJob') {
+        const rerunJob: KubernetesResource = {
+          id: `${clusterId}:Job:${targetNamespace}:${targetName}-rerun-${Date.now().toString(36)}`,
+          clusterId,
+          kind: 'Job',
+          name: `${targetName}-rerun-${Date.now().toString(36)}`,
+          namespace: targetNamespace,
+          status: 'Running',
+          health: 'HEALTHY',
+          createdAt: now,
+          updatedAt: now,
+          uid: `job-${crypto.randomBytes(6).toString('hex')}`
+        };
+        clusterResources.push(rerunJob);
+        targetRes.updatedAt = now;
+      }
+
+      action.status = 'SUCCEEDED';
+      action.completedAt = now;
+      action.executionResult = {
+        success: true,
+        message: `Operation ${payload.actionType} executed and verified on ${targetKind} ${targetNamespace}/${targetName}`
+      };
+      // NOTE: Section 5: "Do not mark an incident resolved as a side effect of an unrelated operation. Incident resolution must follow its own verified recovery criteria."
+    }
+
+    let successMsg = `Operation "${payload.actionType}" initiated on ${targetKind} "${targetNamespace}/${targetName}".`;
+    if (action.status === 'SUCCEEDED') {
+      successMsg = `Operation "${payload.actionType}" executed successfully on ${targetKind} "${targetNamespace}/${targetName}".`;
+    }
+
+    this.saveSnapshot();
+    return { action, message: successMsg, updatedResource: targetRes };
+  }
+
+  public getClusterOperations(clusterId: string, orgId?: string): RemediationAction[] {
+    const list = Array.from(this.remediationActions.values()).filter(
+      (a) => a.clusterId === clusterId && (!orgId || a.orgId === orgId)
+    );
+    return list.sort((a, b) => b.createdAt - a.createdAt);
   }
 
   public addIncidentNote(

@@ -16,6 +16,7 @@ import { AuditView } from '../audit/AuditView';
 import { NavigationTab, Sidebar } from './Sidebar';
 import { Footer } from './Footer';
 import { DocTopic, KnowledgeBaseModal } from '../docs/KnowledgeBaseModal';
+import { OperationsWorkspaceView } from '../operations/OperationsWorkspaceView';
 
 interface AppShellProps {
   initialOpenAddCluster?: boolean;
@@ -26,6 +27,10 @@ const PAGE_METADATA: Record<string, { title: string; subtitle: string }> = {
   overview: {
     title: 'Overview',
     subtitle: 'Fleet health summary, active alerts, and connected Kubernetes clusters'
+  },
+  operations: {
+    title: 'Operations Workspace',
+    subtitle: 'Unified Kubernetes resource control, releases, live diagnostics & operations'
   },
   clusters: {
     title: 'Clusters',
@@ -343,6 +348,17 @@ export const AppShell: React.FC<AppShellProps> = ({
           setSelectedIncidentId(null);
           return;
         }
+
+        const opsMatch =
+          searchParams.get('tab') === 'operations' ||
+          window.location.pathname.startsWith('/operations') ||
+          window.location.hash.startsWith('#/operations');
+        if (opsMatch) {
+          setActiveTab('operations');
+          const targetCluster = searchParams.get('clusterId');
+          if (targetCluster) setSelectedClusterId(targetCluster);
+          return;
+        }
       } catch {
         // safe fallback
       }
@@ -565,6 +581,17 @@ export const AppShell: React.FC<AppShellProps> = ({
                 />
               )}
             </>
+          )}
+
+          {activeTab === 'operations' && (
+            <OperationsWorkspaceView
+              clusters={clusters}
+              initialClusterId={selectedClusterId}
+              onSelectCluster={handleSelectCluster}
+              onSelectIncident={handleSelectIncident}
+              onOpenAddCluster={() => setIsAddClusterOpen(true)}
+              onRefreshGlobal={handleManualRefresh}
+            />
           )}
 
           {activeTab === 'infrastructure' && (

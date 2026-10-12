@@ -429,13 +429,13 @@ app.delete(
       confirmName === 'permanently delete' ||
       confirmName === 'delete workspace';
 
-    // Allow if confirmation matches name, id, slug, keyword, or user explicitly acknowledged
+    // Allow if confirmation matches name, id, slug, delete keyword, or if confirmName was omitted and user explicitly acknowledged
     const isValidConfirmation =
       matchesName ||
       matchesId ||
       matchesSlug ||
       matchesDelete ||
-      (parsed.data.acknowledgement && (confirmName === '' || confirmName.length > 0));
+      (parsed.data.acknowledgement && confirmName === '');
 
     if (!isValidConfirmation) {
       return res.status(400).json({
@@ -2474,6 +2474,119 @@ app.post(
       console.error(`[SkyOps API] Cluster auto-heal error for ${req.params.id}:`, err);
       res.status(400).json({ error: err?.message || 'Failed to auto-heal cluster incidents' });
     }
+  }
+);
+
+// --- UNIFIED KUBERNETES OPERATIONS WORKSPACE API (P1) ---
+const ClusterOperationSchema = z.object({
+  actionType: z.enum([
+    'RolloutRestart',
+    'RestartPod',
+    'DeletePod',
+    'ScaleDeployment',
+    'ScaleWorkload',
+    'RollbackDeployment',
+    'CordonNode',
+    'UncordonNode',
+    'DrainNode',
+    'SuspendCronJob',
+    'ResumeCronJob',
+    'TriggerCronJob',
+    'RerunJob'
+  ]),
+  targetKind: z.string().min(1),
+  targetName: z.string().min(1),
+  targetNamespace: z.string().optional(),
+  targetUid: z.string().optional(),
+  idempotencyKey: z.string().optional(),
+  confirmScaleToZero: z.boolean().optional(),
+  confirmNakedPodDelete: z.boolean().optional(),
+  confirmDrain: z.boolean().optional(),
+  drainOptions: z
+    .object({
+      ignoreDaemonSets: z.boolean().optional(),
+      deleteEmptyDirData: z.boolean().optional(),
+      timeoutSeconds: z.number().int().min(10).max(600).optional()
+    })
+    .optional(),
+  parameters: z
+    .object({
+      targetReplicas: z.number().int().min(0).max(50).optional(),
+      targetRevision: z.string().optional(),
+      reason: z.string().optional(),
+      expectedRevision: z.string().optional(),
+      expectedReplicas: z.number().optional()
+    })
+    .optional()
+});
+
+app.post(
+  '/api/v1/clusters/:id/operations',
+  requireUserAuth,
+  requireOrgMembership,
+  requireRole(['OWNER', 'ADMIN', 'SRE', 'OPERATOR', 'ENGINEER']),
+  async (req: AuthenticatedUserRequest, res) => {
+    const clusterId = req.params.id;
+    const parsed = ClusterOperationSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: 'Invalid operation payload',
+        details: parsed.error.issues[0]?.message
+      });
+    }
+
+    try {
+      const result = store.executeClusterResourceOperation(
+        clusterId,
+        req.orgId!,
+        { id: req.user!.id, name: req.user!.name, email: req.user!.email },
+        parsed.data
+      );
+
+      auditService.record({
+        orgId: req.orgId!,
+        actorId: req.user!.id,
+        actorName: req.user!.name,
+        actorType: 'HUMAN',
+        action: `cluster.operation.${parsed.data.actionType.toLowerCase()}`,
+        resourceType: 'CLUSTER_RESOURCE',
+        resourceId: `${parsed.data.targetKind}/${parsed.data.targetName}`,
+        result: 'SUCCESS',
+        details: {
+          clusterId,
+          actionType: parsed.data.actionType,
+          targetKind: parsed.data.targetKind,
+          targetName: parsed.data.targetName,
+          targetNamespace: parsed.data.targetNamespace,
+          parameters: parsed.data.parameters,
+          actionId: result.action.id,
+          status: result.action.status
+        }
+      });
+
+      res.json({
+        success: true,
+        message: result.message,
+        action: result.action,
+        updatedResource: result.updatedResource
+      });
+    } catch (err: any) {
+      console.error(`[SkyOps API] Cluster operation error on ${clusterId}:`, err);
+      const isConflict = err?.message?.startsWith('Conflict:');
+      const statusCode = isConflict ? 409 : 400;
+      res.status(statusCode).json({ error: err?.message || 'Failed to execute cluster operation' });
+    }
+  }
+);
+
+app.get(
+  '/api/v1/clusters/:id/operations',
+  requireUserAuth,
+  requireOrgMembership,
+  (req: AuthenticatedUserRequest, res) => {
+    const clusterId = req.params.id;
+    const operations = store.getClusterOperations(clusterId, req.orgId!);
+    res.json({ operations });
   }
 );
 

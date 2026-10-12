@@ -984,6 +984,8 @@ export interface KubernetesResource {
   osImage?: string;
   architecture?: string;
   kubeletVersion?: string;
+  updatedReplicas?: number;
+  dataKeys?: string[];
   observedAt?: number;
   ingestedAt?: number;
 }

@@ -546,6 +546,63 @@ class ApiClient {
     return normalizeClusterResourcesResponse(data);
   }
 
+  async executeClusterOperation(
+    clusterId: string,
+    payload: {
+      actionType:
+        | 'RolloutRestart'
+        | 'RestartPod'
+        | 'DeletePod'
+        | 'ScaleDeployment'
+        | 'ScaleWorkload'
+        | 'RollbackDeployment'
+        | 'CordonNode'
+        | 'UncordonNode'
+        | 'DrainNode'
+        | 'SuspendCronJob'
+        | 'ResumeCronJob'
+        | 'TriggerCronJob'
+        | 'RerunJob';
+      targetKind: string;
+      targetName: string;
+      targetNamespace?: string;
+      targetUid?: string;
+      idempotencyKey?: string;
+      confirmScaleToZero?: boolean;
+      confirmNakedPodDelete?: boolean;
+      confirmDrain?: boolean;
+      drainOptions?: {
+        ignoreDaemonSets?: boolean;
+        deleteEmptyDirData?: boolean;
+        timeoutSeconds?: number;
+      };
+      parameters?: {
+        targetReplicas?: number;
+        targetRevision?: string;
+        reason?: string;
+        expectedRevision?: string;
+        expectedReplicas?: number;
+      };
+    }
+  ): Promise<{ success: boolean; message: string; action: RemediationAction; updatedResource?: KubernetesResource }> {
+    return this.request<{ success: boolean; message: string; action: RemediationAction; updatedResource?: KubernetesResource }>(
+      `/api/v1/clusters/${clusterId}/operations`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
+  }
+
+  async getClusterOperations(clusterId: string): Promise<{ operations: RemediationAction[] }> {
+    return this.request<{ operations: RemediationAction[] }>(`/api/v1/clusters/${clusterId}/operations`);
+  }
+
+  async getDeployments(clusterId?: string): Promise<{ deployments: DeploymentRecord[] }> {
+    const url = clusterId ? `/api/v1/deployments?clusterId=${encodeURIComponent(clusterId)}` : '/api/v1/deployments';
+    return this.request<{ deployments: DeploymentRecord[] }>(url);
+  }
+
   async getAllResources(filters?: {
     clusterId?: string;
     kind?: string;

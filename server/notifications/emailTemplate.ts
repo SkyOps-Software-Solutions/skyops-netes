@@ -1,4 +1,4 @@
-import { IncidentEmailData } from './types';
+import { IncidentEmailData, LogAlertEmailData } from './types';
 import { IncidentSeverity } from '../../src/types/index';
 
 /**
@@ -524,6 +524,175 @@ export function generateIncidentEmail(data: IncidentEmailData): {
             </td>
           </tr>
 
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  return { subject, html, text };
+}
+
+/**
+ * Generate a production email for Kubernetes Log Alerts
+ */
+export function generateLogAlertEmail(data: LogAlertEmailData): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const { orgName, clusterName, clusterId, namespace, podName, container, severity, timestamp, excerpt, appUrl, recipientEmail, ruleName, incidentId } = data;
+
+  const sevUpper = (severity || 'ERROR').toUpperCase();
+  const title = ruleName || `Log Alert: ${sevUpper} in ${podName}`;
+  const subject = `[SkyOps Log Alert] ${sevUpper} in ${podName} (${namespace})`;
+
+  const baseUrl = (appUrl || '').replace(/\/$/, '');
+  const logsUrl = baseUrl
+    ? `${baseUrl}/#logs?clusterId=${encodeURIComponent(clusterId)}&namespace=${encodeURIComponent(namespace)}&pod=${encodeURIComponent(podName)}&container=${encodeURIComponent(container)}`
+    : `https://skyops.ai/logs`;
+  const incidentUrl = incidentId && baseUrl
+    ? `${baseUrl}/#incident=${encodeURIComponent(incidentId)}`
+    : null;
+  const preferencesUrl = baseUrl
+    ? `${baseUrl}/#settings/notifications`
+    : 'https://skyops.ai/settings/notifications';
+  const unsubscribeUrl = `${baseUrl}/api/v1/notifications/unsubscribe?email=${encodeURIComponent(recipientEmail)}`;
+
+  const safeExcerpt = redactSecrets(excerpt || 'No log details provided');
+
+  const text = `
+[SkyOps Log Alert] ${sevUpper} Detected
+Cluster: ${clusterName || clusterId}
+Namespace: ${namespace}
+Pod: ${podName}
+Container: ${container}
+Timestamp: ${timestamp || new Date().toISOString()}
+
+Alert Rule: ${title}
+
+Log Excerpt:
+${safeExcerpt}
+
+View Container Logs: ${logsUrl}
+${incidentUrl ? `View Correlated Incident: ${incidentUrl}\n` : ''}
+
+Notification Preferences: ${preferencesUrl}
+Unsubscribe: ${unsubscribeUrl}
+`.trim();
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(subject)}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #09090b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #f4f4f5;">
+  <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #09090b; padding: 32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="600" style="max-width: 600px; background-color: #18181b; border: 1px solid #27272a; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);">
+          <!-- Header -->
+          <tr>
+            <td style="padding: 24px; background: linear-gradient(135deg, #18181b 0%, #09090b 100%); border-bottom: 1px solid #27272a;">
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <span style="font-size: 20px; font-weight: 800; letter-spacing: -0.5px; color: #38bdf8;">SKYOPS</span>
+                      <span style="font-size: 11px; background-color: #0284c7; color: #ffffff; padding: 2px 6px; border-radius: 4px; font-weight: 700; text-transform: uppercase;">Log Alert</span>
+                    </div>
+                  </td>
+                  <td align="right">
+                    <span style="display: inline-block; padding: 4px 10px; border-radius: 9999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; background-color: ${sevUpper === 'FATAL' || sevUpper === 'CRITICAL' ? '#881337' : '#7f1d1d'}; color: #fecdd3; border: 1px solid ${sevUpper === 'FATAL' || sevUpper === 'CRITICAL' ? '#f43f5e' : '#ef4444'};">
+                      ${escapeHtml(sevUpper)}
+                    </span>
+                  </td>
+                </tr>
+              </table>
+              <h1 style="margin: 16px 0 4px 0; font-size: 18px; font-weight: 700; color: #fafafa; line-height: 24px;">
+                ${escapeHtml(title)}
+              </h1>
+              <p style="margin: 0; font-size: 12px; color: #a1a1aa;">
+                Observed in <strong>${escapeHtml(orgName || 'Workspace')}</strong> &bull; Cluster: <strong>${escapeHtml(clusterName || clusterId)}</strong>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Metadata Grid -->
+          <tr>
+            <td style="padding: 20px 24px; border-bottom: 1px solid #27272a; background-color: #121215;">
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td width="50%" style="padding-bottom: 12px; font-size: 12px;">
+                    <span style="color: #71717a; text-transform: uppercase; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">Namespace</span>
+                    <strong style="color: #e4e4e7; font-family: monospace;">${escapeHtml(namespace)}</strong>
+                  </td>
+                  <td width="50%" style="padding-bottom: 12px; font-size: 12px;">
+                    <span style="color: #71717a; text-transform: uppercase; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">Container</span>
+                    <strong style="color: #e4e4e7; font-family: monospace;">${escapeHtml(container || 'all')}</strong>
+                  </td>
+                </tr>
+                <tr>
+                  <td width="50%" style="font-size: 12px;">
+                    <span style="color: #71717a; text-transform: uppercase; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">Pod</span>
+                    <strong style="color: #e4e4e7; font-family: monospace;">${escapeHtml(podName)}</strong>
+                  </td>
+                  <td width="50%" style="font-size: 12px;">
+                    <span style="color: #71717a; text-transform: uppercase; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">Timestamp</span>
+                    <span style="color: #d4d4d8; font-size: 11px;">${escapeHtml(timestamp || new Date().toISOString())}</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Log Excerpt -->
+          <tr>
+            <td style="padding: 20px 24px;">
+              <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #a1a1aa; font-weight: 700; margin-bottom: 8px;">
+                Log Record Excerpt (Safely Redacted)
+              </div>
+              <div style="background-color: #09090b; border: 1px solid #27272a; border-radius: 8px; padding: 14px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; color: #f43f5e; line-height: 18px; word-break: break-all; white-space: pre-wrap;">
+                ${escapeHtml(safeExcerpt)}
+              </div>
+            </td>
+          </tr>
+
+          <!-- Action Button -->
+          <tr>
+            <td style="padding: 0 24px 24px 24px;">
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td>
+                    <a href="${escapeHtml(logsUrl)}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #0284c7; color: #ffffff; text-decoration: none; padding: 10px 18px; border-radius: 6px; font-size: 12px; font-weight: 700; text-align: center;">
+                      Inspect Pod Logs &rarr;
+                    </a>
+                    ${incidentUrl ? `
+                    <a href="${escapeHtml(incidentUrl)}" target="_blank" rel="noopener noreferrer" style="display: inline-block; margin-left: 8px; background-color: #27272a; color: #e4e4e7; text-decoration: none; padding: 10px 18px; border-radius: 6px; font-size: 12px; font-weight: 600; text-align: center; border: 1px solid #3f3f46;">
+                      View Correlated Incident
+                    </a>` : ''}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 16px 24px; background-color: #09090b; border-top: 1px solid #27272a; font-size: 11px; color: #71717a; line-height: 16px;">
+              <p style="margin: 0 0 8px 0;">
+                Delivered to <strong style="color: #a1a1aa;">${escapeHtml(recipientEmail)}</strong> for tenant <strong>${escapeHtml(orgName)}</strong>.
+              </p>
+              <p style="margin: 0;">
+                <a href="${escapeHtml(preferencesUrl)}" style="color: #38bdf8; text-decoration: underline;">Notification Preferences</a> &bull;
+                <a href="${escapeHtml(unsubscribeUrl)}" style="color: #71717a; text-decoration: underline;">Unsubscribe</a> &bull;
+                SkyOps Software Solutions, Inc.
+              </p>
+            </td>
+          </tr>
         </table>
       </td>
     </tr>

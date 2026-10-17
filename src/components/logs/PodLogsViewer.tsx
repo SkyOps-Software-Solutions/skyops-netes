@@ -2,6 +2,7 @@ import {
   AlertCircle,
   ArrowDownToLine,
   Ban,
+  Bell,
   Check,
   Clock,
   Copy,
@@ -16,7 +17,7 @@ import {
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client';
-import { ContainerDiagnostic, KubernetesResource, PodLogsResponse } from '../../types/index';
+import { ContainerDiagnostic, KubernetesResource, PodLogsResponse, PodLogAlertSubscriptionStatus } from '../../types/index';
 import { Button } from '../common/UI';
 
 interface PodLogsViewerProps {
@@ -60,8 +61,67 @@ export const PodLogsViewer: React.FC<PodLogsViewerProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
 
+  // Pod Log Alert subscription state
+  const [alertEnabled, setAlertEnabled] = useState<boolean>(false);
+  const [alertLoading, setAlertLoading] = useState<boolean>(false);
+  const [alertStatus, setAlertStatus] = useState<PodLogAlertSubscriptionStatus | null>(null);
+  const [alertFeedback, setAlertFeedback] = useState<string | null>(null);
+
   const terminalEndRef = useRef<HTMLDivElement>(null);
   const terminalContainerRef = useRef<HTMLDivElement>(null);
+
+  // Fetch subscription status for selected pod and container
+  const fetchAlertStatus = async () => {
+    if (!clusterId || !namespace || !podName) return;
+    try {
+      setAlertLoading(true);
+      const res = await api.getPodLogAlertSubscription(clusterId, namespace, podName, selectedContainer || undefined);
+      setAlertStatus(res);
+      setAlertEnabled(res.active);
+    } catch (err) {
+      console.warn('Failed to fetch pod log alert subscription:', err);
+    } finally {
+      setAlertLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAlertStatus();
+  }, [clusterId, namespace, podName, selectedContainer]);
+
+  const handleToggleLogAlerts = async () => {
+    if (!clusterId || !namespace || !podName) return;
+    if (alertStatus && !alertStatus.canAlert && !alertEnabled) {
+      setAlertFeedback(alertStatus.reason || 'Log alerting cannot be activated: cluster agent offline.');
+      setTimeout(() => setAlertFeedback(null), 4500);
+      return;
+    }
+
+    try {
+      setAlertLoading(true);
+      setAlertFeedback(null);
+      const nextState = !alertEnabled;
+      const res = await api.setPodLogAlertSubscription({
+        clusterId,
+        namespace,
+        podName,
+        container: selectedContainer || '*',
+        enabled: nextState,
+        minSeverity: 'ERROR',
+        notifyEmail: true
+      });
+
+      setAlertEnabled(res.active);
+      setAlertFeedback(res.message);
+      setTimeout(() => setAlertFeedback(null), 4000);
+    } catch (err: any) {
+      console.warn('Failed to toggle pod log alerts:', err);
+      setAlertFeedback(err?.message || 'Failed to update alert preference');
+      setTimeout(() => setAlertFeedback(null), 4500);
+    } finally {
+      setAlertLoading(false);
+    }
+  };
 
   // Sync initial container if containers change
   useEffect(() => {
@@ -227,6 +287,65 @@ export const PodLogsViewer: React.FC<PodLogsViewerProps> = ({
             <Clock className="w-3 h-3" />
             Previous Logs
           </button>
+
+          {/* A. Since / Time-Range Filter Control */}
+          <div className="flex items-center gap-1 ml-1 text-[11px] text-zinc-400">
+            <span>Since:</span>
+            <select
+              value={sinceSeconds ?? ''}
+              onChange={(e) => setSinceSeconds(e.target.value ? Number(e.target.value) : undefined)}
+              className="bg-zinc-800 border border-zinc-700 text-zinc-200 rounded px-2 py-1 outline-none focus:border-sky-500 hover:border-zinc-600 transition-colors cursor-pointer text-[11px]"
+            >
+              <option value="">All Time</option>
+              <option value={300}>Last 5 minutes</option>
+              <option value={900}>Last 15 minutes</option>
+              <option value={1800}>Last 30 minutes</option>
+              <option value={3600}>Last 1 hour</option>
+              <option value={21600}>Last 6 hours</option>
+              <option value={86400}>Last 24 hours</option>
+            </select>
+          </div>
+
+          {/* B. Log Alert Toggle */}
+          <button
+            onClick={handleToggleLogAlerts}
+            disabled={alertLoading || (alertStatus !== null && !alertStatus.canAlert && !alertEnabled)}
+            title={
+              alertStatus?.reason ||
+              (alertEnabled
+                ? 'Log alerts active: notifying on ERROR and FATAL logs for this pod/container'
+                : alertStatus?.canAlert === false
+                ? 'Alerts unavailable: Cluster agent is disconnected'
+                : 'Click to enable real-time notifications for errors in this container')
+            }
+            className={`px-2.5 py-1 rounded text-[11px] border transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+              alertEnabled
+                ? 'bg-rose-950/80 text-rose-300 border-rose-700/80 shadow-xs font-semibold'
+                : alertStatus?.canAlert === false
+                ? 'bg-zinc-900/60 text-zinc-500 border-zinc-800'
+                : 'bg-zinc-800/80 text-zinc-400 border-zinc-700 hover:text-zinc-200 hover:border-zinc-600'
+            }`}
+          >
+            {alertLoading ? (
+              <RefreshCw className="w-3 h-3 animate-spin text-sky-400" />
+            ) : alertEnabled ? (
+              <Bell className="w-3 h-3 text-rose-400 fill-rose-400/30" />
+            ) : alertStatus?.canAlert === false ? (
+              <AlertCircle className="w-3 h-3 text-amber-500" />
+            ) : (
+              <Bell className="w-3 h-3" />
+            )}
+            <span>Log Alerts</span>
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                alertEnabled
+                  ? 'bg-rose-400 animate-pulse'
+                  : alertStatus?.canAlert === false
+                  ? 'bg-amber-500/80'
+                  : 'bg-zinc-600'
+              }`}
+            />
+          </button>
         </div>
 
         {/* Action Controls */}
@@ -244,22 +363,6 @@ export const PodLogsViewer: React.FC<PodLogsViewerProps> = ({
               <option value={250}>250</option>
               <option value={500}>500</option>
               <option value={1000}>1000</option>
-            </select>
-          </div>
-
-          {/* Time Window (Since) */}
-          <div className="flex items-center gap-1 text-[11px] text-zinc-400">
-            <span>Since:</span>
-            <select
-              value={sinceSeconds ?? ''}
-              onChange={(e) => setSinceSeconds(e.target.value ? Number(e.target.value) : undefined)}
-              className="bg-zinc-800 border border-zinc-700 text-zinc-200 rounded px-1.5 py-0.5 outline-none focus:border-sky-500"
-            >
-              <option value="">All Time</option>
-              <option value={300}>5m</option>
-              <option value={900}>15m</option>
-              <option value={3600}>1h</option>
-              <option value={86400}>24h</option>
             </select>
           </div>
 
@@ -351,6 +454,19 @@ export const PodLogsViewer: React.FC<PodLogsViewerProps> = ({
           )}
         </div>
       </div>
+
+      {/* Alert Feedback Banner */}
+      {alertFeedback && (
+        <div className="bg-sky-950/70 border-b border-sky-800/80 px-4 py-1.5 flex items-center justify-between text-xs text-sky-200">
+          <span className="flex items-center gap-1.5">
+            <Bell className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+            <span>{alertFeedback}</span>
+          </span>
+          <button onClick={() => setAlertFeedback(null)} className="text-zinc-400 hover:text-white p-0.5">
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
 
       {/* Filter / Search Bar */}
       <div className="bg-zinc-900/40 border-b border-zinc-800/80 px-4 py-1.5 flex items-center justify-between gap-2 text-xs">

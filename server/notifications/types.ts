@@ -95,3 +95,21 @@ export interface UserNotificationSettings {
   email: string;
   updatedAt?: number;
 }
+
+export interface LogAlertEmailData {
+  orgName: string;
+  clusterName: string;
+  clusterId: string;
+  namespace: string;
+  podName: string;
+  container: string;
+  severity: string;
+  timestamp: string;
+  excerpt: string;
+  appUrl: string;
+  recipientEmail: string;
+  ruleName?: string;
+  incidentId?: string;
+}
+
+export * from '../../src/types/notifications';

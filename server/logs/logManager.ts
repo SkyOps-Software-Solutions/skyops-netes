@@ -24,6 +24,7 @@ import { auditService } from '../audit';
 import { parseLogLines, redactSensitiveLogData } from '../logs';
 import { store } from '../store';
 import { webhookService } from '../integrations/webhooks';
+import { incidentNotificationService } from '../notifications/notificationService';
 
 export class LogManager {
   private collectionRules: Map<string, LogCollectionRule> = new Map();
@@ -355,6 +356,74 @@ export class LogManager {
           }
         }
 
+        // Record in centralized Notification Center
+        const first = matchingRecords[0];
+        const isFatal = rule.minSeverity === 'FATAL' || matchingRecords.some((m) => m.severity === 'FATAL');
+        const notifSev = isFatal ? 'CRITICAL' : (rule.minSeverity === 'WARN' ? 'MEDIUM' : 'HIGH');
+        const sampleExcerpt = event.sampleLogs.map((s) => s.message).join('\n').slice(0, 300);
+
+        store.createNotification({
+          orgId,
+          type: 'LOG_ALERT',
+          severity: notifSev,
+          title: `Log Alert: ${rule.name}`,
+          message: `${matchingRecords.length} error record(s) matching "${rule.pattern}" in ${cluster?.name || clusterId} / ${first?.namespace || 'default'}`,
+          clusterId,
+          clusterName: cluster?.name || clusterId,
+          namespace: first?.namespace,
+          podName: first?.podName,
+          container: first?.container,
+          workload: first?.workload,
+          logSeverity: isFatal ? 'FATAL' : 'ERROR',
+          redactedExcerpt: sampleExcerpt,
+          ruleId: rule.id,
+          ruleName: rule.name,
+          incidentId: event.incidentId,
+          actionUrl: `/#logs?clusterId=${encodeURIComponent(clusterId)}&namespace=${encodeURIComponent(first?.namespace || '')}&search=${encodeURIComponent(rule.pattern)}`
+        });
+
+        // Email delivery if enabled
+        if (rule.notifyEmail) {
+          const org = store.getOrganization(orgId);
+          const members = store.getOrgMembers(orgId);
+          const recipients = members.map((m) => {
+            const user = store.getUser(m.userId);
+            const email = user?.email || m.email || '';
+            const notifSettings = store.getUserNotificationSettings(m.userId, email);
+            return {
+              userId: m.userId,
+              email,
+              name: m.name,
+              incidentEmailEnabled: notifSettings.incidentEmailEnabled
+            };
+          }).filter((r) => r.email && r.incidentEmailEnabled);
+
+          if (recipients.length > 0) {
+            incidentNotificationService.dispatchLogAlertNotification(
+              {
+                orgName: org?.name || 'SkyOps Workspace',
+                clusterName: cluster?.name || clusterId,
+                clusterId,
+                namespace: first?.namespace || 'default',
+                podName: first?.podName || 'workload',
+                container: first?.container || 'main',
+                severity: isFatal ? 'FATAL' : 'ERROR',
+                timestamp: event.sampleLogs[0]?.timestamp || new Date().toISOString(),
+                excerpt: sampleExcerpt,
+                appUrl: '',
+                recipientEmail: recipients[0].email,
+                ruleName: rule.name,
+                incidentId: event.incidentId
+              },
+              {
+                orgName: org?.name || 'SkyOps Workspace',
+                orgId,
+                recipients
+              }
+            ).catch((err) => console.warn('[LogManager] Email dispatch notice:', err));
+          }
+        }
+
         triggeredEvents.push(event);
 
         let orgEvents = this.alertEvents.get(orgId) || [];
@@ -367,6 +436,38 @@ export class LogManager {
     }
 
     return triggeredEvents;
+  }
+
+  /**
+   * Evaluates active pod alert subscriptions against newly ingested log records.
+   */
+  public evaluatePodAlertSubscriptions(orgId: string, records: LogRecord[]): void {
+    if (!records || records.length === 0) return;
+    const subs = store.listPodAlertSubscriptions(orgId).filter((s) => s.enabled);
+    if (subs.length === 0) return;
+
+    for (const sub of subs) {
+      const matching = records.filter((r) => {
+        if (r.clusterId !== sub.clusterId) return false;
+        if (r.namespace.toLowerCase() !== sub.namespace.toLowerCase()) return false;
+        if (r.podName.toLowerCase() !== sub.podName.toLowerCase()) return false;
+        if (sub.container && sub.container !== '*' && sub.container !== 'all' && r.container.toLowerCase() !== sub.container.toLowerCase()) {
+          return false;
+        }
+        return r.severity === 'FATAL' || r.severity === 'ERROR' || (sub.minSeverity === 'WARN' && r.severity === 'WARN');
+      });
+
+      if (matching.length > 0) {
+        store.evaluatePodLogsForActiveSubscription(
+          orgId,
+          sub.clusterId,
+          sub.namespace,
+          sub.podName,
+          sub.container === '*' ? (matching[0]?.container || 'main') : sub.container,
+          matching.map((m) => ({ timestamp: m.timestamp, message: m.message, raw: m.raw }))
+        );
+      }
+    }
   }
 
   // --- Saved Searches Management ---
@@ -462,6 +563,9 @@ export class LogManager {
 
     // Evaluate active log alert rules against newly ingested records
     this.evaluateAlertRules(orgId, newItems);
+
+    // Evaluate active pod alert subscriptions against newly ingested records
+    this.evaluatePodAlertSubscriptions(orgId, newItems);
   }
 
   public inferSeverity(msg: string): LogSeverity {

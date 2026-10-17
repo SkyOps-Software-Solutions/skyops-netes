@@ -17,6 +17,9 @@ import { NavigationTab, Sidebar } from './Sidebar';
 import { Footer } from './Footer';
 import { DocTopic, KnowledgeBaseModal } from '../docs/KnowledgeBaseModal';
 import { OperationsWorkspaceView } from '../operations/OperationsWorkspaceView';
+import { NotificationCenter } from '../notifications/NotificationCenter';
+import { PodLogsViewer } from '../logs/PodLogsViewer';
+import { Modal } from '../common/UI';
 
 interface AppShellProps {
   initialOpenAddCluster?: boolean;
@@ -73,6 +76,12 @@ export const AppShell: React.FC<AppShellProps> = ({
   const [selectedDocTopic, setSelectedDocTopic] = useState<DocTopic>('quickstart');
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
+  const [activePodLogsModal, setActivePodLogsModal] = useState<{
+    clusterId: string;
+    namespace: string;
+    podName: string;
+    container?: string;
+  } | null>(null);
 
   const handleOpenDoc = (topic: DocTopic) => {
     setSelectedDocTopic(topic);
@@ -419,6 +428,14 @@ export const AppShell: React.FC<AppShellProps> = ({
               </button>
             )}
 
+            {/* Centralized Notification Center */}
+            <NotificationCenter
+              onOpenPodLogs={(clusterId, namespace, podName, container) => {
+                setActivePodLogsModal({ clusterId, namespace, podName, container });
+              }}
+              onOpenIncident={handleSelectIncident}
+            />
+
             {/* Sync & Manual Refresh Button */}
             <button
               onClick={handleManualRefresh}
@@ -700,6 +717,24 @@ export const AppShell: React.FC<AppShellProps> = ({
         initialTopic={selectedDocTopic}
         onGetStarted={() => setIsAddClusterOpen(true)}
       />
+
+      {/* Pod Logs Viewer Modal */}
+      {activePodLogsModal && (
+        <Modal
+          isOpen={!!activePodLogsModal}
+          onClose={() => setActivePodLogsModal(null)}
+          title={`Pod Logs: ${activePodLogsModal.podName}`}
+          size="xl"
+        >
+          <PodLogsViewer
+            clusterId={activePodLogsModal.clusterId}
+            namespace={activePodLogsModal.namespace}
+            podName={activePodLogsModal.podName}
+            initialContainer={activePodLogsModal.container}
+            onClose={() => setActivePodLogsModal(null)}
+          />
+        </Modal>
+      )}
     </div>
   );
 };

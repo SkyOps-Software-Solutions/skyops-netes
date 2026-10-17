@@ -3449,6 +3449,44 @@ app.post('/api/v1/notifications/unsubscribe', (req, res) => {
   res.json({ success: true, message: 'Unsubscribed from SkyOps incident alert notifications' });
 });
 
+// ==========================================
+// CENTRALIZED NOTIFICATION CENTER ROUTES
+// ==========================================
+app.get('/api/v1/notifications', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const unreadOnly = req.query.unreadOnly === 'true' || req.query.unreadOnly === '1';
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+  const type = typeof req.query.type === 'string' ? req.query.type : undefined;
+
+  const result = store.getNotifications(req.orgId!, { unreadOnly, limit, type });
+  res.json(result);
+});
+
+app.patch('/api/v1/notifications/:id/read', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const success = store.markNotificationAsRead(req.orgId!, req.params.id);
+  if (!success) {
+    return res.status(404).json({ error: 'Notification not found' });
+  }
+  res.json({ success: true, message: 'Notification marked as read' });
+});
+
+app.post('/api/v1/notifications/mark-all-read', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const count = store.markAllNotificationsAsRead(req.orgId!);
+  res.json({ success: true, markedCount: count });
+});
+
+app.delete('/api/v1/notifications/:id', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const success = store.deleteNotification(req.orgId!, req.params.id);
+  if (!success) {
+    return res.status(404).json({ error: 'Notification not found' });
+  }
+  res.json({ success: true, message: 'Notification deleted' });
+});
+
+app.post('/api/v1/notifications/clear-read', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const cleared = store.clearReadNotifications(req.orgId!);
+  res.json({ success: true, clearedCount: cleared });
+});
+
 app.get('/api/v1/settings/notifications', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
   const user = req.user!;
   const settings = store.getUserNotificationSettings(user.id, user.email);

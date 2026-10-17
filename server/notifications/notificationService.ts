@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { Incident, SkyOpsAIAnalysis } from '../../src/types/index';
-import { generateIncidentEmail } from './emailTemplate';
+import { generateIncidentEmail, generateLogAlertEmail } from './emailTemplate';
 import { NodemailerEmailProvider } from './providers/emailProvider';
 import { getPersistenceConfig, safeWriteJsonSync } from '../persistence';
 import {
@@ -12,7 +12,8 @@ import {
   IEmailProvider,
   UserNotificationSettings,
   SmtpConfig,
-  DeliverabilityDiagnostic
+  DeliverabilityDiagnostic,
+  LogAlertEmailData
 } from './types';
 
 // Default testing email available strictly in development/test environments
@@ -388,6 +389,126 @@ export class IncidentNotificationService {
         });
 
         results.push(failResult);
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Dispatches Kubernetes Log Alert email notifications
+   */
+  public async dispatchLogAlertNotification(
+    alertData: LogAlertEmailData,
+    context: {
+      orgName: string;
+      orgId: string;
+      recipients: Array<{
+        userId: string;
+        email: string;
+        name?: string;
+        incidentEmailEnabled: boolean;
+      }>;
+    }
+  ): Promise<EmailDeliveryResult[]> {
+    const results: EmailDeliveryResult[] = [];
+
+    for (const recipientInfo of context.recipients) {
+      if (!recipientInfo.incidentEmailEnabled) {
+        continue;
+      }
+      const recipientEmail = recipientInfo.email.trim();
+      if (!recipientEmail || !recipientEmail.includes('@')) {
+        continue;
+      }
+      if (process.env.NODE_ENV === 'production' && this.isTestingEmail(recipientEmail)) {
+        continue;
+      }
+
+      // Idempotency / cooldown: 1 notification per pod/container every 2 minutes
+      const cooldownKey = `log_alert:${alertData.clusterId}:${alertData.namespace}:${alertData.podName}:${alertData.container}:${recipientEmail}:${Math.floor(Date.now() / 120000)}`;
+      if (this.sentKeys.has(cooldownKey)) {
+        const existing = this.sentKeys.get(cooldownKey)!;
+        results.push({
+          success: true,
+          duplicate: true,
+          messageId: existing.messageId,
+          provider: this.provider.name,
+          timestamp: Date.now()
+        });
+        continue;
+      }
+
+      const emailContent = generateLogAlertEmail({
+        ...alertData,
+        orgName: context.orgName,
+        recipientEmail,
+        appUrl: this.appUrl
+      });
+
+      const message = {
+        from: this.getSender(),
+        to: recipientEmail,
+        replyTo: this.getReplyTo(),
+        subject: emailContent.subject,
+        html: emailContent.html,
+        text: emailContent.text,
+        listUnsubscribe: `<${this.appUrl}/api/v1/notifications/unsubscribe?email=${encodeURIComponent(recipientEmail)}>`,
+        headers: {
+          'X-Auto-Response-Suppress': 'OOF, AutoReply',
+          'Auto-Submitted': 'auto-generated',
+          'Precedence': 'bulk',
+          'X-Entity-Ref-ID': `skyops-alert-${alertData.podName}`,
+          'List-Unsubscribe': `<${this.appUrl}/api/v1/notifications/unsubscribe?email=${encodeURIComponent(recipientEmail)}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click'
+        }
+      };
+
+      try {
+        const deliveryResult = await this.provider.sendEmail(message);
+        if (deliveryResult.success) {
+          this.sentKeys.set(cooldownKey, {
+            timestamp: Date.now(),
+            messageId: deliveryResult.messageId
+          });
+
+          this.recordDelivery({
+            id: `del-${crypto.randomBytes(6).toString('hex')}`,
+            incidentId: alertData.incidentId || alertData.podName,
+            orgId: context.orgId,
+            recipient: recipientEmail,
+            subject: emailContent.subject,
+            status: 'SENT',
+            provider: this.provider.name,
+            messageId: deliveryResult.messageId,
+            timestamp: Date.now(),
+            idempotencyKey: cooldownKey
+          });
+
+          results.push(deliveryResult);
+        } else {
+          this.recordDelivery({
+            id: `del-${crypto.randomBytes(6).toString('hex')}`,
+            incidentId: alertData.incidentId || alertData.podName,
+            orgId: context.orgId,
+            recipient: recipientEmail,
+            subject: emailContent.subject,
+            status: 'FAILED',
+            provider: this.provider.name,
+            error: deliveryResult.error,
+            timestamp: Date.now(),
+            idempotencyKey: cooldownKey
+          });
+
+          results.push(deliveryResult);
+        }
+      } catch (sendErr: any) {
+        results.push({
+          success: false,
+          provider: this.provider.name,
+          error: sendErr?.message || 'Failed to dispatch email',
+          timestamp: Date.now()
+        });
       }
     }
 

@@ -72,7 +72,9 @@ import {
   ClusterHealthSummary,
   IncidentMultiClusterSummary,
   IncidentActionRequest,
-  AvailableAction
+  AvailableAction,
+  AppNotification,
+  PodLogAlertSubscription
 } from '../src/types/index';
 import { ResourceRightsizingRecommendation } from '../src/types/enterprise';
 import { TelemetryStore } from './telemetry_store';
@@ -87,7 +89,7 @@ import {
   parseCpuQuantity,
   parseMemoryQuantity
 } from './metrics';
-import { fetchInClusterPodLogs, parseLogLines } from './logs';
+import { fetchInClusterPodLogs, parseLogLines, redactSensitiveLogData } from './logs';
 import { auditService } from './audit';
 import { webhookService } from './integrations/webhooks';
 import { incidentNotificationService } from './notifications/notificationService';
@@ -153,6 +155,8 @@ export class DataStore {
   private deployments: Map<string, DeploymentRecord> = new Map(); // deploymentId -> DeploymentRecord
   private postmortems: Map<string, IncidentPostmortem> = new Map(); // incidentId -> IncidentPostmortem
   private appliedRightsizing: Map<string, ResourceRightsizingRecommendation> = new Map(); // recId -> ResourceRightsizingRecommendation
+  private notifications: Map<string, AppNotification[]> = new Map(); // orgId -> notifications
+  private podAlertSubscriptions: Map<string, PodLogAlertSubscription> = new Map(); // subKey -> subscription
   private incidentCounter = 1001;
   private storagePath = getPersistenceConfig().storeFile;
   private saveTimeout: NodeJS.Timeout | null = null;
@@ -7410,8 +7414,52 @@ export class DataStore {
 
     // 7. Redact and parse log lines
     const parsedLines = parseLogLines(rawLogs, options.filter);
+
+    // Apply accurate time window filtering when sinceSeconds is specified
+    let filteredLines = parsedLines;
+    if (options.sinceSeconds && options.sinceSeconds > 0) {
+      const cutoffMs = Date.now() - options.sinceSeconds * 1000;
+      filteredLines = parsedLines.filter((line) => {
+        if (!line.timestamp) return true;
+        const lineTime = Date.parse(line.timestamp);
+        if (isNaN(lineTime)) return true;
+        return lineTime >= cutoffMs;
+      });
+    }
+
+    if (filteredLines.length === 0 && parsedLines.length > 0 && options.sinceSeconds) {
+      const formatWindowDesc = (sec: number) => {
+        if (sec === 300) return 'last 5 minutes';
+        if (sec === 900) return 'last 15 minutes';
+        if (sec === 1800) return 'last 30 minutes';
+        if (sec === 3600) return 'last 1 hour';
+        if (sec === 21600) return 'last 6 hours';
+        if (sec === 86400) return 'last 24 hours';
+        return `last ${sec} seconds`;
+      };
+
+      return {
+        clusterId,
+        namespace,
+        podName,
+        container: selectedContainerName,
+        previous: !!options.previous,
+        timestamps: options.timestamps !== false,
+        lines: [],
+        rawText: '',
+        totalLines: 0,
+        source: source === 'unknown' ? 'agent' : source,
+        retrievedAt: Date.now(),
+        statusCategory: 'EMPTY_LOGS',
+        unavailableReason: `No log records found for container "${selectedContainerName}" in the ${formatWindowDesc(options.sinceSeconds)}. (${parsedLines.length} historical records exist outside this window)`
+      };
+    }
+
     const tailCount = options.tailLines ? Math.min(1000, options.tailLines) : 250;
-    const finalLines = parsedLines.slice(-tailCount);
+    const finalLines = filteredLines.slice(-tailCount);
+
+    // Evaluate active pod alert subscription against observed records
+    this.evaluatePodLogsForActiveSubscription(orgId, clusterId, namespace, podName, selectedContainerName, finalLines);
 
     return {
       clusterId,
@@ -10132,6 +10180,267 @@ export class DataStore {
       auditEventsRecorded: auditService.getCount(orgId),
       lastUpdated: Date.now()
     };
+  }
+
+  // --- Centralized Notification Center ---
+  public createNotification(data: Omit<AppNotification, 'id' | 'createdAt' | 'read'>): AppNotification {
+    const notif: AppNotification = {
+      ...data,
+      id: `notif-${crypto.randomBytes(6).toString('hex')}`,
+      createdAt: Date.now(),
+      read: false
+    };
+
+    let list = this.notifications.get(data.orgId);
+    if (!list) {
+      list = [];
+      this.notifications.set(data.orgId, list);
+    }
+    list.unshift(notif);
+    if (list.length > 500) {
+      list = list.slice(0, 500);
+      this.notifications.set(data.orgId, list);
+    }
+    return notif;
+  }
+
+  public getNotifications(
+    orgId: string,
+    options?: { unreadOnly?: boolean; limit?: number; type?: string }
+  ): { notifications: AppNotification[]; totalUnread: number } {
+    const list = this.notifications.get(orgId) || [];
+    const totalUnread = list.filter((n) => !n.read).length;
+
+    let filtered = list;
+    if (options?.unreadOnly) {
+      filtered = filtered.filter((n) => !n.read);
+    }
+    if (options?.type && options.type !== 'ALL') {
+      filtered = filtered.filter((n) => n.type === options.type);
+    }
+
+    const limit = options?.limit ? Math.min(100, Math.max(1, options.limit)) : 50;
+    return {
+      notifications: filtered.slice(0, limit),
+      totalUnread
+    };
+  }
+
+  public markNotificationAsRead(orgId: string, notificationId: string): boolean {
+    const list = this.notifications.get(orgId);
+    if (!list) return false;
+    const found = list.find((n) => n.id === notificationId);
+    if (found) {
+      found.read = true;
+      return true;
+    }
+    return false;
+  }
+
+  public markAllNotificationsAsRead(orgId: string): number {
+    const list = this.notifications.get(orgId);
+    if (!list) return 0;
+    let count = 0;
+    for (const notif of list) {
+      if (!notif.read) {
+        notif.read = true;
+        count++;
+      }
+    }
+    return count;
+  }
+
+  public deleteNotification(orgId: string, notificationId: string): boolean {
+    const list = this.notifications.get(orgId);
+    if (!list) return false;
+    const initialLen = list.length;
+    const updated = list.filter((n) => n.id !== notificationId);
+    if (updated.length !== initialLen) {
+      this.notifications.set(orgId, updated);
+      return true;
+    }
+    return false;
+  }
+
+  public clearReadNotifications(orgId: string): number {
+    const list = this.notifications.get(orgId);
+    if (!list) return 0;
+    const unread = list.filter((n) => !n.read);
+    const cleared = list.length - unread.length;
+    this.notifications.set(orgId, unread);
+    return cleared;
+  }
+
+  // --- Pod Log Alert Subscriptions ---
+  private getPodSubKey(orgId: string, clusterId: string, namespace: string, podName: string, container?: string): string {
+    const cont = container && container !== 'all' ? container.toLowerCase() : '*';
+    return `${orgId}:${clusterId}:${namespace.toLowerCase()}:${podName.toLowerCase()}:${cont}`;
+  }
+
+  public getPodAlertSubscription(
+    orgId: string,
+    clusterId: string,
+    namespace: string,
+    podName: string,
+    container?: string
+  ): PodLogAlertSubscription | null {
+    const exactKey = this.getPodSubKey(orgId, clusterId, namespace, podName, container);
+    const exact = this.podAlertSubscriptions.get(exactKey);
+    if (exact) return exact;
+
+    const wildcardKey = this.getPodSubKey(orgId, clusterId, namespace, podName, '*');
+    return this.podAlertSubscriptions.get(wildcardKey) || null;
+  }
+
+  public setPodAlertSubscription(
+    orgId: string,
+    sub: Omit<PodLogAlertSubscription, 'id' | 'createdAt' | 'updatedAt'>
+  ): PodLogAlertSubscription {
+    const key = this.getPodSubKey(orgId, sub.clusterId, sub.namespace, sub.podName, sub.container);
+    const existing = this.podAlertSubscriptions.get(key);
+    const now = Date.now();
+
+    if (existing) {
+      const updated: PodLogAlertSubscription = {
+        ...existing,
+        enabled: sub.enabled,
+        minSeverity: sub.minSeverity || existing.minSeverity || 'ERROR',
+        notifyEmail: sub.notifyEmail !== undefined ? sub.notifyEmail : existing.notifyEmail,
+        updatedAt: now
+      };
+      this.podAlertSubscriptions.set(key, updated);
+      return updated;
+    }
+
+    const created: PodLogAlertSubscription = {
+      ...sub,
+      id: `pod-sub-${crypto.randomBytes(6).toString('hex')}`,
+      createdAt: now,
+      updatedAt: now,
+      triggerCount: 0
+    };
+    this.podAlertSubscriptions.set(key, created);
+    return created;
+  }
+
+  public deletePodAlertSubscription(
+    orgId: string,
+    clusterId: string,
+    namespace: string,
+    podName: string,
+    container?: string
+  ): boolean {
+    const key = this.getPodSubKey(orgId, clusterId, namespace, podName, container);
+    return this.podAlertSubscriptions.delete(key);
+  }
+
+  public listPodAlertSubscriptions(orgId: string): PodLogAlertSubscription[] {
+    const list: PodLogAlertSubscription[] = [];
+    for (const sub of this.podAlertSubscriptions.values()) {
+      if (sub.orgId === orgId) {
+        list.push(sub);
+      }
+    }
+    return list;
+  }
+
+  public evaluatePodLogsForActiveSubscription(
+    orgId: string,
+    clusterId: string,
+    namespace: string,
+    podName: string,
+    container: string,
+    lines: PodLogLine[]
+  ): void {
+    const sub = this.getPodAlertSubscription(orgId, clusterId, namespace, podName, container);
+    if (!sub || !sub.enabled) return;
+
+    const now = Date.now();
+    if (sub.lastTriggeredAt && now - sub.lastTriggeredAt < 30000) {
+      return;
+    }
+
+    const minSev = sub.minSeverity || 'ERROR';
+    const severities = ['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'];
+    const minSevIdx = severities.indexOf(minSev);
+
+    const errorLines = lines.filter((line) => {
+      const msg = (line.message || '').toUpperCase();
+      let lineSev = 'INFO';
+      if (/FATAL|PANIC|OOMKILLED|CRITICAL/i.test(msg)) lineSev = 'FATAL';
+      else if (/ERROR|EXCEPTION|ERR|FAILED|FAILURE/i.test(msg)) lineSev = 'ERROR';
+      else if (/WARN|WARNING/i.test(msg)) lineSev = 'WARN';
+      const idx = severities.indexOf(lineSev);
+      return idx >= minSevIdx && idx >= 2;
+    });
+
+    if (errorLines.length > 0) {
+      const cluster = this.getCluster(clusterId, orgId);
+      const clusterName = cluster?.name || clusterId;
+      const firstError = errorLines[errorLines.length - 1];
+      const excerpt = redactSensitiveLogData(firstError.message || '').slice(0, 300);
+      const isFatal = firstError.message.toUpperCase().includes('FATAL') || firstError.message.toUpperCase().includes('PANIC');
+      const notifSeverity = isFatal ? 'CRITICAL' : 'HIGH';
+
+      sub.triggerCount = (sub.triggerCount || 0) + errorLines.length;
+      sub.lastTriggeredAt = now;
+
+      this.createNotification({
+        orgId,
+        type: 'LOG_ALERT',
+        severity: notifSeverity,
+        title: `Log Alert: Error observed in ${podName}`,
+        message: `${errorLines.length} error record(s) detected in container "${container}". Excerpt: ${excerpt.slice(0, 120)}...`,
+        clusterId,
+        clusterName,
+        namespace,
+        podName,
+        container,
+        logSeverity: isFatal ? 'FATAL' : 'ERROR',
+        redactedExcerpt: excerpt,
+        actionUrl: `/#logs?clusterId=${encodeURIComponent(clusterId)}&namespace=${encodeURIComponent(namespace)}&pod=${encodeURIComponent(podName)}&container=${encodeURIComponent(container)}`
+      });
+
+      if (sub.notifyEmail) {
+        const org = this.getOrganization(orgId);
+        const members = this.getOrgMembers(orgId);
+        const recipients = members.map((m) => {
+          const user = this.getUser(m.userId);
+          const email = user?.email || m.email || '';
+          const notifSettings = this.getUserNotificationSettings(m.userId, email);
+          return {
+            userId: m.userId,
+            email,
+            name: m.name,
+            incidentEmailEnabled: notifSettings.incidentEmailEnabled
+          };
+        }).filter((r) => r.email && r.incidentEmailEnabled);
+
+        if (recipients.length > 0) {
+          incidentNotificationService.dispatchLogAlertNotification(
+            {
+              orgName: org?.name || 'SkyOps Workspace',
+              clusterName,
+              clusterId,
+              namespace,
+              podName,
+              container,
+              severity: isFatal ? 'FATAL' : 'ERROR',
+              timestamp: firstError.timestamp || new Date().toISOString(),
+              excerpt,
+              appUrl: '',
+              recipientEmail: recipients[0].email,
+              ruleName: `Pod Alert: ${podName}/${container}`
+            },
+            {
+              orgName: org?.name || 'SkyOps Workspace',
+              orgId,
+              recipients
+            }
+          ).catch((err) => console.warn('[PodLogAlert] Email dispatch notice:', err));
+        }
+      }
+    }
   }
 }
 

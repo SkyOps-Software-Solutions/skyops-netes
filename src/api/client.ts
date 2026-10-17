@@ -63,7 +63,10 @@ import {
   SecurityFinding,
   SecurityPolicyRule,
   RoleCapabilitySummary,
-  EnterpriseAuditRecord
+  EnterpriseAuditRecord,
+  AppNotification,
+  PodLogAlertSubscription,
+  PodLogAlertSubscriptionStatus
 } from '../types/index';
 import {
   DeploymentLogComparison,
@@ -904,6 +907,78 @@ class ApiClient {
   async getLogAlertEvents(limit = 50): Promise<LogAlertTriggerEvent[]> {
     const data = await this.request<{ events: LogAlertTriggerEvent[] }>(`/api/v1/logs/alerts/events?limit=${limit}`);
     return data.events || [];
+  }
+
+  // --- Pod Log Alert Subscriptions ---
+  async getPodLogAlertSubscription(
+    clusterId: string,
+    namespace: string,
+    podName: string,
+    container?: string
+  ): Promise<PodLogAlertSubscriptionStatus> {
+    const params = new URLSearchParams({
+      clusterId,
+      namespace,
+      podName
+    });
+    if (container) params.set('container', container);
+    return this.request<PodLogAlertSubscriptionStatus>(`/api/v1/logs/alerts/pod-subscription?${params.toString()}`);
+  }
+
+  async setPodLogAlertSubscription(data: {
+    clusterId: string;
+    namespace: string;
+    podName: string;
+    container?: string;
+    enabled: boolean;
+    minSeverity?: 'FATAL' | 'ERROR' | 'WARN' | 'INFO' | 'DEBUG';
+    notifyEmail?: boolean;
+  }): Promise<{ success: boolean; subscription: PodLogAlertSubscription; active: boolean; message: string }> {
+    return this.request<{ success: boolean; subscription: PodLogAlertSubscription; active: boolean; message: string }>(
+      '/api/v1/logs/alerts/pod-subscription',
+      {
+        method: 'POST',
+        body: JSON.stringify(data)
+      }
+    );
+  }
+
+  // --- Centralized Notification Center ---
+  async getNotifications(options?: {
+    unreadOnly?: boolean;
+    limit?: number;
+    type?: string;
+  }): Promise<{ notifications: AppNotification[]; totalUnread: number }> {
+    const params = new URLSearchParams();
+    if (options?.unreadOnly) params.set('unreadOnly', 'true');
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.type) params.set('type', options.type);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request<{ notifications: AppNotification[]; totalUnread: number }>(`/api/v1/notifications${qs}`);
+  }
+
+  async markNotificationAsRead(id: string): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(`/api/v1/notifications/${encodeURIComponent(id)}/read`, {
+      method: 'PATCH'
+    });
+  }
+
+  async markAllNotificationsAsRead(): Promise<{ success: boolean; markedCount: number }> {
+    return this.request<{ success: boolean; markedCount: number }>('/api/v1/notifications/mark-all-read', {
+      method: 'POST'
+    });
+  }
+
+  async deleteNotification(id: string): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(`/api/v1/notifications/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async clearReadNotifications(): Promise<{ success: boolean; clearedCount: number }> {
+    return this.request<{ success: boolean; clearedCount: number }>('/api/v1/notifications/clear-read', {
+      method: 'POST'
+    });
   }
 
   async getLogCollectionRules(): Promise<LogCollectionRule[]> {

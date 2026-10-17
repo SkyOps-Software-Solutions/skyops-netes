@@ -2,6 +2,9 @@ import express, { Response } from 'express';
 import { z } from 'zod';
 import { AuthenticatedUserRequest, requireOrgMembership, requirePermission, requireUserAuth } from '../auth';
 import { logManager } from './logManager';
+import { store } from '../store';
+import { incidentNotificationService } from '../notifications/notificationService';
+import { auditService } from '../audit';
 
 const logRouter = express.Router();
 
@@ -181,6 +184,126 @@ logRouter.get('/alerts/events', requireUserAuth, requireOrgMembership, (req: Aut
   const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
   const events = logManager.getAlertTriggerEvents(req.orgId!, limit);
   res.json({ events });
+});
+
+// --- Pod Log Alert Subscription Endpoints ---
+logRouter.get('/alerts/pod-subscription', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res: Response) => {
+  const { clusterId, namespace, podName, container } = req.query as Record<string, string | undefined>;
+  if (!clusterId || !namespace || !podName) {
+    return res.status(400).json({ error: 'clusterId, namespace, and podName are required' });
+  }
+
+  const cluster = store.getCluster(clusterId, req.orgId!);
+  if (!cluster) {
+    return res.status(404).json({ error: 'Cluster not found' });
+  }
+
+  const isConnected =
+    cluster.agentStatus === 'CONNECTED' ||
+    cluster.connectionState === 'connected' ||
+    cluster.connectionStatus === 'connected' ||
+    (cluster.lastHeartbeat ? Date.now() - cluster.lastHeartbeat < 5 * 60 * 1000 : false) ||
+    cluster.isSimulated;
+
+  const emailDiagnostics = incidentNotificationService.getDeliverabilityDiagnostics();
+  const emailConfigured = emailDiagnostics.smtpConfigured || process.env.NODE_ENV !== 'production';
+
+  const sub = store.getPodAlertSubscription(req.orgId!, clusterId, namespace, podName, container);
+
+  res.json({
+    subscription: sub,
+    active: !!(sub && sub.enabled),
+    canAlert: isConnected,
+    pipelineStatus: isConnected ? 'CONNECTED' : (cluster.agentStatus === 'OFFLINE' ? 'OFFLINE' : 'DISCONNECTED'),
+    emailDeliveryConfigured: emailConfigured,
+    reason: !isConnected
+      ? 'Cluster agent is disconnected. Live log alerting cannot be activated until the agent reconnects.'
+      : undefined
+  });
+});
+
+const PodSubscriptionSchema = z.object({
+  clusterId: z.string().min(1),
+  namespace: z.string().min(1),
+  podName: z.string().min(1),
+  container: z.string().optional().default('*'),
+  enabled: z.boolean(),
+  minSeverity: z.enum(['FATAL', 'ERROR', 'WARN', 'INFO', 'DEBUG']).optional().default('ERROR'),
+  notifyEmail: z.boolean().optional().default(true)
+});
+
+logRouter.post('/alerts/pod-subscription', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res: Response) => {
+  const parsed = PodSubscriptionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid subscription payload' });
+  }
+
+  const { clusterId, namespace, podName, container, enabled, minSeverity, notifyEmail } = parsed.data;
+  const cluster = store.getCluster(clusterId, req.orgId!);
+  if (!cluster) {
+    return res.status(404).json({ error: 'Cluster not found' });
+  }
+
+  const isConnected =
+    cluster.agentStatus === 'CONNECTED' ||
+    cluster.connectionState === 'connected' ||
+    cluster.connectionStatus === 'connected' ||
+    (cluster.lastHeartbeat ? Date.now() - cluster.lastHeartbeat < 5 * 60 * 1000 : false) ||
+    cluster.isSimulated;
+
+  if (enabled && !isConnected) {
+    return res.status(400).json({
+      error: 'Cannot activate log alerting: Cluster agent is disconnected or log pipeline is offline.'
+    });
+  }
+
+  const sub = store.setPodAlertSubscription(req.orgId!, {
+    clusterId,
+    namespace,
+    podName,
+    container: container || '*',
+    enabled,
+    minSeverity,
+    notifyEmail,
+    userId: req.user!.id,
+    orgId: req.orgId!
+  });
+
+  auditService.record({
+    orgId: req.orgId!,
+    actorId: req.user!.id,
+    actorName: req.user!.name || req.user!.email,
+    actorType: 'USER',
+    action: enabled ? 'pod_alert.subscribed' : 'pod_alert.unsubscribed',
+    resourceType: 'ALERT' as any,
+    resourceId: sub.id,
+    result: 'SUCCESS',
+    details: {
+      clusterId,
+      namespace,
+      podName,
+      container,
+      enabled,
+      minSeverity
+    }
+  });
+
+  res.json({
+    success: true,
+    subscription: sub,
+    active: sub.enabled,
+    message: sub.enabled ? `Alerts enabled for ${podName}` : `Alerts disabled for ${podName}`
+  });
+});
+
+logRouter.delete('/alerts/pod-subscription', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res: Response) => {
+  const { clusterId, namespace, podName, container } = req.query as Record<string, string | undefined>;
+  if (!clusterId || !namespace || !podName) {
+    return res.status(400).json({ error: 'clusterId, namespace, and podName are required' });
+  }
+
+  const deleted = store.deletePodAlertSubscription(req.orgId!, clusterId, namespace, podName, container);
+  res.json({ success: true, deleted });
 });
 
 // --- Log Collection Rules ---

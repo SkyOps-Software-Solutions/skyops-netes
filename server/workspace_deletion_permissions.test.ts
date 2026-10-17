@@ -154,5 +154,6 @@ test('Workspace deletion & leave permissions: creator can delete, invited member
     assert.equal(store.getOrganization(org.id), null, 'Workspace should be permanently deleted');
   } finally {
     await close();
+    process.exit(0);
   }
 });

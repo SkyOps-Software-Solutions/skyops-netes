@@ -301,6 +301,7 @@ export interface SecurityPostureOverview {
 export type EnterpriseRole =
   | 'OWNER'
   | 'ADMIN'
+  | 'MEMBER'
   | 'SRE'
   | 'DEVELOPER'
   | 'VIEWER'

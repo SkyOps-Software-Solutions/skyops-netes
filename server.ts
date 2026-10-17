@@ -246,7 +246,10 @@ app.get(['/api/v1/orgs/current', '/api/v1/organizations/current'], requireUserAu
   res.json({ organization: enrichedOrg, role: req.userRole });
 });
 
-app.get(['/api/v1/orgs/:id', '/api/v1/organizations/:id'], requireUserAuth, (req: AuthenticatedUserRequest, res) => {
+app.get(['/api/v1/orgs/:id', '/api/v1/organizations/:id'], requireUserAuth, (req: AuthenticatedUserRequest, res, next) => {
+  if (req.params.id === 'members' || req.params.id === 'invitations' || req.params.id === 'current') {
+    return next();
+  }
   const access = store.checkUserOrgAccess(req.user!.id, req.params.id, req.user!.email);
   if (!access.hasAccess) {
     return res.status(403).json({ error: 'Forbidden: You do not have access to this organization' });
@@ -331,7 +334,7 @@ const UpdateOrgSchema = z.object({
 });
 
 app.patch(
-  '/api/v1/orgs/:id',
+  ['/api/v1/orgs/:id', '/api/v1/organizations/:id'],
   requireUserAuth,
   requireOrgMembership,
   requireRole(['OWNER', 'ADMIN']),
@@ -490,7 +493,7 @@ app.post(
 );
 
 // --- Organization Members ---
-app.get('/api/v1/orgs/members', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+app.get(['/api/v1/orgs/members', '/api/v1/organizations/members'], requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
   const search = typeof req.query.search === 'string' ? req.query.search : undefined;
   const role = typeof req.query.role === 'string' ? (req.query.role as any) : undefined;
   const status = typeof req.query.status === 'string' ? (req.query.status as any) : undefined;
@@ -501,11 +504,14 @@ app.get('/api/v1/orgs/members', requireUserAuth, requireOrgMembership, (req: Aut
 
 const InviteMemberSchema = z.object({
   email: z.string().email('Valid email is required'),
-  role: z.enum(['OWNER', 'ADMIN', 'SRE', 'DEVELOPER', 'VIEWER', 'AUDITOR', 'OPERATOR', 'ENGINEER'])
+  role: z.preprocess(
+    (val) => (typeof val === 'string' ? val.trim().toUpperCase() : val),
+    z.enum(['OWNER', 'ADMIN', 'MEMBER', 'SRE', 'DEVELOPER', 'VIEWER', 'AUDITOR', 'OPERATOR', 'ENGINEER'])
+  )
 });
 
 app.post(
-  '/api/v1/orgs/members/invite',
+  ['/api/v1/orgs/members/invite', '/api/v1/organizations/members/invite'],
   requireUserAuth,
   requireOrgMembership,
   requireRole(['OWNER', 'ADMIN']),
@@ -538,11 +544,14 @@ app.post(
 );
 
 const UpdateRoleSchema = z.object({
-  role: z.enum(['OWNER', 'ADMIN', 'OPERATOR', 'ENGINEER', 'VIEWER'])
+  role: z.preprocess(
+    (val) => (typeof val === 'string' ? val.trim().toUpperCase() : val),
+    z.enum(['OWNER', 'ADMIN', 'MEMBER', 'OPERATOR', 'ENGINEER', 'VIEWER', 'DEVELOPER', 'SRE', 'AUDITOR'])
+  )
 });
 
 app.patch(
-  '/api/v1/orgs/members/:userId/role',
+  ['/api/v1/orgs/members/:userId/role', '/api/v1/organizations/members/:userId/role'],
   requireUserAuth,
   requireOrgMembership,
   requireRole(['OWNER', 'ADMIN']),
@@ -570,7 +579,7 @@ const UpdateStatusSchema = z.object({
 });
 
 app.patch(
-  '/api/v1/orgs/members/:userId/status',
+  ['/api/v1/orgs/members/:userId/status', '/api/v1/organizations/members/:userId/status'],
   requireUserAuth,
   requireOrgMembership,
   requireRole(['OWNER', 'ADMIN']),
@@ -594,7 +603,7 @@ app.patch(
 );
 
 app.delete(
-  '/api/v1/orgs/members/:userId',
+  ['/api/v1/orgs/members/:userId', '/api/v1/organizations/members/:userId'],
   requireUserAuth,
   requireOrgMembership,
   requireRole(['OWNER', 'ADMIN']),
@@ -614,7 +623,7 @@ app.delete(
 
 // --- Invitations ---
 app.get(
-  '/api/v1/orgs/invitations',
+  ['/api/v1/orgs/invitations', '/api/v1/organizations/invitations'],
   requireUserAuth,
   requireOrgMembership,
   requireRole(['OWNER', 'ADMIN']),
@@ -625,7 +634,7 @@ app.get(
 );
 
 app.delete(
-  '/api/v1/orgs/invitations/:id',
+  ['/api/v1/orgs/invitations/:id', '/api/v1/organizations/invitations/:id'],
   requireUserAuth,
   requireOrgMembership,
   requireRole(['OWNER', 'ADMIN']),
@@ -642,7 +651,7 @@ app.delete(
 );
 
 app.post(
-  '/api/v1/orgs/invitations/:id/resend',
+  ['/api/v1/orgs/invitations/:id/resend', '/api/v1/organizations/invitations/:id/resend'],
   requireUserAuth,
   requireOrgMembership,
   requireRole(['OWNER', 'ADMIN']),

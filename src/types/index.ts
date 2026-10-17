@@ -6,6 +6,7 @@ export type { CloudProvider } from '../utils/cloudMetadata';
 export type Role =
   | 'OWNER'
   | 'ADMIN'
+  | 'MEMBER'
   | 'SRE'
   | 'DEVELOPER'
   | 'VIEWER'

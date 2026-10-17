@@ -412,10 +412,25 @@ export class DataStore {
   }
 
   public setOrgMembers(orgId: string, members: OrgMember[]): void {
-    this.members.set(orgId, members);
+    const existing = this.members.get(orgId) || [];
+    if (existing.length === 0) {
+      this.members.set(orgId, members);
+    } else {
+      const map = new Map<string, OrgMember>();
+      for (const m of existing) {
+        map.set(m.userId || m.email?.toLowerCase(), m);
+      }
+      for (const m of members) {
+        const key = m.userId || m.email?.toLowerCase();
+        if (key && !map.has(key)) {
+          map.set(key, m);
+        }
+      }
+      this.members.set(orgId, Array.from(map.values()));
+    }
     const org = this.orgs.get(orgId);
     if (org) {
-      org.membersCount = members.filter((m) => m.status !== 'REMOVED').length;
+      org.membersCount = (this.members.get(orgId) || []).filter((m) => m.status !== 'REMOVED').length;
     }
   }
 
@@ -1097,6 +1112,14 @@ export class DataStore {
     const org = this.orgs.get(orgId);
     if (!org) return false;
 
+    // Enforce that deletion is restricted only to the original creator/owner
+    if (actor?.id) {
+      const creatorInfo = this.isUserOrganizationCreator(orgId, actor.id);
+      if (!creatorInfo.isCreator) {
+        throw new Error('Only the original workspace creator/owner can delete this organization');
+      }
+    }
+
     // Track permanently deleted org ID to prevent resurrection from cached tokens or async queries
     this.deletedOrgIds.add(orgId);
 
@@ -1516,7 +1539,7 @@ export class DataStore {
   public inviteMember(
     orgId: string,
     email: string,
-    role: Role,
+    role: Role | string,
     inviter: { id: string; name: string; email: string }
   ): OrgInvitation {
     const org = this.orgs.get(orgId);
@@ -1526,6 +1549,10 @@ export class DataStore {
     if (!cleanEmail || !cleanEmail.includes('@')) {
       throw new Error('Valid email address is required');
     }
+
+    const rawRole = (role || 'MEMBER').toString().trim().toUpperCase();
+    const validRoles: Role[] = ['OWNER', 'ADMIN', 'MEMBER', 'SRE', 'DEVELOPER', 'VIEWER', 'AUDITOR', 'OPERATOR', 'ENGINEER'];
+    const cleanRole: Role = validRoles.includes(rawRole as Role) ? (rawRole as Role) : 'MEMBER';
 
     const orgMembers = this.members.get(orgId) || [];
     const existingActive = orgMembers.find(
@@ -1539,7 +1566,7 @@ export class DataStore {
     for (const inv of this.invitations.values()) {
       if (inv.orgId === orgId && inv.email === cleanEmail && inv.status === 'PENDING') {
         if (inv.expiresAt > Date.now()) {
-          inv.role = role;
+          inv.role = cleanRole;
           inv.expiresAt = Date.now() + 7 * 86400000;
           this.saveSnapshot();
           this.persistence.saveInvitation(inv).catch((err) =>
@@ -1557,7 +1584,7 @@ export class DataStore {
       id: `inv-${crypto.randomBytes(8).toString('hex')}`,
       orgId,
       email: cleanEmail,
-      role,
+      role: cleanRole,
       token,
       status: 'PENDING',
       invitedByUserId: inviter.id,
@@ -1856,13 +1883,17 @@ export class DataStore {
   public updateMemberRole(
     orgId: string,
     targetUserId: string,
-    newRole: Role,
+    newRole: Role | string,
     actor: { id: string; name: string; role: Role }
   ): OrgMember {
+    const rawRole = (newRole || 'MEMBER').toString().trim().toUpperCase();
+    const validRoles: Role[] = ['OWNER', 'ADMIN', 'MEMBER', 'SRE', 'DEVELOPER', 'VIEWER', 'AUDITOR', 'OPERATOR', 'ENGINEER'];
+    const cleanRole: Role = validRoles.includes(rawRole as Role) ? (rawRole as Role) : 'MEMBER';
+
     if (actor.id === targetUserId) {
       throw new Error('Users cannot modify their own organization role');
     }
-    if (actor.role !== 'OWNER' && newRole === 'OWNER') {
+    if (actor.role !== 'OWNER' && cleanRole === 'OWNER') {
       throw new Error('Only organization owners can promote members to Owner');
     }
 
@@ -1873,7 +1904,7 @@ export class DataStore {
     }
 
     // Final active owner protection
-    if (member.role === 'OWNER' && newRole !== 'OWNER') {
+    if (member.role === 'OWNER' && cleanRole !== 'OWNER') {
       const activeOwners = members.filter(
         (m) => m.role === 'OWNER' && m.status !== 'SUSPENDED' && m.status !== 'REMOVED'
       );
@@ -1883,7 +1914,7 @@ export class DataStore {
     }
 
     const prevRole = member.role;
-    member.role = newRole;
+    member.role = cleanRole;
     member.updatedAt = Date.now();
     this.saveSnapshot();
     this.persistence.setOrgMembers(orgId, members).catch((err) =>
@@ -1899,7 +1930,7 @@ export class DataStore {
       resourceType: 'ORGANIZATION',
       resourceId: targetUserId,
       result: 'SUCCESS',
-      details: { previousRole: prevRole, newRole, memberEmail: member.email }
+      details: { previousRole: prevRole, newRole: cleanRole, memberEmail: member.email }
     });
 
     return member;

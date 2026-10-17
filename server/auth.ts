@@ -352,9 +352,12 @@ export async function requireOrgMembership(
       if (persistedOrgs && persistedOrgs.length > 0) {
         for (const po of persistedOrgs) {
           store.hydrateOrganization(po);
-          const members = await store.getPersistence().getOrgMembers(po.id);
-          if (members && members.length > 0) {
-            store.setOrgMembers(po.id, members);
+          const currentMembers = store.getOrgMembers(po.id);
+          if (currentMembers.length === 0) {
+            const members = await store.getPersistence().getOrgMembers(po.id);
+            if (members && members.length > 0) {
+              store.setOrgMembers(po.id, members);
+            }
           }
         }
         userOrgs = store.getOrganizationsForUser(req.user.id, req.user.email);
@@ -626,6 +629,24 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'artifact.manage',
     'support.create',
     'support.manage'
+  ],
+  MEMBER: [
+    'cluster.read',
+    'incident.read',
+    'incident.view',
+    'incident.heal',
+    'telemetry.read',
+    'telemetry.view',
+    'remediation.view',
+    'remediation.execute',
+    'cost.read',
+    'cost.view',
+    'security.read',
+    'audit.read',
+    'audit.view',
+    'billing.read',
+    'artifact.manage',
+    'support.create'
   ],
   SRE: [
     'cluster.read',

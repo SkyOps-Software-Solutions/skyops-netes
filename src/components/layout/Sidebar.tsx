@@ -299,6 +299,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
       cannot: ['Delete workspace or transfer organization ownership']
     },
+    MEMBER: {
+      can: [
+        'View cluster health, incidents, metrics, events, and diagnostics',
+        'Stream live container logs and inspect workloads',
+        'Participate in incident remediation and operational workflows',
+        'View workspace cost and security telemetry'
+      ],
+      cannot: [
+        'Delete workspace or transfer organization ownership',
+        'Manage organization billing subscriptions',
+        'Invite or remove workspace administrators',
+        'Modify organization-wide governance policies'
+      ]
+    },
     SRE: {
       can: [
         'View all cluster incidents, metrics, events, and diagnostics',

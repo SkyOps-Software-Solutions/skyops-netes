@@ -402,8 +402,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isAuthenticated = !!firebaseUser || !!user;
   const canManageClusters = role === 'OWNER' || role === 'ADMIN' || role === 'SRE' || role === 'OPERATOR';
   const canDeleteClusters = role === 'OWNER' || role === 'ADMIN';
-  const canEditIncidents = role === 'OWNER' || role === 'ADMIN' || role === 'SRE' || role === 'OPERATOR' || role === 'DEVELOPER' || role === 'ENGINEER';
-  const canHeal = role === 'OWNER' || role === 'ADMIN' || role === 'SRE' || role === 'OPERATOR' || role === 'DEVELOPER' || role === 'ENGINEER';
+  const canEditIncidents = role === 'OWNER' || role === 'ADMIN' || role === 'SRE' || role === 'OPERATOR' || role === 'DEVELOPER' || role === 'ENGINEER' || role === 'MEMBER';
+  const canHeal = role === 'OWNER' || role === 'ADMIN' || role === 'SRE' || role === 'OPERATOR' || role === 'DEVELOPER' || role === 'ENGINEER' || role === 'MEMBER';
   const canApproveRemediations = role === 'OWNER' || role === 'ADMIN' || role === 'SRE' || role === 'OPERATOR';
   const canModifyAutoHealing = role === 'OWNER' || role === 'ADMIN' || role === 'SRE' || role === 'OPERATOR';
   const canModifySecurityPolicy = role === 'OWNER' || role === 'ADMIN' || role === 'SRE' || role === 'OPERATOR';

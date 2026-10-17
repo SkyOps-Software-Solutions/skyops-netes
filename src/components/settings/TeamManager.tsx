@@ -28,6 +28,7 @@ import { PlanComparisonModal } from '../billing/PlanComparisonModal';
 const ROLE_DESCRIPTIONS: Record<Role, string> = {
   OWNER: 'Full tenant ownership, organizational configuration, billing & member administration.',
   ADMIN: 'Manage clusters, incidents, remediation, webhooks, and team members.',
+  MEMBER: 'Standard workspace collaborator with operational, incident triage, and telemetry access.',
   SRE: 'Full remediation execution, auto-healing policy administration, cluster operations, and cost optimization.',
   DEVELOPER: 'Workload remediation, incident root-cause triage, pre-deployment gates, and telemetry inspection.',
   AUDITOR: 'Independent compliance inspection, cryptographic audit verification, and security posture review.',
@@ -69,7 +70,7 @@ export const TeamManager: React.FC = () => {
   // Invite modal
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<Role>('ENGINEER');
+  const [inviteRole, setInviteRole] = useState<Role>('MEMBER');
   const [inviting, setInviting] = useState(false);
   const [inviteResult, setInviteResult] = useState<OrgInvitation | null>(null);
   const [isQuotaError, setIsQuotaError] = useState(false);
@@ -516,6 +517,7 @@ export const TeamManager: React.FC = () => {
               <option value="ALL">All Roles</option>
               <option value="OWNER">Owner</option>
               <option value="ADMIN">Admin</option>
+              <option value="MEMBER">Member</option>
               <option value="OPERATOR">Operator</option>
               <option value="ENGINEER">Engineer</option>
               <option value="VIEWER">Viewer</option>
@@ -625,6 +627,7 @@ export const TeamManager: React.FC = () => {
                             onChange={(e) => handleRoleChange(m, e.target.value as Role)}
                             className="px-2 py-1 bg-zinc-900 border border-zinc-700 rounded text-zinc-200 text-xs font-mono focus:border-sky-500 cursor-pointer"
                           >
+                            <option value="MEMBER">MEMBER</option>
                             <option value="OWNER" disabled={currentUserRole !== 'OWNER'}>
                               OWNER
                             </option>
@@ -892,7 +895,8 @@ export const TeamManager: React.FC = () => {
                     onChange={(e) => setInviteRole(e.target.value as Role)}
                     className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded text-zinc-200 focus:outline-none focus:border-sky-500"
                   >
-                    {currentUserRole === 'OWNER' && <option value="OWNER">OWNER</option>}
+                    <option value="MEMBER">MEMBER (Standard Collaborator)</option>
+                    {currentUserRole === 'OWNER' && <option value="OWNER">OWNER (Workspace Co-Owner)</option>}
                     <option value="ADMIN">ADMIN</option>
                     <option value="OPERATOR">OPERATOR</option>
                     <option value="ENGINEER">ENGINEER</option>

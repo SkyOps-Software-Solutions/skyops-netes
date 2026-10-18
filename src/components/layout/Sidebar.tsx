@@ -392,10 +392,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
       ) : (
-        <div className="px-4 py-4 border-b border-zinc-800/80 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
+        <div className="px-3.5 py-3 border-b border-zinc-800/80 flex items-center justify-between">
+          <div className="flex items-center gap-2">
             <BrandLogo
-              size="lg"
+              size="md"
               showText
               version={AGENT_VERSION}
               subtitle="K8s Incident Platform"

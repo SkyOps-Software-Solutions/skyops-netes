@@ -400,10 +400,10 @@ export const AppShell: React.FC<AppShellProps> = ({
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-zinc-950">
         {/* Clean, Human-Understandable Top Header Bar */}
-        <header className="h-14 border-b border-zinc-800/80 px-5 sm:px-8 flex items-center justify-between shrink-0 bg-zinc-950/90 backdrop-blur-xs sticky top-0 z-20">
-          <div className="flex items-center gap-3 min-w-0">
+        <header className="h-12 border-b border-zinc-800/80 px-4 sm:px-6 flex items-center justify-between shrink-0 bg-zinc-950/90 backdrop-blur-xs sticky top-0 z-20">
+          <div className="flex items-center gap-2.5 min-w-0">
             <div className="flex items-center gap-2 text-xs text-zinc-400 min-w-0">
-              <span className="font-medium text-zinc-300 truncate max-w-[160px]">
+              <span className="font-medium text-zinc-300 truncate max-w-[140px]">
                 {currentOrg?.name || 'My Workspace'}
               </span>
               <span className="text-zinc-600" aria-hidden="true">/</span>

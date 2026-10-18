@@ -357,9 +357,9 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
   }, [filteredNodes]);
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-7xl mx-auto font-sans text-zinc-100">
+    <div className="px-4 py-5 sm:px-6 sm:py-6 space-y-5 max-w-7xl mx-auto font-sans text-zinc-100">
       {/* 1. Clean Human-Readable Overview Header & Scope Selector */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-5">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-zinc-900/40 border border-zinc-800/80 rounded-xl p-4">
         <div className="space-y-1.5">
           <div className="flex items-center gap-3 flex-wrap">
             <h2 className="text-lg font-bold tracking-tight text-white">
@@ -503,18 +503,18 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
       )}
 
       {/* 2. Interactive Key Metrics Strip (Click any card to jump to that view) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
         {/* Total Clusters */}
         <button
           type="button"
           onClick={() => onNavigateTab?.('clusters')}
-          className="p-4 rounded-xl bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-800/80 hover:border-zinc-700 text-left transition-all flex flex-col justify-between cursor-pointer group"
+          className="p-3.5 rounded-xl bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-800/80 hover:border-zinc-700 text-left transition-all flex flex-col justify-between cursor-pointer group"
         >
           <div className="text-xs font-medium text-zinc-400 flex items-center justify-between">
             <span>Clusters</span>
             <Server className="w-3.5 h-3.5 text-sky-400 group-hover:scale-110 transition-transform" />
           </div>
-          <div className="text-2xl font-bold text-white mt-2 tabular-nums">
+          <div className="text-xl font-bold text-white mt-1.5 tabular-nums">
             {scopedMetrics.totalClustersCount}
           </div>
           <div className="text-[11px] text-zinc-400 mt-1 flex items-center gap-1.5">
@@ -540,7 +540,7 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
         <button
           type="button"
           onClick={() => onNavigateTab?.('incidents')}
-          className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer group ${
+          className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer group ${
             scopedMetrics.openIncidentsCount > 0
               ? 'bg-rose-950/20 hover:bg-rose-950/30 border-rose-800/60 text-rose-200'
               : 'bg-zinc-900/50 hover:bg-zinc-900 border-zinc-800/80 hover:border-zinc-700'
@@ -552,7 +552,7 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
             </span>
             <AlertTriangle className={`w-3.5 h-3.5 ${scopedMetrics.openIncidentsCount > 0 ? 'text-rose-400' : 'text-zinc-500'}`} />
           </div>
-          <div className="text-2xl font-bold text-white mt-2 tabular-nums">
+          <div className="text-xl font-bold text-white mt-1.5 tabular-nums">
             {scopedMetrics.openIncidentsCount}
           </div>
           <div className="text-[11px] text-zinc-400 mt-1 flex items-center gap-1.5">
@@ -572,13 +572,13 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
         <button
           type="button"
           onClick={() => onNavigateTab?.('infrastructure')}
-          className="p-4 rounded-xl bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-800/80 hover:border-zinc-700 text-left transition-all flex flex-col justify-between cursor-pointer group"
+          className="p-3.5 rounded-xl bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-800/80 hover:border-zinc-700 text-left transition-all flex flex-col justify-between cursor-pointer group"
         >
           <div className="text-xs font-medium text-zinc-400 flex items-center justify-between">
             <span>Workloads</span>
             <Layers className="w-3.5 h-3.5 text-indigo-400 group-hover:scale-110 transition-transform" />
           </div>
-          <div className="text-2xl font-bold text-zinc-100 mt-2 tabular-nums">
+          <div className="text-xl font-bold text-zinc-100 mt-1.5 tabular-nums">
             {scopedMetrics.totalWorkloadsCount}
           </div>
           <div className="text-[11px] text-zinc-400 mt-1">
@@ -594,7 +594,7 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
         <button
           type="button"
           onClick={() => onNavigateTab?.('infrastructure')}
-          className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer group ${
+          className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer group ${
             scopedMetrics.crashingPodsCount > 0
               ? 'bg-amber-950/20 hover:bg-amber-950/30 border-amber-800/60'
               : 'bg-zinc-900/50 hover:bg-zinc-900 border-zinc-800/80 hover:border-zinc-700'
@@ -604,7 +604,7 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
             <span className={scopedMetrics.crashingPodsCount > 0 ? 'text-amber-300' : 'text-zinc-400'}>Pods</span>
             <Boxes className="w-3.5 h-3.5 text-violet-400" />
           </div>
-          <div className="text-2xl font-bold text-white mt-2 tabular-nums">
+          <div className="text-xl font-bold text-white mt-1.5 tabular-nums">
             {scopedMetrics.totalPodsCount}
           </div>
           <div className="text-[11px] mt-1">
@@ -622,13 +622,13 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
         <button
           type="button"
           onClick={() => onNavigateTab?.('infrastructure')}
-          className="p-4 rounded-xl bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-800/80 hover:border-zinc-700 text-left transition-all flex flex-col justify-between cursor-pointer group"
+          className="p-3.5 rounded-xl bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-800/80 hover:border-zinc-700 text-left transition-all flex flex-col justify-between cursor-pointer group"
         >
           <div className="text-xs font-medium text-zinc-400 flex items-center justify-between">
             <span>Worker Nodes</span>
             <Cpu className="w-3.5 h-3.5 text-emerald-400" />
           </div>
-          <div className="text-2xl font-bold text-zinc-100 mt-2 tabular-nums">
+          <div className="text-xl font-bold text-zinc-100 mt-1.5 tabular-nums">
             {scopedMetrics.totalNodesCount}
           </div>
           <div className="text-[11px] text-zinc-400 mt-1 flex items-center gap-1">
@@ -646,13 +646,13 @@ const OverviewViewContent: React.FC<OverviewViewProps> = ({
         <button
           type="button"
           onClick={() => onNavigateTab?.('observability')}
-          className="p-4 rounded-xl bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-800/80 hover:border-zinc-700 text-left transition-all flex flex-col justify-between cursor-pointer group"
+          className="p-3.5 rounded-xl bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-800/80 hover:border-zinc-700 text-left transition-all flex flex-col justify-between cursor-pointer group"
         >
           <div className="text-xs font-medium text-zinc-400 flex items-center justify-between">
             <span>Agent Telemetry</span>
             <Activity className="w-3.5 h-3.5 text-sky-400" />
           </div>
-          <div className="text-2xl font-bold text-emerald-400 mt-2 flex items-baseline gap-1.5 tabular-nums">
+          <div className="text-xl font-bold text-emerald-400 mt-1.5 flex items-baseline gap-1.5 tabular-nums">
             <span>{scopedMetrics.connectedAgentsCount}</span>
             <span className="text-xs font-normal text-zinc-500">
               / {isSingleCluster ? 1 : safeClusters.length} online

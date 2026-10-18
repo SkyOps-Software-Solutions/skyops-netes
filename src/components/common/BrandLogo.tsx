@@ -27,12 +27,12 @@ export interface BrandLogoProps {
 }
 
 const sizeMap = {
-  xs: 'w-8 h-8',
-  sm: 'w-9 h-9',
-  md: 'w-11 h-11',
-  lg: 'w-14 h-14',
-  xl: 'w-20 h-20',
-  '2xl': 'w-24 h-24'
+  xs: 'w-6 h-6',
+  sm: 'w-7 h-7',
+  md: 'w-8 h-8',
+  lg: 'w-9 h-9',
+  xl: 'w-12 h-12',
+  '2xl': 'w-16 h-16'
 };
 
 export const BrandLogo: React.FC<BrandLogoProps> = ({

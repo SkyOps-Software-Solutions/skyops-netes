@@ -111,7 +111,7 @@ export const OperationActionModal: React.FC<OperationActionModalProps> = ({
           description:
             resource.kind === 'StatefulSet'
               ? `Modifies replica count for StatefulSet "${resource.name}". StatefulSets follow strict ordinal scale-down (N-1 down to 0). Note: PVCs are persistent and will NOT be automatically deleted.`
-              : `Modifies desired replica count for ${resource.kind} "${resource.name}" in namespace "${resource.namespace}". Allowed range is 0 to 50 replicas.`,
+              : `Modifies desired replica count for ${resource.kind} "${resource.name}" in namespace "${resource.namespace}". Allowed range is 0 to 20 replicas.`,
           impact: targetReplicas === 0
             ? 'CRITICAL IMPACT: Scaling to 0 terminates all pods and stops handling active application traffic.'
             : 'Surplus pods will be terminated when scaling down; new pods will be scheduled when scaling up.'
@@ -228,15 +228,28 @@ export const OperationActionModal: React.FC<OperationActionModalProps> = ({
         targetKind: resource.kind,
         targetName: resource.name,
         targetNamespace: resource.namespace || undefined,
+        targetUid: resource.uid,
         parameters: {
           reason: reason.trim() || undefined
         }
       };
 
-      if (actionType === 'ScaleDeployment') {
+      if (actionType === 'ScaleDeployment' || actionType === 'ScaleWorkload') {
         payload.parameters.targetReplicas = targetReplicas;
+        if (targetReplicas === 0) {
+          payload.parameters.confirmScaleToZero = confirmScaleToZero;
+        }
       } else if (actionType === 'RollbackDeployment') {
         payload.parameters.targetRevision = targetRevision;
+        payload.parameters.expectedRevision = currentRevStr;
+      } else if (actionType === 'DeletePod' || actionType === 'RestartPod') {
+        if (isNakedPod) {
+          payload.parameters.confirmNakedPodDelete = confirmNakedPodDelete;
+        }
+      } else if (actionType === 'DrainNode') {
+        payload.parameters.confirmDrain = confirmDrain;
+        payload.parameters.ignoreDaemonSets = ignoreDaemonSets;
+        payload.parameters.deleteEmptyDirData = deleteEmptyDirData;
       }
 
       const res = await api.executeClusterOperation(cluster.id, payload);
@@ -302,8 +315,8 @@ export const OperationActionModal: React.FC<OperationActionModalProps> = ({
 
         {/* Action Specific Inputs */}
         <form onSubmit={handleSubmit} className="space-y-4">
-          {actionType === 'ScaleDeployment' && (
-            <div className="space-y-2 p-3.5 rounded-xl bg-zinc-900/40 border border-zinc-800">
+          {(actionType === 'ScaleDeployment' || actionType === 'ScaleWorkload') && (
+            <div className="space-y-3 p-3.5 rounded-xl bg-zinc-900/40 border border-zinc-800">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-zinc-300 font-medium">Desired Replicas:</span>
                 <span className="font-mono font-bold text-sky-400 text-sm">
@@ -312,16 +325,80 @@ export const OperationActionModal: React.FC<OperationActionModalProps> = ({
               </div>
               <input
                 type="range"
-                min={1}
+                min={0}
                 max={20}
                 value={targetReplicas}
                 onChange={(e) => setTargetReplicas(parseInt(e.target.value, 10))}
                 className="w-full accent-sky-500 cursor-pointer"
               />
               <div className="flex items-center justify-between text-[11px] text-zinc-500">
-                <span>1 replica (min)</span>
+                <span>0 replicas (stop traffic)</span>
                 <span>10</span>
                 <span>20 replicas (safety cap)</span>
+              </div>
+
+              {targetReplicas === 0 && (
+                <label className="flex items-start gap-2.5 p-3 rounded-lg bg-rose-950/40 border border-rose-800/80 cursor-pointer select-none mt-2">
+                  <input
+                    type="checkbox"
+                    checked={confirmScaleToZero}
+                    onChange={(e) => setConfirmScaleToZero(e.target.checked)}
+                    className="mt-0.5 rounded border-rose-700 bg-zinc-950 text-rose-500 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                  />
+                  <span className="text-xs text-rose-200">
+                    <strong>Confirm Scale to 0:</strong> I understand that scaling to 0 terminates all running pods, stopping traffic handling completely.
+                  </span>
+                </label>
+              )}
+            </div>
+          )}
+
+          {(actionType === 'DeletePod' || actionType === 'RestartPod') && isNakedPod && (
+            <label className="flex items-start gap-2.5 p-3.5 rounded-xl bg-rose-950/40 border border-rose-800/80 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={confirmNakedPodDelete}
+                onChange={(e) => setConfirmNakedPodDelete(e.target.checked)}
+                className="mt-0.5 rounded border-rose-700 bg-zinc-950 text-rose-500 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+              />
+              <span className="text-xs text-rose-200">
+                <strong>Confirm Standalone Pod Deletion:</strong> This is a standalone (naked) pod without a controller owner. It will <strong>NOT</strong> be recreated by Kubernetes.
+              </span>
+            </label>
+          )}
+
+          {actionType === 'DrainNode' && (
+            <div className="space-y-3 p-3.5 rounded-xl bg-rose-950/30 border border-rose-800/80 text-xs">
+              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={confirmDrain}
+                  onChange={(e) => setConfirmDrain(e.target.checked)}
+                  className="mt-0.5 rounded border-rose-700 bg-zinc-950 text-rose-500 cursor-pointer"
+                />
+                <span className="text-rose-200">
+                  <strong>Confirm Node Drain:</strong> Evict workloads from node <strong className="text-white">{resource.name}</strong>. Pods will be rescheduled on remaining nodes.
+                </span>
+              </label>
+              <div className="pt-2 border-t border-rose-900/40 space-y-2 text-zinc-300">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={ignoreDaemonSets}
+                    onChange={(e) => setIgnoreDaemonSets(e.target.checked)}
+                    className="rounded border-zinc-700 bg-zinc-950 text-sky-500 cursor-pointer"
+                  />
+                  <span>Ignore DaemonSet pods (leave system agent pods on node)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={deleteEmptyDirData}
+                    onChange={(e) => setDeleteEmptyDirData(e.target.checked)}
+                    className="rounded border-zinc-700 bg-zinc-950 text-sky-500 cursor-pointer"
+                  />
+                  <span>Delete local emptyDir data if required</span>
+                </label>
               </div>
             </div>
           )}
@@ -396,7 +473,14 @@ export const OperationActionModal: React.FC<OperationActionModalProps> = ({
 
             <button
               type="submit"
-              disabled={submitting || isDisconnectedAndProd || (actionType === 'RollbackDeployment' && currentRevisionNum <= 1)}
+              disabled={
+                submitting ||
+                isDisconnectedAndProd ||
+                (actionType === 'RollbackDeployment' && currentRevisionNum <= 1) ||
+                ((actionType === 'ScaleDeployment' || actionType === 'ScaleWorkload') && targetReplicas === 0 && !confirmScaleToZero) ||
+                ((actionType === 'DeletePod' || actionType === 'RestartPod') && isNakedPod && !confirmNakedPodDelete) ||
+                (actionType === 'DrainNode' && !confirmDrain)
+              }
               className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 text-white transition-all cursor-pointer ${
                 actionType === 'DeletePod' || actionType === 'RestartPod'
                   ? 'bg-rose-600 hover:bg-rose-500 disabled:opacity-50'

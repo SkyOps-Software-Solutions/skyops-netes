@@ -9,6 +9,7 @@ import { DocTopic, KnowledgeBaseModal } from '../docs/KnowledgeBaseModal';
 import { api } from '../../api/client';
 import { PWAInstallButton } from '../common/PWAInstallButton';
 import { BrandLogo } from '../common/BrandLogo';
+import { Footer } from '../layout/Footer';
 
 interface LandingPageProps {
   onSignIn: () => void;
@@ -1439,6 +1440,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, on
           </div>
         </div>
       </section>
+
+      {/* SkyOps Platform & Knowledge Directory Footer */}
+      <Footer
+        onGetStarted={onSignUp}
+        onNavigateTab={() => onSignIn()}
+        onOpenAddCluster={onSignUp}
+        onOpenDoc={(topic) => {
+          setActiveDocTopic(topic);
+          setIsDocModalOpen(true);
+        }}
+        isAuthenticated={false}
+      />
 
       {/* Prototype Badge & Interactive Toast */}
       <div className="note">Production Engine · Real Cluster Connected</div>

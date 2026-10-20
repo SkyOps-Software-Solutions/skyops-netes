@@ -52,6 +52,7 @@ export const ReleaseDiffModal: React.FC<ReleaseDiffModalProps> = ({
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmedScope, setConfirmedScope] = useState(false);
 
   const currentRecord = matchingRecords[0];
   const targetRecord = matchingRecords.find((r) => r.revision === selectedTargetRev) || matchingRecords[1];
@@ -78,6 +79,8 @@ export const ReleaseDiffModal: React.FC<ReleaseDiffModalProps> = ({
     (cluster.lastSeenAt ? Date.now() - cluster.lastSeenAt < 5 * 60 * 1000 : false) ||
     Boolean(cluster.isSimulated);
 
+  const hasValidTarget = matchingRecords.length > 1 || currentRevisionNum > 1;
+
   const handleRollback = async () => {
     if (!isConnected && !cluster.isSimulated) return;
 
@@ -89,8 +92,10 @@ export const ReleaseDiffModal: React.FC<ReleaseDiffModalProps> = ({
         targetKind: 'Deployment',
         targetName: deployment.name,
         targetNamespace: deployment.namespace,
+        targetUid: deployment.uid,
         parameters: {
           targetRevision: selectedTargetRev,
+          expectedRevision: currentRevStr,
           reason: `Rollback to revision ${selectedTargetRev} from unified operations workspace`
         }
       });
@@ -213,6 +218,33 @@ export const ReleaseDiffModal: React.FC<ReleaseDiffModalProps> = ({
           </div>
         </div>
 
+        {/* Rollback Scope & Disruption Notice */}
+        <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-800/60 space-y-2 text-xs">
+          <div className="flex items-center gap-2 font-semibold text-amber-300">
+            <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>Rollback Impact & Restoration Scope</span>
+          </div>
+          <p className="text-zinc-300 leading-relaxed text-[11px]">
+            Executing this rollback will trigger a <strong>RollingUpdate</strong> to revision {selectedTargetRev}. Kubernetes will launch pods running <code className="text-amber-300 font-mono px-1 bg-zinc-900 rounded">{targetImage}</code> and progressively terminate current pods. In-flight requests may experience transient retries.
+          </p>
+          <p className="text-zinc-400 leading-relaxed text-[11px] border-t border-zinc-800/80 pt-1.5">
+            <strong>Critical Boundary:</strong> Deployment rollback <em>only</em> restores the Pod template and ReplicaSet container spec. It does <strong>NOT</strong> revert database migrations, external cloud resources, ConfigMaps, Secrets, or persistent volumes.
+          </p>
+        </div>
+
+        {/* Explicit Confirmation Checkbox */}
+        <label className="flex items-start gap-2.5 p-3 rounded-lg bg-zinc-900/60 border border-zinc-800 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={confirmedScope}
+            onChange={(e) => setConfirmedScope(e.target.checked)}
+            className="mt-0.5 rounded border-zinc-700 bg-zinc-950 text-amber-500 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+          />
+          <span className="text-xs text-zinc-300">
+            I confirm that I want to roll back <strong className="text-zinc-100">{deployment.name}</strong> from rev {currentRevStr} to rev {selectedTargetRev}, and acknowledge external state/databases must be verified separately.
+          </span>
+        </label>
+
         {/* Error message */}
         {error && (
           <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-800/80 text-xs text-rose-300 flex items-start gap-2">
@@ -253,7 +285,7 @@ export const ReleaseDiffModal: React.FC<ReleaseDiffModalProps> = ({
             <button
               type="button"
               onClick={handleRollback}
-              disabled={submitting || (!isConnected && !cluster.isSimulated) || currentRevisionNum <= 1}
+              disabled={submitting || (!isConnected && !cluster.isSimulated) || !hasValidTarget || !confirmedScope}
               className="px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white transition-all cursor-pointer"
             >
               {submitting ? (

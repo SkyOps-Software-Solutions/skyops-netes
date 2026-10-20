@@ -76,6 +76,7 @@ export interface Organization {
   creatorUserId?: string;
   creatorEmail?: string;
   creatorName?: string;
+  userRole?: Role;
   isCreatedByMe?: boolean;
   canDelete?: boolean;
   canLeave?: boolean;
@@ -251,6 +252,12 @@ export interface OrgMember {
   createdAt?: number;
   updatedAt?: number;
   lastActiveAt?: number;
+  isCreator?: boolean;
+  isOwner?: boolean;
+  canDeleteWorkspace?: boolean;
+  joinedViaInvitation?: boolean;
+  invitedByUserId?: string;
+  invitedByEmail?: string;
 }
 
 export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED' | 'DECLINED';
@@ -920,6 +927,8 @@ export interface PodLogsResponse {
   totalLines: number;
   source: string;
   retrievedAt: number;
+  sinceTime?: string;
+  untilTime?: string;
   isTruncated?: boolean;
   unavailableReason?: string;
   statusCategory?:
@@ -2095,5 +2104,6 @@ export * from './billing';
 export * from './enterprise';
 export * from './logs';
 export * from './notifications';
+export type { NotificationSeverity, NotificationType } from './notifications';
 
 

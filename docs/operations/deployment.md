@@ -262,3 +262,76 @@ To restore from backup on a fresh instance:
 tar -xzf skyops_backup_20260917_080000.tar.gz -C /var/lib/skyops
 ```
 Restart the SkyOps server. The `DataStore` will read the restored state at boot.
+
+---
+
+## Option 3: Google Cloud Run (FinOps & Scale-to-Zero Architecture)
+
+To minimize idle cloud spending during early customer acquisition, SkyOps Control Plane is certified for Google Cloud Run with **Scale-to-Zero (`min-instances = 0`)** and **Request-Based Billing (`cpu-throttling = true`)**.
+
+### 1. Architectural Fit for Scale-to-Zero
+- **Stateless Compute**: Persistent data is housed in Google Cloud Firestore (`ai-studio-skyopsnetes-4a761b81-84c9-4610-bae6-624468cf7a67`) and Cloud Storage.
+- **Fast Cold Start**: Pre-bundled production runtime (`dist/server.cjs`) initializes and binds TCP port 3000 in under 1 second.
+- **Zero Cost When Idle**: With `min-instances = 0`, Cloud Run shuts down all container instances when no requests or agent telemetry arrive, reducing compute costs to $0 during quiet periods.
+
+### 2. Declarative Deployment via Knative Service Manifest
+Apply the cost-optimized manifest located at `deploy/cloudrun/service.yaml`:
+
+```bash
+gcloud run services replace deploy/cloudrun/service.yaml \
+  --project="skyops-a1143" \
+  --region="asia-southeast1"
+```
+
+### 3. Imperative Deployment Command (Enforcing Min-Instances = 0)
+When deploying via the `gcloud` CLI or CI/CD pipelines, always pass these flags to prevent accidental reversion to always-on billing:
+
+```bash
+gcloud run deploy skyops-server \
+  --image="gcr.io/skyops-a1143/skyops-server:v1.5.1" \
+  --project="skyops-a1143" \
+  --region="asia-southeast1" \
+  --platform="managed" \
+  --allow-unauthenticated \
+  --port=3000 \
+  --min-instances=0 \
+  --max-instances=5 \
+  --concurrency=80 \
+  --cpu=1 \
+  --memory=1Gi \
+  --no-cpu-throttling=false \
+  --cpu-boost \
+  --set-env-vars="NODE_ENV=production,PERSISTENCE_PROVIDER=firestore,FIREBASE_PROJECT_ID=skyops-a1143,SKYOPS_DATA_DIR=/tmp/skyops-cache" \
+  --update-labels="app=skyops,tier=control-plane,finops-policy=scale-to-zero"
+```
+
+### 4. Automated FinOps Optimization Script
+Execute the repository optimizer to audit, enforce scale-to-zero, clean up tagged revisions, and check health:
+
+```bash
+# Preview changes safely without executing
+./scripts/cloudrun-cost-optimizer.sh --project=skyops-a1143 --region=asia-southeast1 --dry-run
+
+# Apply scale-to-zero and request-based billing
+./scripts/cloudrun-cost-optimizer.sh --project=skyops-a1143 --region=asia-southeast1
+
+# Rollback if needed (sets min-instances=1 for emergency warm capacity)
+./scripts/cloudrun-cost-optimizer.sh --project=skyops-a1143 --region=asia-southeast1 --rollback
+```
+
+### 5. Google Cloud Budget Alerts Configuration
+Set proactive budget alerts at 50%, 80%, and 100% of your target threshold ($50/month default):
+
+```bash
+gcloud billing budgets create \
+  --billing-account="YOUR_BILLING_ACCOUNT_ID" \
+  --display-name="SkyOps Early-Acquisition Budget" \
+  --budget-amount=50USD \
+  --threshold-rule=percent=0.5 \
+  --threshold-rule=percent=0.8 \
+  --threshold-rule=percent=1.0 \
+  --threshold-rule=percent=1.0,basis=forecasted-spend \
+  --filter-projects="projects/skyops-a1143"
+```
+*(Note: Budget alerts notify engineering teams via email or Slack; they do not automatically terminate live production infrastructure.)*
+

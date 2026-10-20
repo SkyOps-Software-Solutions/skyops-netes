@@ -8,7 +8,7 @@
         "id": { "type": "string" },
         "email": { "type": "string", "format": "email" },
         "name": { "type": "string" },
-        "role": { "type": "string", "enum": ["OWNER", "ADMIN", "OPERATOR", "ENGINEER", "VIEWER"] },
+        "role": { "type": "string", "enum": ["OWNER", "ADMIN", "MEMBER", "OPERATOR", "ENGINEER", "VIEWER", "SRE", "DEVELOPER", "AUDITOR"] },
         "organizationId": { "type": "string" },
         "createdAt": { "type": "number" },
         "updatedAt": { "type": "number" }
@@ -17,12 +17,17 @@
     },
     "Organization": {
       "title": "Organization",
-      "description": "Customer workspace organization in SkyOps",
+      "description": "Customer workspace organization in SkyOps with owner/creator isolation",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
         "slug": { "type": "string" },
+        "ownerUserId": { "type": "string" },
+        "ownerEmail": { "type": "string" },
+        "creatorUserId": { "type": "string" },
+        "creatorEmail": { "type": "string" },
+        "creatorName": { "type": "string" },
         "createdAt": { "type": "number" },
         "membersCount": { "type": "number" }
       },

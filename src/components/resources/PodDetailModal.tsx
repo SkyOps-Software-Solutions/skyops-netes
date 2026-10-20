@@ -294,7 +294,7 @@ export const PodDetailModal: React.FC<PodDetailModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 overflow-y-auto space-y-6 flex-1 text-sm font-mono scrollbar-subtle">
+        <div className={`overflow-y-auto flex-1 font-mono scrollbar-subtle ${activeSection === 'logs' ? 'p-3.5 flex flex-col min-h-0' : 'p-6 space-y-6 text-sm'}`}>
           {activeSection === 'diagnostics' && (
             <div className="space-y-6">
               {/* Pod Metadata Grid */}
@@ -587,7 +587,7 @@ export const PodDetailModal: React.FC<PodDetailModalProps> = ({
           )}
 
           {activeSection === 'logs' && (
-            <div className="h-[520px]">
+            <div className="flex-1 min-h-[460px] flex flex-col">
               <PodLogsViewer
                 clusterId={pod.clusterId}
                 namespace={pod.namespace}
@@ -660,7 +660,7 @@ export const PodDetailModal: React.FC<PodDetailModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="p-4 border-t border-zinc-800 flex items-center justify-between bg-zinc-950/60">
+        <div className="p-4 border-t border-zinc-800 flex items-center justify-between bg-zinc-950/60 shrink-0">
           <span className="text-xs font-mono text-zinc-500">
             Resource UID: {pod.uid || pod.id}
           </span>

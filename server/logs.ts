@@ -111,6 +111,7 @@ export async function fetchInClusterPodLogs(
     tailLines?: number;
     previous?: boolean;
     sinceSeconds?: number;
+    sinceTime?: string;
     timestamps?: boolean;
   }
 ): Promise<string | null> {
@@ -136,6 +137,7 @@ export async function fetchInClusterPodLogs(
     if (options.tailLines) queryParams.set('tailLines', Math.min(1000, options.tailLines).toString());
     if (options.previous) queryParams.set('previous', 'true');
     if (options.sinceSeconds) queryParams.set('sinceSeconds', options.sinceSeconds.toString());
+    if (options.sinceTime) queryParams.set('sinceTime', options.sinceTime);
     if (options.timestamps !== false) queryParams.set('timestamps', 'true');
 
     const path = `/api/v1/namespaces/${encodeURIComponent(namespace)}/pods/${encodeURIComponent(podName)}/log?${queryParams.toString()}`;

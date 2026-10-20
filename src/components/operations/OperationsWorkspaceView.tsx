@@ -54,6 +54,7 @@ import { Button, EmptyState, LoadingState } from '../common/UI';
 import { ResourceDetailPanel } from './ResourceDetailPanel';
 import { OperationActionModal, OperationActionType } from './OperationActionModal';
 import { ReleaseDiffModal } from './ReleaseDiffModal';
+import { ActivityDetailModal } from './ActivityDetailModal';
 
 interface OperationsWorkspaceViewProps {
   clusters: Cluster[];
@@ -121,6 +122,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
     actionType: OperationActionType;
   } | null>(null);
   const [diffDeployment, setDiffDeployment] = useState<KubernetesResource | null>(null);
+  const [selectedActivityOp, setSelectedActivityOp] = useState<RemediationAction | null>(null);
 
   // Load cluster data
   const fetchClusterOperationsData = async (isBackground = false) => {
@@ -1115,10 +1117,14 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                         const isSuccess = op.status === 'SUCCEEDED' || op.status === 'VERIFIED' || op.status === 'VERIFIED_RESOLVED' || op.status === 'EXECUTED';
 
                         return (
-                          <tr key={op.id} className="hover:bg-zinc-800/30 transition-colors">
+                          <tr
+                            key={op.id}
+                            onClick={() => setSelectedActivityOp(op)}
+                            className="hover:bg-zinc-800/50 transition-colors cursor-pointer group"
+                          >
                             <td className="py-3 px-4 font-semibold text-zinc-100 flex items-center gap-2">
-                              <Zap className="w-3.5 h-3.5 text-sky-400" />
-                              <span>{op.actionType}</span>
+                              <Zap className="w-3.5 h-3.5 text-sky-400 group-hover:text-sky-300 transition-colors" />
+                              <span className="group-hover:underline underline-offset-2">{op.actionType}</span>
                             </td>
                             <td className="py-3 px-4 font-mono text-zinc-300">
                               {op.target?.kind}/{op.target?.namespace ? `${op.target.namespace}/` : ''}{op.target?.name}
@@ -1166,6 +1172,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
           incidents={incidents}
           onSelectIncident={onSelectIncident}
           onOperationSuccess={handleOperationSuccess}
+          deploymentRecords={deployments}
         />
       )}
 
@@ -1190,6 +1197,16 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
           deployment={diffDeployment}
           historyRecords={deployments}
           onRollbackSuccess={handleOperationSuccess}
+        />
+      )}
+
+      {/* 7. ACTIVITY DETAIL MODAL */}
+      {selectedActivityOp && (
+        <ActivityDetailModal
+          isOpen={Boolean(selectedActivityOp)}
+          onClose={() => setSelectedActivityOp(null)}
+          operation={selectedActivityOp}
+          clusterName={activeCluster?.name}
         />
       )}
     </div>

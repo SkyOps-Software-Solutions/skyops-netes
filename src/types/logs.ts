@@ -105,6 +105,9 @@ export interface LogAlertRule {
   description?: string;
   namespace?: string;
   workload?: string;
+  podName?: string;
+  container?: string;
+  isPodScoped?: boolean;
   pattern: string; // substring or regex
   minSeverity?: LogSeverity;
   thresholdOccurrences: number; // e.g. 20
@@ -128,12 +131,82 @@ export interface LogAlertTriggerEvent {
   clusterId: string;
   workload?: string;
   namespace?: string;
+  podName?: string;
+  container?: string;
   pattern: string;
   occurrences: number;
   windowMinutes: number;
   triggeredAt: number;
   incidentId?: string;
   sampleLogs: Array<{ timestamp: string; podName: string; message: string }>;
+}
+
+// ==========================================
+// Centralized Notification Center Types
+// ==========================================
+
+export type NotificationType =
+  | 'LOG_ERROR'
+  | 'LOG_FATAL'
+  | 'LOG_WARN'
+  | 'INCIDENT_CREATED'
+  | 'INCIDENT_RESOLVED'
+  | 'INCIDENT_SEVERITY_CHANGED'
+  | 'ALERT_TRIGGERED'
+  | 'DELIVERY_FAILURE';
+
+export type NotificationSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
+
+export type DeliveryChannelStatus = 'IN_APP_ONLY' | 'SENT' | 'FAILED' | 'EMAIL_UNCONFIGURED';
+
+export interface SkyOpsNotification {
+  id: string;
+  orgId: string;
+  userId?: string;
+  readBy?: string[];
+  read: boolean;
+  dismissed?: boolean;
+  type: NotificationType;
+  severity: NotificationSeverity;
+  title: string;
+  description: string;
+  messageExcerpt?: string;
+  clusterId?: string;
+  clusterName?: string;
+  namespace?: string;
+  workload?: string;
+  podName?: string;
+  container?: string;
+  incidentId?: string;
+  ruleId?: string;
+  ruleName?: string;
+  timestamp: number;
+  deduplicationKey: string;
+  deliveryChannel?: 'EMAIL' | 'IN_APP' | 'WEBHOOK';
+  deliveryStatus?: DeliveryChannelStatus;
+  deliveryError?: string;
+}
+
+export interface NotificationFilter {
+  type?: NotificationType | 'ALL';
+  severity?: NotificationSeverity | 'ALL' | 'HIGH_CRITICAL';
+  category?: 'ALL' | 'UNREAD' | 'LOG_ALERTS' | 'INCIDENTS' | 'FAILURES';
+  unreadOnly?: boolean;
+  clusterId?: string;
+  search?: string;
+  startTime?: number;
+  endTime?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export interface NotificationsResponse {
+  notifications: SkyOpsNotification[];
+  total: number;
+  unreadCount: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
 }
 
 export interface LogCollectionRule {

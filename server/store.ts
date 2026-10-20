@@ -99,6 +99,52 @@ import { aggregateClusterCloudMetadata, discoverNodeCloudMetadata } from './clou
 import { getPersistenceConfig, safeWriteJsonSync } from './persistence';
 
 export class DataStore {
+  private logIngestionHooks: Array<(
+    orgId: string,
+    clusterId: string,
+    namespace: string,
+    podName: string,
+    container: string,
+    lines: Array<{ timestamp?: string; message: string; raw: string }>,
+    previous: boolean
+  ) => void> = [];
+
+  public registerLogIngestionHook(
+    hook: (
+      orgId: string,
+      clusterId: string,
+      namespace: string,
+      podName: string,
+      container: string,
+      lines: Array<{ timestamp?: string; message: string; raw: string }>,
+      previous: boolean
+    ) => void
+  ): void {
+    this.logIngestionHooks.push(hook);
+  }
+
+  public notifyLogIngestionHooks(
+    orgId: string,
+    clusterId: string,
+    namespace: string,
+    podName: string,
+    container: string,
+    lines: Array<{ timestamp?: string; message: string; raw: string }>,
+    previous: boolean
+  ): void {
+    for (const hook of this.logIngestionHooks) {
+      try {
+        hook(orgId, clusterId, namespace, podName, container, lines, previous);
+      } catch (err) {
+        console.warn('[DataStore] Log ingestion hook error:', err);
+      }
+    }
+  }
+
+  public isOrgDeleted(orgId: string): boolean {
+    return this.deletedOrgIds.has(orgId);
+  }
+
   private users: Map<string, User> = new Map();
   private userNotificationSettings: Map<string, UserNotificationSettings> = new Map(); // userId -> settings
   private orgs: Map<string, Organization> = new Map();
@@ -822,6 +868,7 @@ export class DataStore {
     const userOrgs: Organization[] = [];
     const normalizedEmail = userEmail?.trim().toLowerCase();
     for (const [orgId, members] of this.members.entries()) {
+      if (this.deletedOrgIds.has(orgId)) continue;
       const match = members.find(
         (m) =>
           (m.userId === userId || (normalizedEmail && m.email && m.email.trim().toLowerCase() === normalizedEmail)) &&
@@ -842,6 +889,7 @@ export class DataStore {
 
     // Ensure organizations owned by user are recognized
     for (const org of this.orgs.values()) {
+      if (this.deletedOrgIds.has(org.id)) continue;
       const orgOwnerEmail = ((org as any).ownerEmail || '').trim().toLowerCase();
       const isOwner =
         org.ownerUserId === userId ||
@@ -892,6 +940,7 @@ export class DataStore {
       const creatorInfo = this.isUserOrganizationCreator(org.id, userId, userEmail);
       return {
         ...org,
+        userRole: creatorInfo.userRole,
         isCreatedByMe: creatorInfo.isCreator,
         canDelete: creatorInfo.canDelete,
         canLeave: creatorInfo.canLeave,
@@ -905,10 +954,13 @@ export class DataStore {
     orgId: string,
     userId: string,
     userEmail?: string
-  ): { isCreator: boolean; canDelete: boolean; canLeave: boolean; creatorName: string; creatorEmail?: string } {
+  ): { isCreator: boolean; canDelete: boolean; canLeave: boolean; userRole: Role; creatorName: string; creatorEmail?: string } {
+    if (this.deletedOrgIds.has(orgId)) {
+      return { isCreator: false, canDelete: false, canLeave: false, userRole: 'MEMBER', creatorName: 'Unknown' };
+    }
     const org = this.orgs.get(orgId);
     if (!org) {
-      return { isCreator: false, canDelete: false, canLeave: false, creatorName: 'Unknown' };
+      return { isCreator: false, canDelete: false, canLeave: false, userRole: 'MEMBER', creatorName: 'Unknown' };
     }
 
     const normEmail = (userEmail || '').trim().toLowerCase();
@@ -930,6 +982,7 @@ export class DataStore {
         isCreator: true,
         canDelete: true,
         canLeave: false,
+        userRole: 'OWNER',
         creatorName: 'You',
         creatorEmail: normEmail || orgOwnerEmail
       };
@@ -970,12 +1023,13 @@ export class DataStore {
         (userMember as any)?.invitedByEmail ||
         org.ownerEmail ||
         (org as any).creatorEmail ||
-        'the workspace administrator';
+        'the workspace owner';
 
       return {
         isCreator: false,
         canDelete: false,
         canLeave: true,
+        userRole: (userMember?.role && userMember.role !== 'OWNER' ? userMember.role : 'MEMBER') as Role,
         creatorName,
         creatorEmail: (org as any).creatorEmail || org.ownerEmail || acceptedInvite?.invitedByEmail
       };
@@ -1002,6 +1056,7 @@ export class DataStore {
       isCreator,
       canDelete: isCreator,
       canLeave: !isCreator,
+      userRole: isCreator ? 'OWNER' : ((userMember?.role && userMember.role !== 'OWNER' ? userMember.role : 'MEMBER') as Role),
       creatorName,
       creatorEmail: (org as any).creatorEmail || org.ownerEmail
     };
@@ -1420,14 +1475,16 @@ export class DataStore {
   }
 
   public getOrganization(orgId: string): Organization | null {
+    if (this.deletedOrgIds.has(orgId)) return null;
     return this.orgs.get(orgId) || null;
   }
 
   public getAllOrganizations(): Organization[] {
-    return Array.from(this.orgs.values());
+    return Array.from(this.orgs.values()).filter((o) => !this.deletedOrgIds.has(o.id));
   }
 
   public getOrg(orgId: string): Organization | null {
+    if (this.deletedOrgIds.has(orgId)) return null;
     return this.orgs.get(orgId) || null;
   }
 

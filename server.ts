@@ -64,13 +64,53 @@ import { CostEngine } from './server/cost/costEngine';
 import { SecurityEngine } from './server/security/securityEngine';
 import { ROLE_PERMISSIONS } from './server/auth';
 import { RoleCapabilitySummary } from './src/types/enterprise';
+import { notificationManager } from './server/notifications/notificationManager';
 
 dotenv.config({ override: true });
 
 const app = express();
-const PORT = parseInt(process.env.PORT || '3000', 10);
+const PORT = parseInt(process.env.APP_PORT || (process.env.PORT && process.env.PORT !== '8080' ? process.env.PORT : '3000'), 10);
 
 export { app };
+
+// Wire store on-demand and agent log ingestion to logManager for real-time alert evaluation
+store.registerLogIngestionHook((orgId, clusterId, namespace, podName, container, lines, previous) => {
+  try {
+    const cluster = store.getCluster(clusterId, orgId);
+    const clusterResources = store.getClusterResources(clusterId, orgId);
+    const matchingPod = clusterResources.find(
+      (r) => r.kind === 'Pod' && r.name === podName && (!namespace || r.namespace === namespace)
+    );
+    const deployments = clusterResources.filter((r) => r.kind === 'Deployment');
+    const statefulSets = clusterResources.filter((r) => r.kind === 'StatefulSet');
+    const daemonSets = clusterResources.filter((r) => r.kind === 'DaemonSet');
+    const workload = matchingPod
+      ? logManager.resolveWorkloadNameForPod(matchingPod, deployments, statefulSets, daemonSets)
+      : podName.replace(/-[a-z0-9]{8,10}-[a-z0-9]{5}$/, '');
+
+    const records = lines.map((l, idx) => ({
+      id: `rec-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+      clusterId,
+      clusterName: cluster?.name,
+      namespace,
+      workload,
+      podName,
+      container,
+      severity: logManager.inferSeverity(l.message),
+      timestamp: l.timestamp || new Date().toISOString(),
+      timestampMs: l.timestamp ? Date.parse(l.timestamp) || Date.now() : Date.now(),
+      message: l.message,
+      raw: l.raw,
+      isPrevious: previous
+    }));
+
+    if (records.length > 0) {
+      logManager.ingestLogRecords(orgId, records);
+    }
+  } catch (err) {
+    console.warn('[LogIngestionHook] Notice processing ingested log records:', err);
+  }
+});
 
 // Security & Parsing Middlewares
 app.use(
@@ -359,7 +399,7 @@ app.patch(
 );
 
 const DeleteOrgSchema = z.object({
-  confirmName: z.string(),
+  confirmName: z.string().optional(),
   acknowledgement: z.boolean().optional().default(true)
 });
 
@@ -1331,6 +1371,134 @@ app.get('/api/v1/clusters/:id/pods/:namespace/:podName/logs', requireUserAuth, r
   } catch (err: any) {
     res.status(404).json({ error: err?.message || 'Failed to retrieve pod logs' });
   }
+});
+
+// Pod Log Alerts Status
+app.get('/api/v1/clusters/:id/namespaces/:namespace/pods/:podName/alert-status', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const { id: clusterId, namespace, podName } = req.params;
+  const container = typeof req.query.container === 'string' ? req.query.container : undefined;
+  const user = req.user!;
+  const orgId = req.orgId!;
+
+  const cluster = store.getCluster(clusterId, orgId);
+  if (!cluster) {
+    return res.status(404).json({ error: 'Cluster not found' });
+  }
+
+  const rules = logManager.getAlertRules(orgId);
+  // Find rule matching this pod (and container if applicable)
+  const rule = rules.find((r) => {
+    if (r.clusterId && r.clusterId !== 'all' && r.clusterId !== clusterId) return false;
+    if (r.namespace && r.namespace !== 'all' && r.namespace.toLowerCase() !== namespace.toLowerCase()) return false;
+    if (r.podName && r.podName.toLowerCase() !== podName.toLowerCase()) return false;
+    if (container && r.container && r.container.toLowerCase() !== container.toLowerCase()) return false;
+    return r.isPodScoped || (r.podName && r.podName.toLowerCase() === podName.toLowerCase());
+  }) || null;
+
+  const pipelineStatus = cluster.agentStatus === 'CONNECTED' ? 'CONNECTED' : 'DISCONNECTED';
+  const userSettings = store.getUserNotificationSettings(user.id, user.email);
+  const diagnostics = incidentNotificationService.getDeliverabilityDiagnostics();
+  const smtpConfigured = !!diagnostics.smtpConfigured;
+  const emailDeliverable = userSettings.incidentEmailEnabled && smtpConfigured;
+
+  res.json({
+    enabled: !!(rule && rule.enabled),
+    rule,
+    pipelineStatus,
+    smtpConfigured,
+    userEmailEnabled: userSettings.incidentEmailEnabled,
+    emailDeliverable,
+    deliverabilityExplanation: !smtpConfigured
+      ? 'SMTP relay is not configured in workspace settings. In-app alerts will be recorded; email delivery is currently inactive.'
+      : !userSettings.incidentEmailEnabled
+      ? 'Email notifications are disabled in your user profile (Settings > Notifications).'
+      : 'Email notifications are active and deliverable.',
+    triggerCount: rule?.triggerCount || 0,
+    lastTriggeredAt: rule?.lastTriggeredAt
+  });
+});
+
+// Pod Log Alerts Toggle
+const PodAlertToggleSchema = z.object({
+  container: z.string().optional(),
+  enabled: z.boolean(),
+  minSeverity: z.enum(['FATAL', 'ERROR', 'WARN', 'INFO', 'DEBUG']).optional().default('ERROR'),
+  notifyEmail: z.boolean().optional().default(true)
+});
+
+app.post('/api/v1/clusters/:id/namespaces/:namespace/pods/:podName/alert-toggle', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
+  const { id: clusterId, namespace, podName } = req.params;
+  const parsed = PodAlertToggleSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid payload' });
+  }
+
+  const { container, enabled, minSeverity, notifyEmail } = parsed.data;
+  const orgId = req.orgId!;
+  const user = req.user!;
+
+  const cluster = store.getCluster(clusterId, orgId);
+  if (!cluster) {
+    return res.status(404).json({ error: 'Cluster not found' });
+  }
+
+  const rules = logManager.getAlertRules(orgId);
+  let existingRule = rules.find((r) => {
+    if (r.clusterId && r.clusterId !== 'all' && r.clusterId !== clusterId) return false;
+    if (r.namespace && r.namespace !== 'all' && r.namespace.toLowerCase() !== namespace.toLowerCase()) return false;
+    if (r.podName && r.podName.toLowerCase() !== podName.toLowerCase()) return false;
+    if (container && r.container && r.container.toLowerCase() !== container.toLowerCase()) return false;
+    return r.isPodScoped || (r.podName && r.podName.toLowerCase() === podName.toLowerCase());
+  });
+
+  const actor = { id: user.id, name: user.name || user.email };
+
+  if (existingRule) {
+    existingRule = logManager.updateAlertRule(orgId, existingRule.id, {
+      enabled,
+      minSeverity,
+      notifyEmail
+    }, actor);
+  } else if (enabled) {
+    const workload = podName.replace(/-[a-z0-9]{8,10}-[a-z0-9]{5}$/, '');
+    existingRule = logManager.createAlertRule(orgId, {
+      clusterId,
+      name: `Alert on Errors: ${podName}${container ? ` (${container})` : ''}`,
+      description: `Monitors real-time ERROR and FATAL log records for pod ${podName} in namespace ${namespace}.`,
+      namespace,
+      workload,
+      podName,
+      container: container || undefined,
+      isPodScoped: true,
+      pattern: '',
+      minSeverity: minSeverity || 'ERROR',
+      thresholdOccurrences: 1,
+      windowMinutes: 5,
+      createIncident: false,
+      notifyEmail: notifyEmail !== false,
+      enabled: true
+    }, actor);
+  }
+
+  const userSettings = store.getUserNotificationSettings(user.id, user.email);
+  const diagnostics = incidentNotificationService.getDeliverabilityDiagnostics();
+  const smtpConfigured = !!diagnostics.smtpConfigured;
+  const emailDeliverable = userSettings.incidentEmailEnabled && smtpConfigured;
+
+  res.json({
+    success: true,
+    enabled: !!(existingRule && existingRule.enabled),
+    rule: existingRule || null,
+    pipelineStatus: cluster.agentStatus === 'CONNECTED' ? 'CONNECTED' : 'DISCONNECTED',
+    smtpConfigured,
+    userEmailEnabled: userSettings.incidentEmailEnabled,
+    emailDeliverable,
+    deliverabilityExplanation: !smtpConfigured
+      ? 'SMTP relay is not configured in workspace settings. In-app alerts will be recorded; email delivery is currently inactive.'
+      : !userSettings.incidentEmailEnabled
+      ? 'Email notifications are disabled in your user profile (Settings > Notifications).'
+      : 'Email notifications are active and deliverable.'
+  });
 });
 
 app.get('/api/v1/resources', requireUserAuth, requireOrgMembership, (req: AuthenticatedUserRequest, res) => {
@@ -2520,7 +2688,7 @@ const ClusterOperationSchema = z.object({
     .optional(),
   parameters: z
     .object({
-      targetReplicas: z.number().int().min(0).max(50).optional(),
+      targetReplicas: z.number().int().min(0).max(20).optional(),
       targetRevision: z.string().optional(),
       reason: z.string().optional(),
       expectedRevision: z.string().optional(),

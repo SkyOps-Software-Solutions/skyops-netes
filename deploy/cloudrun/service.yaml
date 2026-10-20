@@ -1,0 +1,76 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: skyops-server
+  labels:
+    app: skyops
+    tier: control-plane
+    environment: production
+    finops-policy: scale-to-zero
+    managed-by: gitops
+  annotations:
+    run.googleapis.com/launch-stage: GA
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      labels:
+        app: skyops
+        tier: control-plane
+        environment: production
+        finops-policy: scale-to-zero
+      annotations:
+        # P0 FINOPS OBJECTIVE: Scale-to-zero when idle. No continuous idle instance billing.
+        autoscaling.knative.dev/minScale: "0"
+        # Bounded scaling: Prevents runaway bill shock from DDoS, retry storms, or agent connection bursts.
+        autoscaling.knative.dev/maxScale: "5"
+        # Request-based billing: CPU is ONLY allocated during request processing. Free during idle periods.
+        run.googleapis.com/cpu-throttling: "true"
+        # Fast cold start: Boosts CPU to full capacity during container startup without increasing steady-state pricing.
+        run.googleapis.com/startup-cpu-boost: "true"
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      # Concurrency: 80 simultaneous requests per container maximizes vCPU/memory utilization
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      containers:
+        - image: gcr.io/skyops-a1143/skyops-server:v1.5.1
+          ports:
+            - name: http1
+              containerPort: 3000
+          resources:
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "3000"
+            - name: SKYOPS_LOG_LEVEL
+              value: "info"
+            - name: PERSISTENCE_PROVIDER
+              value: "firestore"
+            - name: FIREBASE_PROJECT_ID
+              value: "skyops-a1143"
+            - name: SKYOPS_DATA_DIR
+              value: "/tmp/skyops-cache"
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 8
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3

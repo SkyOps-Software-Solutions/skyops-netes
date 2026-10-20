@@ -79,7 +79,11 @@ import {
   LogSearchResult,
   SavedLogSearch,
   WorkloadLogSummary,
-  IncidentSmartLogsReport
+  IncidentSmartLogsReport,
+  NotificationFilter,
+  NotificationsResponse,
+  SkyOpsNotification,
+  LogSeverity
 } from '../types/logs';
 
 /**
@@ -234,16 +238,26 @@ class ApiClient {
       data = null;
     }
 
-    // Handle 403 ORG_ACCESS_DENIED due to stale localStorage org ID:
+    // Handle 403 ORG_ACCESS_DENIED or ORG_DELETED due to stale localStorage org ID:
     // Clear the stale ID and retry once with no header so server resolves authoritative org
     if (
       res.status === 403 &&
       !(options as any)?._isOrgRetry &&
       headers['x-org-id'] &&
-      (data?.code === 'ORG_ACCESS_DENIED' || /access to this organization|not authorized/i.test(data?.error || text || ''))
+      (data?.code === 'ORG_ACCESS_DENIED' ||
+        data?.code === 'ORG_DELETED' ||
+        data?.code === 'ORG_MEMBERSHIP_REQUIRED' ||
+        /access to this organization|not authorized|workspace has been permanently deleted|membership required/i.test(
+          data?.error || text || ''
+        ))
     ) {
-      console.warn('[SkyOps API] Stale organization detected in local storage. Clearing and retrying with primary workspace...');
+      console.warn('[SkyOps API] Stale or deleted workspace detected. Clearing and retrying with primary workspace...');
       localStorage.removeItem('skyops_active_org_id');
+      try {
+        window.dispatchEvent(new CustomEvent('skyops:org-deleted', { detail: { orgId: headers['x-org-id'] } }));
+      } catch {
+        // Safe in non-DOM environments
+      }
       const retryHeaders = { ...headers };
       delete retryHeaders['x-org-id'];
       return this.request<T>(url, {
@@ -1027,6 +1041,58 @@ class ApiClient {
       method: 'DELETE'
     });
     return true;
+  }
+
+  // --- Pod Log Alerts ---
+  async getPodAlertStatus(
+    clusterId: string,
+    namespace: string,
+    podName: string,
+    container?: string
+  ): Promise<{
+    enabled: boolean;
+    rule: LogAlertRule | null;
+    pipelineStatus: 'CONNECTED' | 'DISCONNECTED';
+    smtpConfigured: boolean;
+    userEmailEnabled: boolean;
+    emailDeliverable: boolean;
+    deliverabilityExplanation: string;
+    triggerCount: number;
+    lastTriggeredAt?: number;
+  }> {
+    const query = container ? `?container=${encodeURIComponent(container)}` : '';
+    return this.request(
+      `/api/v1/clusters/${encodeURIComponent(clusterId)}/namespaces/${encodeURIComponent(namespace)}/pods/${encodeURIComponent(podName)}/alert-status${query}`
+    );
+  }
+
+  async togglePodAlert(
+    clusterId: string,
+    namespace: string,
+    podName: string,
+    data: {
+      container?: string;
+      enabled: boolean;
+      minSeverity?: LogSeverity;
+      notifyEmail?: boolean;
+    }
+  ): Promise<{
+    success: boolean;
+    enabled: boolean;
+    rule: LogAlertRule | null;
+    pipelineStatus: 'CONNECTED' | 'DISCONNECTED';
+    smtpConfigured: boolean;
+    userEmailEnabled: boolean;
+    emailDeliverable: boolean;
+    deliverabilityExplanation: string;
+  }> {
+    return this.request(
+      `/api/v1/clusters/${encodeURIComponent(clusterId)}/namespaces/${encodeURIComponent(namespace)}/pods/${encodeURIComponent(podName)}/alert-toggle`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data)
+      }
+    );
   }
 
   async createIncidentFromLogs(data: {

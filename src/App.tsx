@@ -31,18 +31,18 @@ function MainRouter() {
   // If authenticated, take user directly into the SkyOps Dashboard application
   if (isAuthenticated) {
     return (
-      <>
+      <div className="h-screen max-h-screen w-full bg-zinc-950 overflow-hidden">
         <AppShell onSignOut={() => setCurrentView('home')} />
         <InvitationAcceptanceModal />
-      </>
+      </div>
     );
   }
 
   // Live Interactive Demo Mode for prospective visitors
   if (currentView === 'demo') {
     return (
-      <div className="min-h-screen bg-zinc-950 flex flex-col">
-        <div className="bg-gradient-to-r from-sky-950/90 via-zinc-900 to-indigo-950/90 border-b border-sky-800/50 px-4 py-2 text-xs font-mono text-zinc-200 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-50 backdrop-blur-md">
+      <div className="h-screen max-h-screen w-full bg-zinc-950 flex flex-col overflow-hidden">
+        <div className="shrink-0 bg-gradient-to-r from-sky-950/90 via-zinc-900 to-indigo-950/90 border-b border-sky-800/50 px-4 py-2 text-xs font-mono text-zinc-200 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-50 backdrop-blur-md">
           <div className="flex items-center gap-2.5">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="font-bold text-sky-300">Acme Global Fleet Sandbox</span>
@@ -66,7 +66,7 @@ function MainRouter() {
             </button>
           </div>
         </div>
-        <div className="flex-1">
+        <div className="flex-1 min-h-0 w-full overflow-hidden relative">
           <AppShell onSignOut={() => setCurrentView('home')} />
         </div>
         <InvitationAcceptanceModal />

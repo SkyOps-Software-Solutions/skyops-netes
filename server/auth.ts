@@ -423,12 +423,33 @@ export async function requireOrgMembership(
         targetOrg = store.getOrganization(requestedOrgId) || undefined;
       }
     }
-    // Explicit requestedOrgId was not accessible to this user:
-    // If this is the session establishment endpoint and the requestedOrgId no longer exists (e.g. just deleted),
-    // heal the session to the user's first available workspace. Otherwise reject with 403.
+    // Explicit requestedOrgId was not accessible to this user or was deleted:
     if (!targetOrg) {
-      if (!store.getOrganization(requestedOrgId) && userOrgs.length > 0) {
-        targetOrg = userOrgs[0];
+      if (store.isOrgDeleted(requestedOrgId) || !store.getOrganization(requestedOrgId)) {
+        if (userOrgs.length > 0) {
+          targetOrg = userOrgs[0];
+          res.setHeader('x-active-org-id', targetOrg.id);
+        } else {
+          const isSessionEndpoint = req.path === '/api/v1/auth/session' || req.originalUrl?.includes('/api/v1/auth/session');
+          if (isSessionEndpoint) {
+            res.setHeader('x-active-org-id', '');
+            return res.json({
+              user: req.user,
+              currentOrg: null,
+              organizations: [],
+              role: 'MEMBER',
+              members: []
+            });
+          }
+          res.setHeader('x-active-org-id', '');
+          return res.status(403).json({
+            error: 'This workspace has been permanently deleted by its owner. You have been removed from the workspace.',
+            code: 'ORG_DELETED',
+            requestedOrgId: requestedOrgId,
+            availableOrgs: [],
+            message: 'This workspace was deleted by its owner.'
+          });
+        }
       } else {
         return res.status(403).json({
           error: 'Forbidden: You do not have access to this organization',
@@ -597,6 +618,25 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'support.create',
     'support.manage'
   ],
+  MEMBER: [
+    'cluster.read',
+    'incident.read',
+    'incident.view',
+    'incident.manage',
+    'incident.heal',
+    'telemetry.read',
+    'telemetry.view',
+    'remediation.view',
+    'remediation.execute',
+    'cost.read',
+    'cost.view',
+    'security.read',
+    'audit.read',
+    'audit.view',
+    'billing.read',
+    'artifact.manage',
+    'support.create'
+  ],
   ADMIN: [
     'cluster.read',
     'cluster.manage',
@@ -629,24 +669,6 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'artifact.manage',
     'support.create',
     'support.manage'
-  ],
-  MEMBER: [
-    'cluster.read',
-    'incident.read',
-    'incident.view',
-    'incident.heal',
-    'telemetry.read',
-    'telemetry.view',
-    'remediation.view',
-    'remediation.execute',
-    'cost.read',
-    'cost.view',
-    'security.read',
-    'audit.read',
-    'audit.view',
-    'billing.read',
-    'artifact.manage',
-    'support.create'
   ],
   SRE: [
     'cluster.read',

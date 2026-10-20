@@ -151,7 +151,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     });
 
-    return () => unsubscribe();
+    const handleOrgDeleted = () => {
+      localStorage.removeItem('skyops_active_org_id');
+      refreshSession();
+    };
+    window.addEventListener('skyops:org-deleted', handleOrgDeleted);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('skyops:org-deleted', handleOrgDeleted);
+    };
   }, []);
 
   const signInWithGoogle = async (orgName?: string) => {

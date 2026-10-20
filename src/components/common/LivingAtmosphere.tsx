@@ -51,30 +51,35 @@ export const LivingAtmosphere: React.FC = () => {
       return;
     }
 
-    const handlePointerMove = (e: MouseEvent) => {
-      // Calculate normalized offset from center: -1.0 to +1.0
-      const normX = (e.clientX / window.innerWidth - 0.5) * 2;
-      const normY = (e.clientY / window.innerHeight - 0.5) * 2;
-      targetPointerRef.current = { x: normX, y: normY };
-    };
+    let isLoopRunning = false;
 
-    window.addEventListener('mousemove', handlePointerMove, { passive: true });
-
-    // Smooth continuous lerp loop for the atmospheric response (approx 2-5px)
+    // Smooth lerp loop that automatically idles when pointer converges to avoid CPU/rendering lag
     const updateParallax = () => {
       const target = targetPointerRef.current;
       const current = currentPointerRef.current;
 
-      // Easing interpolation factor (0.04 creates an organic fluid drift)
-      current.x += (target.x - current.x) * 0.04;
-      current.y += (target.y - current.y) * 0.04;
+      const dx = target.x - current.x;
+      const dy = target.y - current.y;
+
+      // When converged within threshold, snap to target and pause the rAF loop
+      if (Math.abs(dx) < 0.002 && Math.abs(dy) < 0.002) {
+        current.x = target.x;
+        current.y = target.y;
+        isLoopRunning = false;
+        animationFrameRef.current = null;
+        return;
+      }
+
+      // Easing interpolation factor (smooth fluid response)
+      current.x += dx * 0.08;
+      current.y += dy * 0.08;
 
       if (containerRef.current) {
-        // Deep blue layer responds ~3.5px
+        // Deep blue layer responds ~3.8px
         containerRef.current.style.setProperty('--parallax-blue-x', `${(current.x * 3.8).toFixed(2)}px`);
         containerRef.current.style.setProperty('--parallax-blue-y', `${(current.y * 3.8).toFixed(2)}px`);
 
-        // Subtle violet layer drifts oppositely ~2.5px
+        // Subtle violet layer drifts oppositely ~2.8px
         containerRef.current.style.setProperty('--parallax-violet-x', `${(-current.x * 2.8).toFixed(2)}px`);
         containerRef.current.style.setProperty('--parallax-violet-y', `${(-current.y * 2.8).toFixed(2)}px`);
 
@@ -86,7 +91,19 @@ export const LivingAtmosphere: React.FC = () => {
       animationFrameRef.current = requestAnimationFrame(updateParallax);
     };
 
-    animationFrameRef.current = requestAnimationFrame(updateParallax);
+    const handlePointerMove = (e: MouseEvent) => {
+      // Calculate normalized offset from center: -1.0 to +1.0
+      const normX = (e.clientX / window.innerWidth - 0.5) * 2;
+      const normY = (e.clientY / window.innerHeight - 0.5) * 2;
+      targetPointerRef.current = { x: normX, y: normY };
+
+      if (!isLoopRunning) {
+        isLoopRunning = true;
+        animationFrameRef.current = requestAnimationFrame(updateParallax);
+      }
+    };
+
+    window.addEventListener('mousemove', handlePointerMove, { passive: true });
 
     return () => {
       window.removeEventListener('mousemove', handlePointerMove);

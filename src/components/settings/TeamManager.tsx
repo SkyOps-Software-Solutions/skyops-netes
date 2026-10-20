@@ -632,6 +632,7 @@ export const TeamManager: React.FC = () => {
                               OWNER
                             </option>
                             <option value="ADMIN">ADMIN</option>
+                            <option value="MEMBER">MEMBER</option>
                             <option value="OPERATOR">OPERATOR</option>
                             <option value="ENGINEER">ENGINEER</option>
                             <option value="VIEWER">VIEWER</option>
@@ -898,6 +899,7 @@ export const TeamManager: React.FC = () => {
                     <option value="MEMBER">MEMBER (Standard Collaborator)</option>
                     {currentUserRole === 'OWNER' && <option value="OWNER">OWNER (Workspace Co-Owner)</option>}
                     <option value="ADMIN">ADMIN</option>
+                    <option value="MEMBER">MEMBER</option>
                     <option value="OPERATOR">OPERATOR</option>
                     <option value="ENGINEER">ENGINEER</option>
                     <option value="VIEWER">VIEWER</option>

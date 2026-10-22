@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -13,7 +13,9 @@ import {
   Trash2,
   X,
   Zap,
-  ShieldAlert
+  ShieldAlert,
+  ShieldCheck,
+  Shield
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { Cluster, KubernetesResource, RemediationAction } from '../../types/index';
@@ -32,7 +34,8 @@ export type OperationActionType =
   | 'SuspendCronJob'
   | 'ResumeCronJob'
   | 'TriggerCronJob'
-  | 'RerunJob';
+  | 'RerunJob'
+  | 'DeleteJob';
 
 interface OperationActionModalProps {
   isOpen: boolean;
@@ -210,14 +213,181 @@ export const OperationActionModal: React.FC<OperationActionModalProps> = ({
             `Creates a new Job instance duplicating the specification of Job "${resource.name}".`,
           impact: 'Launches pod batch tasks until completion.'
         };
+      case 'DeleteJob':
+        return {
+          title: `Delete Batch Job "${resource.name}"`,
+          icon: <Trash2 className="w-5 h-5 text-rose-400" />,
+          riskLevel: 'LOW',
+          riskColor: 'text-rose-400 bg-rose-950/40 border-rose-800/60',
+          description:
+            `Deletes batch Job "${resource.name}" and stops associated pods.`,
+          impact: 'Terminates active batch job execution and deletes Kubernetes job resource.'
+        };
     }
   };
 
   const config = getActionConfig();
 
+  // Authoritative capability checking grounded in Kubernetes SSAR telemetry
+  const capabilityCheck = useMemo(() => {
+    if (cluster.isSimulated) {
+      return {
+        supported: true,
+        mode: 'SIMULATED',
+        message: 'Demo / Sandbox Cluster: Changes simulate immediately in in-memory telemetry.'
+      };
+    }
+    if (!isConnected) {
+      return {
+        supported: false,
+        mode: 'DISCONNECTED',
+        message: 'Live Agent Offline: Reconnect SkyOps agent to execute operational actions.'
+      };
+    }
+    const caps = cluster.operationalCapabilities;
+    const tier = cluster.permissionTier || 'observer';
+    if (caps) {
+      switch (actionType) {
+        case 'DeletePod':
+          if (!caps.canDeletePods) {
+            return {
+              supported: false,
+              mode: 'RBAC_DENIED',
+              requiredTier: 'Operator',
+              message: 'Agent RBAC denies Pod deletion (missing delete on core/pods). Deploy with Operator or Platform Admin tier.'
+            };
+          }
+          break;
+        case 'RestartPod':
+          if (resource.kind === 'Pod' && !caps.canDeletePods) {
+            return {
+              supported: false,
+              mode: 'RBAC_DENIED',
+              requiredTier: 'Operator',
+              message: 'Agent RBAC denies Pod restart (missing delete on core/pods). Deploy with Operator or Platform Admin tier.'
+            };
+          }
+          if (resource.kind !== 'Pod' && !caps.canRestartDeployments) {
+            return {
+              supported: false,
+              mode: 'RBAC_DENIED',
+              requiredTier: 'Operator',
+              message: 'Agent RBAC denies Deployment rollout restart (missing patch on apps/deployments).'
+            };
+          }
+          break;
+        case 'RolloutRestart':
+        case 'RollbackDeployment':
+          if (!caps.canRestartDeployments) {
+            return {
+              supported: false,
+              mode: 'RBAC_DENIED',
+              requiredTier: 'Operator',
+              message: 'Agent RBAC denies Rollout/Rollback (missing patch on apps/deployments). Deploy with Operator tier.'
+            };
+          }
+          break;
+        case 'ScaleDeployment':
+          if (!caps.canScaleDeployments) {
+            return {
+              supported: false,
+              mode: 'RBAC_DENIED',
+              requiredTier: 'Operator',
+              message: 'Agent RBAC denies Scaling (missing patch/update on apps/deployments/scale). Deploy with Operator tier.'
+            };
+          }
+          break;
+        case 'ScaleWorkload':
+          if (resource.kind === 'StatefulSet' && !caps.canScaleStatefulSets) {
+            return {
+              supported: false,
+              mode: 'RBAC_DENIED',
+              requiredTier: 'Operator',
+              message: 'Agent RBAC denies StatefulSet scaling (missing patch/update on apps/statefulsets/scale).'
+            };
+          }
+          if (!caps.canScaleDeployments) {
+            return {
+              supported: false,
+              mode: 'RBAC_DENIED',
+              requiredTier: 'Operator',
+              message: 'Agent RBAC denies Workload scaling. Deploy with Operator tier.'
+            };
+          }
+          break;
+        case 'SuspendCronJob':
+        case 'ResumeCronJob':
+          if (!caps.canMutateCronJobs) {
+            return {
+              supported: false,
+              mode: 'RBAC_DENIED',
+              requiredTier: 'Operator',
+              message: 'Agent RBAC denies CronJob mutation (missing patch/update on batch/cronjobs).'
+            };
+          }
+          break;
+        case 'TriggerCronJob':
+        case 'RerunJob':
+          if (!caps.canCreateJobs) {
+            return {
+              supported: false,
+              mode: 'RBAC_DENIED',
+              requiredTier: 'Operator',
+              message: 'Agent RBAC denies Job creation (missing create on batch/jobs).'
+            };
+          }
+          break;
+        case 'DeleteJob':
+          if (!caps.canDeleteJobs) {
+            return {
+              supported: false,
+              mode: 'RBAC_DENIED',
+              requiredTier: 'Operator',
+              message: 'Agent RBAC denies Job deletion (missing delete on batch/jobs).'
+            };
+          }
+          break;
+        case 'CordonNode':
+        case 'UncordonNode':
+          if (!caps.canCordonNodes) {
+            return {
+              supported: false,
+              mode: 'RBAC_DENIED',
+              requiredTier: 'Platform Administrator',
+              message: 'Agent RBAC denies Node cordon/uncordon (missing patch on core/nodes). Requires Platform Admin tier.'
+            };
+          }
+          break;
+        case 'DrainNode':
+          if (!caps.canDrainNodes) {
+            return {
+              supported: false,
+              mode: 'RBAC_DENIED',
+              requiredTier: 'Platform Administrator',
+              message: 'Agent RBAC denies Node drain (missing patch on core/nodes or create on core/pods/eviction). Requires Platform Admin tier.'
+            };
+          }
+          break;
+      }
+    } else if (tier === 'observer') {
+      return {
+        supported: false,
+        mode: 'RBAC_DENIED',
+        requiredTier: 'Operator',
+        message: 'Cluster agent is configured in Observer tier (read-only). Operational mutations require Operator or Platform Admin tier.'
+      };
+    }
+
+    return {
+      supported: true,
+      mode: 'VERIFIED',
+      message: `Agent capability verified via Kubernetes SelfSubjectAccessReview (${tier} tier)`
+    };
+  }, [cluster, actionType, isConnected, resource.kind]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isDisconnectedAndProd) return;
+    if (isDisconnectedAndProd || !capabilityCheck.supported) return;
 
     try {
       setSubmitting(true);
@@ -229,28 +399,28 @@ export const OperationActionModal: React.FC<OperationActionModalProps> = ({
         targetName: resource.name,
         targetNamespace: resource.namespace || undefined,
         targetUid: resource.uid,
+        confirmScaleToZero: targetReplicas === 0 ? confirmScaleToZero : undefined,
+        confirmNakedPodDelete: isNakedPod ? confirmNakedPodDelete : undefined,
+        confirmDrain: actionType === 'DrainNode' ? confirmDrain : undefined,
+        drainOptions: actionType === 'DrainNode' ? {
+          ignoreDaemonSets,
+          deleteEmptyDirData
+        } : undefined,
         parameters: {
-          reason: reason.trim() || undefined
+          reason: reason.trim() || undefined,
+          targetReplicas: (actionType === 'ScaleDeployment' || actionType === 'ScaleWorkload') ? targetReplicas : undefined,
+          targetRevision: actionType === 'RollbackDeployment' ? targetRevision : undefined,
+          expectedRevision: actionType === 'RollbackDeployment' ? currentRevStr : undefined,
+          expectedReplicas: (actionType === 'ScaleDeployment' || actionType === 'ScaleWorkload') ? currentReplicas : undefined,
+          confirmScaleToZero: targetReplicas === 0 ? confirmScaleToZero : undefined,
+          confirmNakedPodDelete: isNakedPod ? confirmNakedPodDelete : undefined,
+          confirmDrain: actionType === 'DrainNode' ? confirmDrain : undefined,
+          drainOptions: actionType === 'DrainNode' ? {
+            ignoreDaemonSets,
+            deleteEmptyDirData
+          } : undefined
         }
       };
-
-      if (actionType === 'ScaleDeployment' || actionType === 'ScaleWorkload') {
-        payload.parameters.targetReplicas = targetReplicas;
-        if (targetReplicas === 0) {
-          payload.parameters.confirmScaleToZero = confirmScaleToZero;
-        }
-      } else if (actionType === 'RollbackDeployment') {
-        payload.parameters.targetRevision = targetRevision;
-        payload.parameters.expectedRevision = currentRevStr;
-      } else if (actionType === 'DeletePod' || actionType === 'RestartPod') {
-        if (isNakedPod) {
-          payload.parameters.confirmNakedPodDelete = confirmNakedPodDelete;
-        }
-      } else if (actionType === 'DrainNode') {
-        payload.parameters.confirmDrain = confirmDrain;
-        payload.parameters.ignoreDaemonSets = ignoreDaemonSets;
-        payload.parameters.deleteEmptyDirData = deleteEmptyDirData;
-      }
 
       const res = await api.executeClusterOperation(cluster.id, payload);
       setSuccessResult({ message: res.message, action: res.action });
@@ -291,16 +461,50 @@ export const OperationActionModal: React.FC<OperationActionModalProps> = ({
           </span>
         </div>
 
-        {/* Offline Warning Banner */}
-        {isDisconnectedAndProd && (
+        {/* Capability Status Banners */}
+        {capabilityCheck.mode === 'SIMULATED' && (
+          <div className="p-3 rounded-xl bg-sky-950/40 border border-sky-800/60 text-xs text-sky-200 flex items-start gap-2.5">
+            <Shield className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-semibold text-sky-300">Simulated Sandbox Environment</span>
+              <p className="mt-0.5 text-zinc-300">
+                This cluster is running in simulated demonstration mode. Operations execute instantaneously in the sandbox telemetry model without touching actual cloud infrastructure.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {capabilityCheck.mode === 'DISCONNECTED' && (
           <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-800/60 text-xs text-amber-200 flex items-start gap-3">
             <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
             <div>
               <span className="font-semibold text-amber-300">Live Agent Disconnected</span>
               <p className="mt-0.5 text-zinc-300">
-                Mutations requiring live state are disabled because the SkyOps cluster agent is currently offline. Reconnect the agent to execute operational actions.
+                Mutations requiring live cluster state are disabled because the SkyOps cluster agent is currently offline. Reconnect the agent to execute operational actions.
               </p>
             </div>
+          </div>
+        )}
+
+        {capabilityCheck.mode === 'RBAC_DENIED' && (
+          <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-800/60 text-xs text-rose-200 flex items-start gap-3">
+            <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-semibold text-rose-300">
+                RBAC Denied by Kubernetes Cluster ({capabilityCheck.requiredTier} Tier Required)
+              </span>
+              <p className="mt-0.5 text-zinc-300">{capabilityCheck.message}</p>
+              <p className="mt-1 text-[11px] text-zinc-400">
+                Upgrade the agent installation: set <code className="bg-zinc-900 px-1 py-0.5 rounded text-zinc-200 font-mono">rbac.tier={capabilityCheck.requiredTier.toLowerCase().replace(' ', '-')}</code> in Helm values or apply <code className="bg-zinc-900 px-1 py-0.5 rounded text-zinc-200 font-mono">skyops-agent-operator</code> ClusterRole.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {capabilityCheck.mode === 'VERIFIED' && (
+          <div className="px-3 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-800/60 text-xs text-emerald-300 flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{capabilityCheck.message}</span>
           </div>
         )}
 
@@ -475,7 +679,7 @@ export const OperationActionModal: React.FC<OperationActionModalProps> = ({
               type="submit"
               disabled={
                 submitting ||
-                isDisconnectedAndProd ||
+                !capabilityCheck.supported ||
                 (actionType === 'RollbackDeployment' && currentRevisionNum <= 1) ||
                 ((actionType === 'ScaleDeployment' || actionType === 'ScaleWorkload') && targetReplicas === 0 && !confirmScaleToZero) ||
                 ((actionType === 'DeletePod' || actionType === 'RestartPod') && isNakedPod && !confirmNakedPodDelete) ||

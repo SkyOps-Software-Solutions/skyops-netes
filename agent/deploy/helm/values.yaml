@@ -44,6 +44,11 @@ podSecurityContext:
 
 rbac:
   create: true
+  # Permission Tier: "observer" | "operator" | "admin"
+  # - observer: Read-only telemetry, logs, watches, and incident analysis. Zero mutation permissions.
+  # - operator (default): Workload operations (Pod restart/delete, Deployment rollout/scale, StatefulSet scale, CronJobs/Jobs).
+  # - admin: Platform operations including Node cordon, uncordon, and node drain via Eviction API.
+  tier: "operator"
 
 serviceAccount:
   create: true

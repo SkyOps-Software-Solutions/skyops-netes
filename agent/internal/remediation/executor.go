@@ -10,7 +10,10 @@ import (
 
 	"github.com/skyops-io/skyops/agent/internal/transport"
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
@@ -30,9 +33,27 @@ func isProtectedNamespace(ns string) bool {
 	return lower == "kube-system" || lower == "kube-public" || lower == "kube-node-lease" || lower == "skyops" || lower == "skyops-system"
 }
 
+func isParamTrue(params map[string]interface{}, key string) bool {
+	if params == nil {
+		return false
+	}
+	val, ok := params[key]
+	if !ok {
+		return false
+	}
+	if b, ok := val.(bool); ok {
+		return b
+	}
+	if s, ok := val.(string); ok {
+		lower := strings.ToLower(strings.TrimSpace(s))
+		return lower == "true" || lower == "1" || lower == "yes"
+	}
+	return false
+}
+
 // PreconditionCheck checks live state before execution and returns the previous state for rollback
 func (e *Executor) PreconditionCheck(ctx context.Context, action *transport.RemediationAction) (previousState string, err error) {
-	if isProtectedNamespace(action.Target.Namespace) {
+	if action.Target.Namespace != "" && isProtectedNamespace(action.Target.Namespace) {
 		return "", fmt.Errorf("precondition failed: namespace %q is protected against remediation actions", action.Target.Namespace)
 	}
 
@@ -116,6 +137,20 @@ func (e *Executor) PreconditionCheck(ctx context.Context, action *transport.Reme
 			return dep.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"], nil
 		}
 
+	case "DeletePod":
+		pod, err := e.client.CoreV1().Pods(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+		if err != nil {
+			return "", fmt.Errorf("precondition failed: target pod not found: %w", err)
+		}
+		if action.Target.UID != "" && string(pod.UID) != action.Target.UID {
+			return "", fmt.Errorf("precondition failed: target pod UID changed (stale action: expected %s, got %s)", action.Target.UID, string(pod.UID))
+		}
+		// Standalone naked pod safety check
+		if len(pod.OwnerReferences) == 0 && !isParamTrue(action.Parameters, "confirmNakedPodDelete") {
+			return "", fmt.Errorf("precondition failed: pod %q is standalone without a controller owner; explicit confirmNakedPodDelete confirmation is required", action.Target.Name)
+		}
+		return string(pod.UID), nil
+
 	case "RolloutRestart":
 		kind := strings.ToLower(action.Target.Kind)
 		switch kind {
@@ -161,7 +196,7 @@ func (e *Executor) PreconditionCheck(ctx context.Context, action *transport.Reme
 
 		rsList, err := e.client.AppsV1().ReplicaSets(action.Target.Namespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
-			return "", fmt.Errorf("precondition failed: unable to list replicasets: %w", err)
+			return "", fmt.Errorf("precondition failed: list replicasets: %w", err)
 		}
 
 		var targetRS *appsv1.ReplicaSet
@@ -212,8 +247,11 @@ func (e *Executor) PreconditionCheck(ctx context.Context, action *transport.Reme
 		if err != nil {
 			return "", fmt.Errorf("precondition failed: invalid replica count %q: %w", action.ProposedValue, err)
 		}
-		if targetReplicas <= 0 {
-			return "", fmt.Errorf("precondition failed: scale-to-zero is prohibited by safety policy")
+		if targetReplicas < 0 {
+			return "", fmt.Errorf("precondition failed: negative replica count (%d) is invalid", targetReplicas)
+		}
+		if targetReplicas == 0 && !isParamTrue(action.Parameters, "confirmScaleToZero") {
+			return "", fmt.Errorf("precondition failed: scaling to zero requires explicit confirmation (confirmScaleToZero)")
 		}
 		currReplicas := int32(1)
 		if dep.Spec.Replicas != nil {
@@ -223,6 +261,101 @@ func (e *Executor) PreconditionCheck(ctx context.Context, action *transport.Reme
 			return action.ProposedValue, nil
 		}
 		return strconv.Itoa(int(currReplicas)), nil
+
+	case "ScaleWorkload":
+		kind := strings.ToLower(action.Target.Kind)
+		targetReplicas, err := strconv.Atoi(action.ProposedValue)
+		if err != nil {
+			return "", fmt.Errorf("precondition failed: invalid replica count %q: %w", action.ProposedValue, err)
+		}
+		if targetReplicas < 0 {
+			return "", fmt.Errorf("precondition failed: negative replica count (%d) is invalid", targetReplicas)
+		}
+		if targetReplicas == 0 && !isParamTrue(action.Parameters, "confirmScaleToZero") {
+			return "", fmt.Errorf("precondition failed: scaling to zero requires explicit confirmation (confirmScaleToZero)")
+		}
+
+		switch kind {
+		case "deployment":
+			dep, err := e.client.AppsV1().Deployments(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+			if err != nil {
+				return "", fmt.Errorf("precondition failed: deployment not found: %w", err)
+			}
+			currReplicas := int32(1)
+			if dep.Spec.Replicas != nil {
+				currReplicas = *dep.Spec.Replicas
+			}
+			return strconv.Itoa(int(currReplicas)), nil
+		case "statefulset":
+			sts, err := e.client.AppsV1().StatefulSets(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+			if err != nil {
+				return "", fmt.Errorf("precondition failed: statefulset not found: %w", err)
+			}
+			currReplicas := int32(1)
+			if sts.Spec.Replicas != nil {
+				currReplicas = *sts.Spec.Replicas
+			}
+			return strconv.Itoa(int(currReplicas)), nil
+		default:
+			return "", fmt.Errorf("precondition failed: unsupported workload kind for ScaleWorkload: %s", action.Target.Kind)
+		}
+
+	case "SuspendCronJob":
+		cj, err := e.client.BatchV1().CronJobs(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+		if err != nil {
+			return "", fmt.Errorf("precondition failed: cronjob not found: %w", err)
+		}
+		isSuspended := cj.Spec.Suspend != nil && *cj.Spec.Suspend
+		return strconv.FormatBool(isSuspended), nil
+
+	case "ResumeCronJob":
+		cj, err := e.client.BatchV1().CronJobs(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+		if err != nil {
+			return "", fmt.Errorf("precondition failed: cronjob not found: %w", err)
+		}
+		isSuspended := cj.Spec.Suspend != nil && *cj.Spec.Suspend
+		return strconv.FormatBool(isSuspended), nil
+
+	case "TriggerCronJob":
+		cj, err := e.client.BatchV1().CronJobs(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+		if err != nil {
+			return "", fmt.Errorf("precondition failed: cronjob not found: %w", err)
+		}
+		if len(cj.Spec.JobTemplate.Spec.Template.Spec.Containers) == 0 {
+			return "", fmt.Errorf("precondition failed: cronjob has no containers defined in template")
+		}
+		return cj.Name, nil
+
+	case "RerunJob":
+		job, err := e.client.BatchV1().Jobs(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+		if err != nil {
+			return "", fmt.Errorf("precondition failed: source job not found: %w", err)
+		}
+		return job.Name, nil
+
+	case "DeleteJob":
+		job, err := e.client.BatchV1().Jobs(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+		if err != nil {
+			return "", fmt.Errorf("precondition failed: target job not found: %w", err)
+		}
+		return string(job.UID), nil
+
+	case "CordonNode", "UncordonNode":
+		node, err := e.client.CoreV1().Nodes().Get(ctx, action.Target.Name, metav1.GetOptions{})
+		if err != nil {
+			return "", fmt.Errorf("precondition failed: node not found: %w", err)
+		}
+		return strconv.FormatBool(node.Spec.Unschedulable), nil
+
+	case "DrainNode":
+		if !isParamTrue(action.Parameters, "confirmDrain") {
+			return "", fmt.Errorf("precondition failed: node drain requires explicit confirmation (confirmDrain)")
+		}
+		node, err := e.client.CoreV1().Nodes().Get(ctx, action.Target.Name, metav1.GetOptions{})
+		if err != nil {
+			return "", fmt.Errorf("precondition failed: target node not found: %w", err)
+		}
+		return strconv.FormatBool(node.Spec.Unschedulable), nil
 	}
 
 	return "", fmt.Errorf("unsupported action type: %s", actionType)
@@ -305,6 +438,9 @@ func (e *Executor) Execute(ctx context.Context, action *transport.RemediationAct
 			_, err := e.client.AppsV1().Deployments(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 			return err
 		}
+
+	case "DeletePod":
+		return e.client.CoreV1().Pods(action.Target.Namespace).Delete(ctx, action.Target.Name, metav1.DeleteOptions{})
 
 	case "RolloutRestart":
 		restartedAt := time.Now().Format(time.RFC3339)
@@ -400,12 +536,198 @@ func (e *Executor) Execute(ctx context.Context, action *transport.RemediationAct
 		if err != nil {
 			return fmt.Errorf("invalid replica count %q: %w", action.ProposedValue, err)
 		}
-		if targetReplicas <= 0 {
-			return fmt.Errorf("refusing to scale deployment to zero")
+		if targetReplicas < 0 {
+			return fmt.Errorf("negative replica count (%d) is prohibited", targetReplicas)
+		}
+		if targetReplicas == 0 && !isParamTrue(action.Parameters, "confirmScaleToZero") {
+			return fmt.Errorf("refusing to scale deployment to zero without explicit confirmation")
 		}
 		patch := fmt.Sprintf(`{"spec":{"replicas":%d}}`, targetReplicas)
 		_, err = e.client.AppsV1().Deployments(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, []byte(patch), metav1.PatchOptions{})
 		return err
+
+	case "ScaleWorkload":
+		kind := strings.ToLower(action.Target.Kind)
+		targetReplicas, err := strconv.Atoi(action.ProposedValue)
+		if err != nil {
+			return fmt.Errorf("invalid replica count %q: %w", action.ProposedValue, err)
+		}
+		if targetReplicas < 0 {
+			return fmt.Errorf("negative replica count (%d) is prohibited", targetReplicas)
+		}
+		if targetReplicas == 0 && !isParamTrue(action.Parameters, "confirmScaleToZero") {
+			return fmt.Errorf("refusing to scale workload to zero without explicit confirmation")
+		}
+		patch := fmt.Sprintf(`{"spec":{"replicas":%d}}`, targetReplicas)
+
+		switch kind {
+		case "deployment":
+			_, err = e.client.AppsV1().Deployments(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, []byte(patch), metav1.PatchOptions{})
+			return err
+		case "statefulset":
+			_, err = e.client.AppsV1().StatefulSets(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, []byte(patch), metav1.PatchOptions{})
+			return err
+		default:
+			return fmt.Errorf("unsupported workload kind for ScaleWorkload: %s", action.Target.Kind)
+		}
+
+	case "SuspendCronJob":
+		patch := `{"spec":{"suspend":true}}`
+		_, err := e.client.BatchV1().CronJobs(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, []byte(patch), metav1.PatchOptions{})
+		return err
+
+	case "ResumeCronJob":
+		patch := `{"spec":{"suspend":false}}`
+		_, err := e.client.BatchV1().CronJobs(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, []byte(patch), metav1.PatchOptions{})
+		return err
+
+	case "TriggerCronJob":
+		cj, err := e.client.BatchV1().CronJobs(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("get cronjob: %w", err)
+		}
+		timestampSuffix := time.Now().Format("20060102150405")
+		jobName := fmt.Sprintf("%s-manual-%s", cj.Name, timestampSuffix)
+		if len(jobName) > 63 {
+			jobName = jobName[:63]
+		}
+
+		isController := true
+		job := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      jobName,
+				Namespace: cj.Namespace,
+				Labels: map[string]string{
+					"cronjob.kubernetes.io/instantiated-by": cj.Name,
+					"app.kubernetes.io/managed-by":          "skyops",
+				},
+				Annotations: map[string]string{
+					"cronjob.kubernetes.io/instantiate": "manual",
+				},
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: "batch/v1",
+						Kind:       "CronJob",
+						Name:       cj.Name,
+						UID:        cj.UID,
+						Controller: &isController,
+					},
+				},
+			},
+			Spec: cj.Spec.JobTemplate.Spec,
+		}
+		_, err = e.client.BatchV1().Jobs(cj.Namespace).Create(ctx, job, metav1.CreateOptions{})
+		return err
+
+	case "RerunJob":
+		sourceJob, err := e.client.BatchV1().Jobs(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("get source job: %w", err)
+		}
+		timestampSuffix := time.Now().Format("20060102150405")
+		newJobName := fmt.Sprintf("%s-rerun-%s", sourceJob.Name, timestampSuffix)
+		if len(newJobName) > 63 {
+			newJobName = newJobName[:63]
+		}
+		newJob := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        newJobName,
+				Namespace:   sourceJob.Namespace,
+				Labels:      sourceJob.Labels,
+				Annotations: sourceJob.Annotations,
+			},
+			Spec: batchv1.JobSpec{
+				Template:                sourceJob.Spec.Template,
+				BackoffLimit:            sourceJob.Spec.BackoffLimit,
+				Completions:             sourceJob.Spec.Completions,
+				Parallelism:             sourceJob.Spec.Parallelism,
+				ActiveDeadlineSeconds:   sourceJob.Spec.ActiveDeadlineSeconds,
+				TTLSecondsAfterFinished: sourceJob.Spec.TTLSecondsAfterFinished,
+			},
+		}
+		_, err = e.client.BatchV1().Jobs(sourceJob.Namespace).Create(ctx, newJob, metav1.CreateOptions{})
+		return err
+
+	case "DeleteJob":
+		propagation := metav1.DeletePropagationBackground
+		return e.client.BatchV1().Jobs(action.Target.Namespace).Delete(ctx, action.Target.Name, metav1.DeleteOptions{
+			PropagationPolicy: &propagation,
+		})
+
+	case "CordonNode":
+		patch := `{"spec":{"unschedulable":true}}`
+		_, err := e.client.CoreV1().Nodes().Patch(ctx, action.Target.Name, types.StrategicMergePatchType, []byte(patch), metav1.PatchOptions{})
+		return err
+
+	case "UncordonNode":
+		patch := `{"spec":{"unschedulable":false}}`
+		_, err := e.client.CoreV1().Nodes().Patch(ctx, action.Target.Name, types.StrategicMergePatchType, []byte(patch), metav1.PatchOptions{})
+		return err
+
+	case "DrainNode":
+		// 1. Cordon the node first
+		cordonPatch := `{"spec":{"unschedulable":true}}`
+		if _, err := e.client.CoreV1().Nodes().Patch(ctx, action.Target.Name, types.StrategicMergePatchType, []byte(cordonPatch), metav1.PatchOptions{}); err != nil {
+			return fmt.Errorf("drain failed: unable to cordon node: %w", err)
+		}
+
+		// 2. Query all pods scheduled on this node
+		pods, err := e.client.CoreV1().Pods("").List(ctx, metav1.ListOptions{
+			FieldSelector: fmt.Sprintf("spec.nodeName=%s", action.Target.Name),
+		})
+		if err != nil {
+			return fmt.Errorf("drain failed: unable to list pods on node: %w", err)
+		}
+
+		deleteEmptyDir := isParamTrue(action.Parameters, "deleteEmptyDirData")
+
+		// 3. Evict eligible pods
+		for i := range pods.Items {
+			pod := &pods.Items[i]
+
+			// Skip mirror pods
+			if _, isMirror := pod.Annotations[corev1.MirrorPodAnnotationKey]; isMirror {
+				continue
+			}
+
+			// Skip DaemonSet managed pods
+			isDaemonSet := false
+			for _, owner := range pod.OwnerReferences {
+				if owner.Kind == "DaemonSet" {
+					isDaemonSet = true
+					break
+				}
+			}
+			if isDaemonSet {
+				continue
+			}
+
+			// Check emptyDir storage
+			hasEmptyDir := false
+			for _, v := range pod.Spec.Volumes {
+				if v.EmptyDir != nil {
+					hasEmptyDir = true
+					break
+				}
+			}
+			if hasEmptyDir && !deleteEmptyDir {
+				return fmt.Errorf("drain blocked: pod %q has local emptyDir data and deleteEmptyDirData was not confirmed", pod.Name)
+			}
+
+			// Evict pod using PolicyV1 Eviction API
+			eviction := &policyv1.Eviction{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      pod.Name,
+					Namespace: pod.Namespace,
+				},
+			}
+			if err := e.client.PolicyV1().Evictions(pod.Namespace).Evict(ctx, eviction); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return fmt.Errorf("drain evicted failed for pod %s/%s: %w", pod.Namespace, pod.Name, err)
+				}
+			}
+		}
+		return nil
 	}
 
 	return fmt.Errorf("unsupported execution action: %s", actionType)
@@ -459,7 +781,6 @@ func (e *Executor) Verify(ctx context.Context, action *transport.RemediationActi
 
 						for _, c := range pod.Spec.Containers {
 							if c.Name == action.Target.Container && c.Image == action.ProposedValue {
-								// Check ready status if container statuses are present, or verify spec in unit/fake environment
 								if len(pod.Status.ContainerStatuses) == 0 || pod.Status.Phase == corev1.PodRunning {
 									return nil // Verified
 								}
@@ -477,7 +798,6 @@ func (e *Executor) Verify(ctx context.Context, action *transport.RemediationActi
 				if action.Target.Kind == "Pod" {
 					pod, err := e.client.CoreV1().Pods(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
 					if err == nil {
-						// Verify target pod is Running and all containers are Ready
 						if pod.Status.Phase == corev1.PodRunning {
 							readyCount := 0
 							for _, cs := range pod.Status.ContainerStatuses {
@@ -503,7 +823,7 @@ func (e *Executor) Verify(ctx context.Context, action *transport.RemediationActi
 										}
 									}
 									if readyCount == len(p.Spec.Containers) && len(p.Spec.Containers) > 0 {
-										return nil // Replacement pod verified Running and Ready
+										return nil
 									}
 								}
 							}
@@ -520,6 +840,12 @@ func (e *Executor) Verify(ctx context.Context, action *transport.RemediationActi
 							return nil
 						}
 					}
+				}
+
+			case "DeletePod":
+				_, err := e.client.CoreV1().Pods(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+				if apierrors.IsNotFound(err) {
+					return nil // Verified deleted
 				}
 
 			case "RolloutRestart":
@@ -568,12 +894,101 @@ func (e *Executor) Verify(ctx context.Context, action *transport.RemediationActi
 				dep, err := e.client.AppsV1().Deployments(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
 				if err == nil && dep.Spec.Replicas != nil {
 					target, _ := strconv.Atoi(action.ProposedValue)
-					if int(*dep.Spec.Replicas) == target &&
-						int(dep.Status.UpdatedReplicas) == target &&
-						int(dep.Status.AvailableReplicas) == target &&
-						int(dep.Status.ReadyReplicas) == target &&
-						dep.Status.UnavailableReplicas == 0 {
-						return nil // Verified
+					if int(*dep.Spec.Replicas) == target {
+						if target == 0 {
+							if dep.Status.Replicas == 0 || dep.Status.AvailableReplicas == 0 {
+								return nil // Verified scaled to 0
+							}
+						} else {
+							if int(dep.Status.UpdatedReplicas) == target &&
+								int(dep.Status.AvailableReplicas) == target &&
+								int(dep.Status.ReadyReplicas) == target &&
+								dep.Status.UnavailableReplicas == 0 {
+								return nil // Verified scaled up/down
+							}
+						}
+					}
+				}
+
+			case "ScaleWorkload":
+				kind := strings.ToLower(action.Target.Kind)
+				target, _ := strconv.Atoi(action.ProposedValue)
+				if kind == "deployment" {
+					dep, err := e.client.AppsV1().Deployments(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+					if err == nil && dep.Spec.Replicas != nil && int(*dep.Spec.Replicas) == target {
+						if target == 0 || (int(dep.Status.ReadyReplicas) == target && dep.Status.UnavailableReplicas == 0) {
+							return nil
+						}
+					}
+				} else if kind == "statefulset" {
+					sts, err := e.client.AppsV1().StatefulSets(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+					if err == nil && sts.Spec.Replicas != nil && int(*sts.Spec.Replicas) == target {
+						if target == 0 || int(sts.Status.ReadyReplicas) == target {
+							return nil
+						}
+					}
+				}
+
+			case "SuspendCronJob":
+				cj, err := e.client.BatchV1().CronJobs(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+				if err == nil && cj.Spec.Suspend != nil && *cj.Spec.Suspend {
+					return nil // Verified suspended
+				}
+
+			case "ResumeCronJob":
+				cj, err := e.client.BatchV1().CronJobs(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+				if err == nil && (cj.Spec.Suspend == nil || !*cj.Spec.Suspend) {
+					return nil // Verified active
+				}
+
+			case "TriggerCronJob", "RerunJob":
+				return nil // Job creation verified upon successful API Create call
+
+			case "DeleteJob":
+				_, err := e.client.BatchV1().Jobs(action.Target.Namespace).Get(ctx, action.Target.Name, metav1.GetOptions{})
+				if apierrors.IsNotFound(err) {
+					return nil // Verified deleted
+				}
+
+			case "CordonNode":
+				node, err := e.client.CoreV1().Nodes().Get(ctx, action.Target.Name, metav1.GetOptions{})
+				if err == nil && node.Spec.Unschedulable {
+					return nil // Verified cordoned
+				}
+
+			case "UncordonNode":
+				node, err := e.client.CoreV1().Nodes().Get(ctx, action.Target.Name, metav1.GetOptions{})
+				if err == nil && !node.Spec.Unschedulable {
+					return nil // Verified uncordoned
+				}
+
+			case "DrainNode":
+				node, err := e.client.CoreV1().Nodes().Get(ctx, action.Target.Name, metav1.GetOptions{})
+				if err == nil && node.Spec.Unschedulable {
+					pods, listErr := e.client.CoreV1().Pods("").List(ctx, metav1.ListOptions{
+						FieldSelector: fmt.Sprintf("spec.nodeName=%s", action.Target.Name),
+					})
+					if listErr == nil {
+						remainingEligible := 0
+						for i := range pods.Items {
+							p := &pods.Items[i]
+							if _, isMirror := p.Annotations[corev1.MirrorPodAnnotationKey]; isMirror {
+								continue
+							}
+							isDaemon := false
+							for _, o := range p.OwnerReferences {
+								if o.Kind == "DaemonSet" {
+									isDaemon = true
+									break
+								}
+							}
+							if !isDaemon {
+								remainingEligible++
+							}
+						}
+						if remainingEligible == 0 {
+							return nil // Drain verified: zero eligible non-daemon pods remain
+						}
 					}
 				}
 			}
@@ -597,7 +1012,6 @@ func (e *Executor) Rollback(ctx context.Context, action *transport.RemediationAc
 			return err
 		}
 	case "RolloutRestart":
-		// Restore previous restartedAt annotation or empty
 		patchMap := map[string]interface{}{
 			"spec": map[string]interface{}{
 				"template": map[string]interface{}{
@@ -613,7 +1027,6 @@ func (e *Executor) Rollback(ctx context.Context, action *transport.RemediationAc
 		_, err := e.client.AppsV1().Deployments(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		return err
 	case "RollbackDeployment":
-		// Restore previous pod template
 		var prevTemplate corev1.PodTemplateSpec
 		if err := json.Unmarshal([]byte(previousState), &prevTemplate); err == nil {
 			patchMap := map[string]interface{}{
@@ -632,6 +1045,29 @@ func (e *Executor) Rollback(ctx context.Context, action *transport.RemediationAc
 			_, err = e.client.AppsV1().Deployments(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, []byte(patch), metav1.PatchOptions{})
 			return err
 		}
+	case "ScaleWorkload":
+		prevReplicas, err := strconv.Atoi(previousState)
+		if err == nil {
+			kind := strings.ToLower(action.Target.Kind)
+			patch := fmt.Sprintf(`{"spec":{"replicas":%d}}`, prevReplicas)
+			if kind == "deployment" {
+				_, err = e.client.AppsV1().Deployments(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, []byte(patch), metav1.PatchOptions{})
+				return err
+			} else if kind == "statefulset" {
+				_, err = e.client.AppsV1().StatefulSets(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, []byte(patch), metav1.PatchOptions{})
+				return err
+			}
+		}
+	case "SuspendCronJob":
+		prevSuspend, _ := strconv.ParseBool(previousState)
+		patch := fmt.Sprintf(`{"spec":{"suspend":%t}}`, prevSuspend)
+		_, err := e.client.BatchV1().CronJobs(action.Target.Namespace).Patch(ctx, action.Target.Name, types.StrategicMergePatchType, []byte(patch), metav1.PatchOptions{})
+		return err
+	case "CordonNode", "UncordonNode":
+		prevUnschedulable, _ := strconv.ParseBool(previousState)
+		patch := fmt.Sprintf(`{"spec":{"unschedulable":%t}}`, prevUnschedulable)
+		_, err := e.client.CoreV1().Nodes().Patch(ctx, action.Target.Name, types.StrategicMergePatchType, []byte(patch), metav1.PatchOptions{})
+		return err
 	}
 	return nil
 }

@@ -153,6 +153,9 @@ func main() {
 	if liveK8sVersion != "" {
 		heartbeatService.SetK8sVersion(liveK8sVersion)
 	}
+	if clientGoK8s != nil {
+		heartbeatService.SetK8sClient(clientGoK8s)
+	}
 	heartbeatService.SetQueue(telemetryQueue)
 	if durableSpool != nil {
 		heartbeatService.SetSpool(durableSpool)

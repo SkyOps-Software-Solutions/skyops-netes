@@ -1563,13 +1563,16 @@ app.post('/api/v1/agent/register', requireAgentAuth, (req: AuthenticatedAgentReq
 });
 
 app.post('/api/v1/agent/heartbeat', requireAgentAuth, (req: AuthenticatedAgentRequest, res) => {
-  const { agentVersion, k8sVersion, nodeCount, podCount } = req.body;
+  const { agentVersion, k8sVersion, nodeCount, podCount, operationalCapabilities, permissionTier, capabilities } = req.body;
   const recorded = store.recordAgentHeartbeat(
     req.clusterId!,
     agentVersion || AGENT_VERSION,
     k8sVersion,
     nodeCount,
-    podCount
+    podCount,
+    operationalCapabilities,
+    permissionTier,
+    capabilities
   );
 
   if (!recorded) {
@@ -1838,7 +1841,20 @@ const ActionResultSchema = z.object({
   actionId: z.string().min(1).optional(),
   success: z.boolean().default(false),
   message: z.string().min(1).max(8192),
-  state: z.enum(['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED']).optional(),
+  state: z
+    .enum([
+      'PENDING',
+      'RUNNING',
+      'EXECUTING',
+      'VERIFYING',
+      'SUCCEEDED',
+      'FAILED',
+      'ROLLING_BACK',
+      'ROLLED_BACK',
+      'CANCELLED',
+      'REJECTED'
+    ])
+    .optional(),
   executionContext: z.record(z.string(), z.any()).optional(),
   runtimeTraces: z.array(z.any()).optional(),
   stdErr: z.string().optional(),
@@ -2669,7 +2685,8 @@ const ClusterOperationSchema = z.object({
     'SuspendCronJob',
     'ResumeCronJob',
     'TriggerCronJob',
-    'RerunJob'
+    'RerunJob',
+    'DeleteJob'
   ]),
   targetKind: z.string().min(1),
   targetName: z.string().min(1),
@@ -2712,12 +2729,31 @@ app.post(
       });
     }
 
+    // Node operations require elevated role: OWNER, ADMIN, or SRE
+    const nodeActions = ['CordonNode', 'UncordonNode', 'DrainNode'];
+    if (nodeActions.includes(parsed.data.actionType)) {
+      const userRole = (req as any).userRole || (req as any).membership?.role;
+      if (userRole && !['OWNER', 'ADMIN', 'SRE'].includes(userRole)) {
+        return res.status(403).json({
+          error: 'Forbidden: Platform infrastructure operations on worker nodes require Administrator or SRE privileges.'
+        });
+      }
+    }
+
+    const opPayload = {
+      ...parsed.data,
+      confirmScaleToZero: parsed.data.confirmScaleToZero ?? (parsed.data.parameters as any)?.confirmScaleToZero,
+      confirmNakedPodDelete: parsed.data.confirmNakedPodDelete ?? (parsed.data.parameters as any)?.confirmNakedPodDelete,
+      confirmDrain: parsed.data.confirmDrain ?? (parsed.data.parameters as any)?.confirmDrain,
+      drainOptions: parsed.data.drainOptions ?? (parsed.data.parameters as any)?.drainOptions
+    };
+
     try {
       const result = store.executeClusterResourceOperation(
         clusterId,
         req.orgId!,
         { id: req.user!.id, name: req.user!.name, email: req.user!.email },
-        parsed.data
+        opPayload
       );
 
       auditService.record({
@@ -2737,7 +2773,8 @@ app.post(
           targetNamespace: parsed.data.targetNamespace,
           parameters: parsed.data.parameters,
           actionId: result.action.id,
-          status: result.action.status
+          status: result.action.status,
+          executionMode: (result.action as any).executionMode || 'LIVE'
         }
       });
 
@@ -2750,7 +2787,14 @@ app.post(
     } catch (err: any) {
       console.error(`[SkyOps API] Cluster operation error on ${clusterId}:`, err);
       const isConflict = err?.message?.startsWith('Conflict:');
-      const statusCode = isConflict ? 409 : 400;
+      const isRbacDenied = err?.message?.startsWith('RBAC_DENIED:');
+      const isDisconnected = err?.message?.startsWith('Cannot execute mutation: Cluster agent');
+      const isNotFound = err?.message?.includes('not found');
+      let statusCode = 400;
+      if (isConflict) statusCode = 409;
+      else if (isRbacDenied) statusCode = 403;
+      else if (isDisconnected) statusCode = 503;
+      else if (isNotFound) statusCode = 404;
       res.status(statusCode).json({ error: err?.message || 'Failed to execute cluster operation' });
     }
   }

@@ -74,7 +74,8 @@ import {
   IncidentActionRequest,
   AvailableAction,
   AppNotification,
-  PodLogAlertSubscription
+  PodLogAlertSubscription,
+  OperationalCapabilities
 } from '../src/types/index';
 import { ResourceRightsizingRecommendation } from '../src/types/enterprise';
 import { TelemetryStore } from './telemetry_store';
@@ -3025,10 +3026,23 @@ export class DataStore {
     agentVersion?: string,
     k8sVersion?: string,
     nodeCount?: number,
-    podCount?: number
+    podCount?: number,
+    operationalCapabilities?: OperationalCapabilities,
+    permissionTier?: string,
+    capabilities?: string[]
   ): boolean {
     const cluster = this.clusters.get(clusterId);
     if (!cluster) return false;
+
+    if (operationalCapabilities) {
+      cluster.operationalCapabilities = operationalCapabilities;
+    }
+    if (permissionTier) {
+      cluster.permissionTier = permissionTier;
+    }
+    if (Array.isArray(capabilities)) {
+      cluster.capabilities = capabilities;
+    }
 
     const now = Date.now();
     cluster.lastHeartbeat = now;
@@ -5977,6 +5991,24 @@ export class DataStore {
 
     const defaultWorkloads: KubernetesResource[] = [
       {
+        id: `${clusterId}:Deployment:default:checkout-api`,
+        clusterId,
+        kind: 'Deployment',
+        name: 'checkout-api',
+        namespace: 'default',
+        status: '0/1',
+        health: 'CRITICAL',
+        createdAt: now - 3600000,
+        updatedAt: now,
+        uid: `deploy-${clusterId}-checkout-api`,
+        specSummary: { replicas: 1 },
+        statusSummary: { replicas: 1, readyReplicas: 0, availableReplicas: 0, unavailableReplicas: 1 },
+        annotations: {
+          'deployment.kubernetes.io/revision': '2'
+        },
+        conditions: [{ type: 'Available', status: 'False', reason: 'MinimumReplicasUnavailable', message: 'Deployment does not have minimum availability.' }]
+      },
+      {
         id: `${clusterId}:Deployment:kube-system:coredns`,
         clusterId,
         kind: 'Deployment',
@@ -5986,8 +6018,12 @@ export class DataStore {
         health: 'HEALTHY',
         createdAt: now - 86400000,
         updatedAt: now,
+        uid: `deploy-${clusterId}-coredns`,
         specSummary: { replicas: 2 },
         statusSummary: { replicas: 2, readyReplicas: 2, availableReplicas: 2, updatedReplicas: 2 },
+        annotations: {
+          'deployment.kubernetes.io/revision': '2'
+        },
         conditions: [{ type: 'Available', status: 'True' }]
       },
       {
@@ -6000,6 +6036,7 @@ export class DataStore {
         health: 'HEALTHY',
         createdAt: now - 86400000,
         updatedAt: now,
+        uid: `deploy-${clusterId}-local-path-provisioner`,
         specSummary: { replicas: 1 },
         statusSummary: { replicas: 1, readyReplicas: 1, availableReplicas: 1, updatedReplicas: 1 },
         conditions: [{ type: 'Available', status: 'True' }]
@@ -6014,6 +6051,7 @@ export class DataStore {
         health: 'HEALTHY',
         createdAt: now - 86400000,
         updatedAt: now,
+        uid: `ds-${clusterId}-kube-proxy`,
         specSummary: { replicas: 2 },
         statusSummary: { currentNumberScheduled: 2, numberReady: 2, desiredNumberScheduled: 2 },
         conditions: []
@@ -6028,6 +6066,7 @@ export class DataStore {
         health: 'HEALTHY',
         createdAt: now - 86400000,
         updatedAt: now,
+        uid: `ds-${clusterId}-flannel`,
         specSummary: { replicas: 2 },
         statusSummary: { currentNumberScheduled: 2, numberReady: 2, desiredNumberScheduled: 2 },
         conditions: []
@@ -6042,23 +6081,10 @@ export class DataStore {
         health: 'HEALTHY',
         createdAt: now - 86400000,
         updatedAt: now,
+        uid: `deploy-${clusterId}-ingress-nginx-controller`,
         specSummary: { replicas: 1 },
         statusSummary: { replicas: 1, readyReplicas: 1, availableReplicas: 1, updatedReplicas: 1 },
         conditions: [{ type: 'Available', status: 'True' }]
-      },
-      {
-        id: `${clusterId}:Deployment:default:checkout-api`,
-        clusterId,
-        kind: 'Deployment',
-        name: 'checkout-api',
-        namespace: 'default',
-        status: '0/1',
-        health: 'CRITICAL',
-        createdAt: now - 3600000,
-        updatedAt: now,
-        specSummary: { replicas: 1 },
-        statusSummary: { replicas: 1, readyReplicas: 0, availableReplicas: 0, unavailableReplicas: 1 },
-        conditions: [{ type: 'Available', status: 'False', reason: 'MinimumReplicasUnavailable', message: 'Deployment does not have minimum availability.' }]
       }
     ];
 
@@ -6278,6 +6304,10 @@ export class DataStore {
         name: 'checkout-api-7b89f6d4d-x98pk',
         namespace: 'default',
         nodeName: 'node-worker-01',
+        uid: `pod-${clusterId}-checkout-api-x98pk`,
+        ownerReferences: [
+          { kind: 'ReplicaSet', name: 'checkout-api-7b89f6d4d', controller: true, uid: `rs-${clusterId}-checkout-api` }
+        ],
         status: 'CrashLoopBackOff',
         health: 'CRITICAL',
         restartCount: 14,
@@ -6310,6 +6340,35 @@ export class DataStore {
             objectName: 'checkout-api-7b89f6d4d-x98pk',
             namespace: 'default'
           }
+        ]
+      },
+      {
+        id: `${clusterId}:Pod:default:standalone-debug-runner`,
+        clusterId,
+        kind: 'Pod',
+        name: 'standalone-debug-runner',
+        namespace: 'default',
+        nodeName: 'node-worker-01',
+        uid: `pod-${clusterId}-standalone-debug`,
+        ownerReferences: [],
+        status: 'Running',
+        health: 'HEALTHY',
+        restartCount: 0,
+        cpuUsage: 0.05,
+        memoryUsage: 8.0,
+        createdAt: now - 7200000,
+        updatedAt: now,
+        containers: [
+          {
+            name: 'debug',
+            image: 'busybox:latest',
+            ready: true,
+            state: 'running',
+            restartCount: 0
+          }
+        ],
+        conditions: [
+          { type: 'Ready', status: 'True' }
         ]
       }
     ];
@@ -9214,8 +9273,222 @@ export class DataStore {
       }
     }
 
+    if (isSuccess && action.target?.name) {
+      this.applyLiveResourceMutation(action.clusterId, action);
+    }
+
     this.saveSnapshot();
     return action;
+  }
+
+  public checkAgentCapability(
+    actionType: string,
+    targetKind: string,
+    caps?: OperationalCapabilities
+  ): { supported: boolean; reason?: string } {
+    if (!caps) {
+      return {
+        supported: false,
+        reason: 'Cluster agent capability state is UNKNOWN. The connected agent has not yet reported verified permissions via SelfSubjectAccessReview.'
+      };
+    }
+
+    switch (actionType) {
+      case 'DeletePod':
+        return caps.canDeletePods
+          ? { supported: true }
+          : { supported: false, reason: 'Cluster agent RBAC denies Pod deletion (missing delete on pods).' };
+      case 'RestartPod':
+        if (targetKind.toLowerCase() === 'pod') {
+          return caps.canDeletePods
+            ? { supported: true }
+            : { supported: false, reason: 'Cluster agent RBAC denies Pod restart (missing delete on pods).' };
+        }
+        return caps.canRestartDeployments
+          ? { supported: true }
+          : { supported: false, reason: 'Cluster agent RBAC denies Deployment rollout restart (missing patch on deployments).' };
+      case 'RolloutRestart':
+        return caps.canRestartDeployments
+          ? { supported: true }
+          : { supported: false, reason: 'Cluster agent RBAC denies RolloutRestart (missing patch on deployments/statefulsets/daemonsets).' };
+      case 'RollbackDeployment':
+        return caps.canRestartDeployments
+          ? { supported: true }
+          : { supported: false, reason: 'Cluster agent RBAC denies RollbackDeployment (missing patch on deployments).' };
+      case 'ScaleDeployment':
+        return caps.canScaleDeployments
+          ? { supported: true }
+          : { supported: false, reason: 'Cluster agent RBAC denies ScaleDeployment (missing patch/update on deployments/scale).' };
+      case 'ScaleWorkload':
+        if (targetKind.toLowerCase() === 'statefulset') {
+          return caps.canScaleStatefulSets
+            ? { supported: true }
+            : { supported: false, reason: 'Cluster agent RBAC denies ScaleWorkload for StatefulSets (missing patch/update on statefulsets/scale).' };
+        }
+        return caps.canScaleDeployments
+          ? { supported: true }
+          : { supported: false, reason: 'Cluster agent RBAC denies ScaleWorkload for Deployments (missing patch/update on deployments/scale).' };
+      case 'SuspendCronJob':
+      case 'ResumeCronJob':
+        return caps.canMutateCronJobs
+          ? { supported: true }
+          : { supported: false, reason: 'Cluster agent RBAC denies CronJob mutation (missing patch/update on cronjobs).' };
+      case 'TriggerCronJob':
+      case 'RerunJob':
+        return caps.canCreateJobs
+          ? { supported: true }
+          : { supported: false, reason: 'Cluster agent RBAC denies Job creation (missing create on jobs).' };
+      case 'DeleteJob':
+        return caps.canDeleteJobs
+          ? { supported: true }
+          : { supported: false, reason: 'Cluster agent RBAC denies Job deletion (missing delete on jobs).' };
+      case 'CordonNode':
+      case 'UncordonNode':
+        return caps.canCordonNodes
+          ? { supported: true }
+          : { supported: false, reason: 'Cluster agent RBAC denies Node cordon/uncordon (missing patch/update on nodes). Platform Admin tier required.' };
+      case 'DrainNode':
+        return caps.canDrainNodes
+          ? { supported: true }
+          : { supported: false, reason: 'Cluster agent RBAC denies Node drain (missing patch on nodes or create on pods/eviction). Platform Admin tier required.' };
+      default:
+        return { supported: false, reason: `Unknown action type: ${actionType}` };
+    }
+  }
+
+  private applyLiveResourceMutation(clusterId: string, action: RemediationAction) {
+    const clusterResources = this.resources.get(clusterId);
+    if (!clusterResources || !action.target) return;
+    const { kind, namespace, name } = action.target;
+    const targetNs = (namespace || 'default').toLowerCase();
+    const actionType = action.actionType || action.type;
+    const now = Date.now();
+
+    const targetRes = clusterResources.find(
+      (r) =>
+        r.kind.toLowerCase() === kind.toLowerCase() &&
+        r.name.toLowerCase() === name.toLowerCase() &&
+        (kind.toLowerCase() === 'node' || !r.namespace || r.namespace.toLowerCase() === targetNs)
+    );
+
+    if (!targetRes && actionType !== 'TriggerCronJob' && actionType !== 'RerunJob') return;
+
+    if (actionType === 'RolloutRestart' && targetRes) {
+      if (!targetRes.annotations) targetRes.annotations = {};
+      targetRes.annotations['kubectl.kubernetes.io/restartedAt'] = action.proposedValue || new Date(now).toISOString();
+      if (targetRes.kind === 'Deployment') {
+        const currentRev = parseInt(targetRes.annotations['deployment.kubernetes.io/revision'] || '1', 10);
+        targetRes.annotations['deployment.kubernetes.io/revision'] = String(currentRev + 1);
+      }
+      targetRes.status = 'Running';
+      targetRes.health = 'HEALTHY';
+      targetRes.updatedAt = now;
+    } else if ((actionType === 'ScaleDeployment' || actionType === 'ScaleWorkload') && targetRes) {
+      const reps = parseInt(action.proposedValue, 10);
+      if (!isNaN(reps)) {
+        targetRes.specReplicas = reps;
+        targetRes.readyReplicas = reps;
+        targetRes.availableReplicas = reps;
+        targetRes.updatedReplicas = reps;
+        if (targetRes.specSummary) (targetRes.specSummary as any).replicas = reps;
+        if (targetRes.statusSummary) {
+          (targetRes.statusSummary as any).replicas = reps;
+          (targetRes.statusSummary as any).readyReplicas = reps;
+          (targetRes.statusSummary as any).availableReplicas = reps;
+          (targetRes.statusSummary as any).unavailableReplicas = 0;
+        }
+        targetRes.status = reps === 0 ? 'ScaledToZero' : 'Running';
+        targetRes.health = reps === 0 ? 'WARNING' : 'HEALTHY';
+        targetRes.updatedAt = now;
+      }
+    } else if (actionType === 'RollbackDeployment' && targetRes) {
+      if (!targetRes.annotations) targetRes.annotations = {};
+      targetRes.annotations['deployment.kubernetes.io/revision'] = action.proposedValue;
+      targetRes.updatedAt = now;
+    } else if ((actionType === 'DeletePod' || actionType === 'RestartPod') && targetRes) {
+      const hasController = Boolean(targetRes.ownerReferences && targetRes.ownerReferences.length > 0);
+      if (hasController) {
+        targetRes.updatedAt = now;
+        targetRes.restartCount = (targetRes.restartCount || 0) + 1;
+        targetRes.status = 'Running';
+        targetRes.health = 'HEALTHY';
+      } else {
+        const idx = clusterResources.findIndex((r) => r.id === targetRes.id);
+        if (idx !== -1) clusterResources.splice(idx, 1);
+      }
+    } else if (actionType === 'CordonNode' && targetRes) {
+      if (!targetRes.specSummary) targetRes.specSummary = {};
+      (targetRes.specSummary as any).unschedulable = true;
+      targetRes.status = 'SchedulingDisabled';
+      targetRes.health = 'WARNING';
+      targetRes.updatedAt = now;
+    } else if (actionType === 'UncordonNode' && targetRes) {
+      if (!targetRes.specSummary) targetRes.specSummary = {};
+      (targetRes.specSummary as any).unschedulable = false;
+      targetRes.status = 'Ready';
+      targetRes.health = 'HEALTHY';
+      targetRes.updatedAt = now;
+    } else if (actionType === 'DrainNode' && targetRes) {
+      if (!targetRes.specSummary) targetRes.specSummary = {};
+      (targetRes.specSummary as any).unschedulable = true;
+      targetRes.status = 'SchedulingDisabled';
+      targetRes.health = 'WARNING';
+      targetRes.updatedAt = now;
+      const otherNode = clusterResources.find(
+        (r) => r.kind === 'Node' && r.name !== name && (r.status === 'Ready' || !(r.specSummary as any)?.unschedulable)
+      );
+      for (const res of clusterResources) {
+        if (res.kind === 'Pod' && res.nodeName === name) {
+          const isDaemon = (res.ownerReferences || []).some((o) => o.kind === 'DaemonSet');
+          if (!isDaemon && otherNode) {
+            res.nodeName = otherNode.name;
+            res.updatedAt = now;
+          }
+        }
+      }
+    } else if (actionType === 'SuspendCronJob' && targetRes) {
+      if (!targetRes.specSummary) targetRes.specSummary = {};
+      (targetRes.specSummary as any).suspend = true;
+      targetRes.status = 'Suspended';
+      targetRes.updatedAt = now;
+    } else if (actionType === 'ResumeCronJob' && targetRes) {
+      if (!targetRes.specSummary) targetRes.specSummary = {};
+      (targetRes.specSummary as any).suspend = false;
+      targetRes.status = 'Active';
+      targetRes.updatedAt = now;
+    } else if (actionType === 'TriggerCronJob') {
+      const manualJob: KubernetesResource = {
+        id: `${clusterId}:Job:${namespace || 'default'}:${name}-manual-${Date.now().toString(36)}`,
+        clusterId,
+        kind: 'Job',
+        name: `${name}-manual-${Date.now().toString(36)}`,
+        namespace: namespace || 'default',
+        status: 'Running',
+        health: 'HEALTHY',
+        createdAt: now,
+        updatedAt: now,
+        uid: `job-${crypto.randomBytes(6).toString('hex')}`,
+        ownerReferences: [{ kind: 'CronJob', name, controller: true }]
+      };
+      clusterResources.push(manualJob);
+    } else if (actionType === 'RerunJob' && targetRes) {
+      const rerunJob: KubernetesResource = {
+        id: `${clusterId}:Job:${namespace || 'default'}:${name}-rerun-${Date.now().toString(36)}`,
+        clusterId,
+        kind: 'Job',
+        name: `${name}-rerun-${Date.now().toString(36)}`,
+        namespace: namespace || 'default',
+        status: 'Running',
+        health: 'HEALTHY',
+        createdAt: now,
+        updatedAt: now,
+        uid: `job-${crypto.randomBytes(6).toString('hex')}`
+      };
+      clusterResources.push(rerunJob);
+    } else if (actionType === 'DeleteJob' && targetRes) {
+      const idx = clusterResources.findIndex((r) => r.id === targetRes.id);
+      if (idx !== -1) clusterResources.splice(idx, 1);
+    }
   }
 
   public executeClusterResourceOperation(
@@ -9236,7 +9509,8 @@ export class DataStore {
         | 'SuspendCronJob'
         | 'ResumeCronJob'
         | 'TriggerCronJob'
-        | 'RerunJob';
+        | 'RerunJob'
+        | 'DeleteJob';
       targetKind: string;
       targetName: string;
       targetNamespace?: string;
@@ -9271,10 +9545,29 @@ export class DataStore {
       (cluster.lastHeartbeat ? Date.now() - cluster.lastHeartbeat < 5 * 60 * 1000 : false) ||
       (cluster.lastSeenAt ? Date.now() - cluster.lastSeenAt < 5 * 60 * 1000 : false);
 
-    const isSimulated = Boolean(cluster.isSimulated || process.env.ENABLE_DEV_SIMULATION === 'true');
+    const isSimulated = Boolean(cluster.isSimulated);
 
-    if (!isConnected && !isSimulated && process.env.NODE_ENV === 'production') {
-      throw new Error('Cannot execute mutation: Cluster agent is disconnected. Live cluster connection is required for operational actions.');
+    // Live execution requires connected agent and validated RBAC capabilities
+    if (!isSimulated) {
+      if (!isConnected) {
+        throw new Error(
+          `Cannot execute mutation: Cluster agent "${cluster.name}" is currently offline or disconnected. Live cluster connection is required for operational actions.`
+        );
+      }
+
+      // Authoritative agent RBAC validation
+      if (cluster.operationalCapabilities) {
+        const capCheck = this.checkAgentCapability(payload.actionType, payload.targetKind, cluster.operationalCapabilities);
+        if (!capCheck.supported) {
+          throw new Error(
+            `RBAC_DENIED: ${capCheck.reason} (Cluster permission tier: "${cluster.permissionTier || 'observer'}"). Upgrade the agent RBAC tier to operator or admin.`
+          );
+        }
+      } else if (cluster.permissionTier === 'observer') {
+        throw new Error(
+          'RBAC_DENIED: Cluster agent is running in Observer tier (read-only). Workload and infrastructure mutations are disabled on this cluster.'
+        );
+      }
     }
 
     const clusterResources = this.resources.get(clusterId) || [];
@@ -9294,10 +9587,13 @@ export class DataStore {
     }
 
     // 1. Precondition: Resource UID verification
-    if (payload.targetUid && targetRes.uid && payload.targetUid !== targetRes.uid) {
-      throw new Error(
-        `Precondition failed: target resource UID has changed (expected ${payload.targetUid}, found ${targetRes.uid}). The resource may have been deleted or recreated.`
-      );
+    if (payload.targetUid) {
+      const expectedUid = targetRes.uid || targetRes.id;
+      if (expectedUid && payload.targetUid !== expectedUid) {
+        throw new Error(
+          `Precondition failed: target resource UID has changed (expected ${payload.targetUid}, found ${expectedUid}). The resource may have been deleted or recreated.`
+        );
+      }
     }
 
     // 2. Precondition: Expected revision verification
@@ -9329,7 +9625,7 @@ export class DataStore {
         return {
           action: existingAction,
           message: `Operation "${existingAction.actionType}" already dispatched with idempotency key ${payload.idempotencyKey}.`,
-          updatedResource: targetRes
+          updatedResource: isSimulated ? targetRes : undefined
         };
       }
     }
@@ -9341,7 +9637,7 @@ export class DataStore {
         a.target?.kind?.toLowerCase() === targetKind.toLowerCase() &&
         a.target?.name?.toLowerCase() === targetName.toLowerCase() &&
         (a.target?.namespace || 'default').toLowerCase() === targetNamespace.toLowerCase() &&
-        (a.status === 'PENDING' || a.status === 'EXECUTING' || a.status === 'VERIFYING')
+        (a.status === 'PENDING' || a.status === 'EXECUTING' || a.status === 'VERIFYING' || a.status === 'DELIVERED')
     );
     if (activeConflict) {
       throw new Error(
@@ -9351,9 +9647,20 @@ export class DataStore {
 
     // 6. Protected system namespaces
     const isProtected = ['kube-system', 'kube-public', 'kube-node-lease', 'skyops', 'skyops-system'].includes(targetNamespace.toLowerCase());
-    if (isProtected && (payload.actionType === 'DeletePod' || payload.actionType === 'RestartPod')) {
-      throw new Error(`Namespace "${targetNamespace}" is protected against pod deletion and operational mutations.`);
+    if (isProtected) {
+      if (payload.actionType === 'DeletePod' || payload.actionType === 'RestartPod') {
+        throw new Error(`Namespace "${targetNamespace}" is protected against pod deletion and operational mutations.`);
+      }
+      if ((payload.actionType === 'ScaleDeployment' || payload.actionType === 'ScaleWorkload') && payload.parameters?.targetReplicas === 0) {
+        throw new Error(`Namespace "${targetNamespace}" is protected against scaling to zero.`);
+      }
     }
+
+    // Normalizing confirmation flags from root or parameters
+    const confirmScaleToZero = payload.confirmScaleToZero ?? (payload.parameters as any)?.confirmScaleToZero;
+    const confirmNakedPodDelete = payload.confirmNakedPodDelete ?? (payload.parameters as any)?.confirmNakedPodDelete;
+    const confirmDrain = payload.confirmDrain ?? (payload.parameters as any)?.confirmDrain;
+    const drainOptions = payload.drainOptions ?? (payload.parameters as any)?.drainOptions;
 
     let proposedValue = '';
     let expectedCurrentValue = '';
@@ -9363,11 +9670,11 @@ export class DataStore {
     // 7. Action-specific validation and safeguards
     if (payload.actionType === 'ScaleDeployment' || payload.actionType === 'ScaleWorkload') {
       const targetReplicas = payload.parameters?.targetReplicas;
-      if (typeof targetReplicas !== 'number' || targetReplicas < 0 || targetReplicas > 50) {
-        throw new Error('Target replicas must be an integer between 0 and 50.');
+      if (typeof targetReplicas !== 'number' || targetReplicas < 0 || targetReplicas > 20) {
+        throw new Error('Target replicas must be an integer between 0 and 20.');
       }
       if (targetReplicas === 0) {
-        if (!payload.confirmScaleToZero) {
+        if (!confirmScaleToZero) {
           throw new Error('Safety policy: Scaling to 0 terminates all running pods and ceases traffic handling. Explicit confirmScaleToZero confirmation is required.');
         }
         riskLevel = 'HIGH';
@@ -9392,7 +9699,7 @@ export class DataStore {
       riskLevel = 'LOW';
     } else if (payload.actionType === 'DeletePod' || payload.actionType === 'RestartPod') {
       const hasController = Boolean(targetRes.ownerReferences && targetRes.ownerReferences.length > 0);
-      if (!hasController && !payload.confirmNakedPodDelete) {
+      if (!hasController && !confirmNakedPodDelete) {
         throw new Error(
           `Safety policy: Pod "${targetName}" is a standalone pod without a controller owner (e.g. Deployment, ReplicaSet, StatefulSet). Deleting it will permanently destroy this pod with NO replacement. Explicit confirmNakedPodDelete confirmation is required.`
         );
@@ -9409,7 +9716,7 @@ export class DataStore {
       expectedCurrentValue = (targetRes.specSummary as any)?.unschedulable ? 'CORDONED' : 'SCHEDULABLE';
       riskLevel = 'LOW';
     } else if (payload.actionType === 'DrainNode') {
-      if (!payload.confirmDrain) {
+      if (!confirmDrain) {
         throw new Error(
           `Safety policy: Node drain evicts all workloads and can cause service degradation or eviction failures. Explicit confirmDrain confirmation is required.`
         );
@@ -9437,6 +9744,11 @@ export class DataStore {
       proposedValue = 'RERUN';
       expectedCurrentValue = targetRes.status || 'Completed';
       riskLevel = 'LOW';
+    } else if (payload.actionType === 'DeleteJob') {
+      if (targetRes.kind !== 'Job') throw new Error(`DeleteJob can only be executed on a Job resource, got ${targetRes.kind}`);
+      proposedValue = 'DELETED';
+      expectedCurrentValue = targetRes.uid || 'active';
+      riskLevel = 'LOW';
     }
 
     const actionId = `act-${crypto.randomBytes(10).toString('hex')}`;
@@ -9460,10 +9772,10 @@ export class DataStore {
       proposedValue,
       parameters: {
         ...payload.parameters,
-        confirmScaleToZero: payload.confirmScaleToZero,
-        confirmNakedPodDelete: payload.confirmNakedPodDelete,
-        confirmDrain: payload.confirmDrain,
-        drainOptions: payload.drainOptions,
+        confirmScaleToZero,
+        confirmNakedPodDelete,
+        confirmDrain,
+        drainOptions,
         reason: payload.parameters?.reason || `Manual operation ${payload.actionType} executed by ${operator.name}`
       },
       requestedBy: {
@@ -9479,7 +9791,9 @@ export class DataStore {
       approvingUserId: operator.id,
       approvingUserName: operator.name,
       approvedAt: now,
-      status: 'PENDING',
+      status: isSimulated ? 'SUCCEEDED' : 'PENDING',
+      executionMode: isSimulated ? 'SIMULATED' : 'LIVE',
+      isSimulated,
       createdAt: now,
       expiresAt: now + 15 * 60 * 1000,
       executionId: `exec-${crypto.randomBytes(8).toString('hex')}`,
@@ -9497,175 +9811,191 @@ export class DataStore {
       isExecutable: true
     };
 
-    this.remediationActions.set(action.id, action);
-    this.recordClusterAction(clusterId);
-
-    // Apply mutation and verify state (simulation or live server-side verification)
-    if (isSimulated || !isConnected) {
-      if (payload.actionType === 'RolloutRestart') {
-        if (!targetRes.annotations) targetRes.annotations = {};
-        targetRes.annotations['kubectl.kubernetes.io/restartedAt'] = new Date(now).toISOString();
-        if (targetRes.kind === 'Deployment') {
-          const currentRev = parseInt(targetRes.annotations['deployment.kubernetes.io/revision'] || '1', 10);
-          targetRes.annotations['deployment.kubernetes.io/revision'] = String(currentRev + 1);
-        }
-        targetRes.status = 'Running';
-        targetRes.health = 'HEALTHY';
-        targetRes.updatedAt = now;
-      } else if (payload.actionType === 'ScaleDeployment' || payload.actionType === 'ScaleWorkload') {
-        const reps = payload.parameters?.targetReplicas ?? 2;
-        targetRes.specReplicas = reps;
-        targetRes.readyReplicas = reps;
-        targetRes.availableReplicas = reps;
-        targetRes.updatedReplicas = reps;
-        if (targetRes.specSummary) (targetRes.specSummary as any).replicas = reps;
-        if (targetRes.statusSummary) {
-          (targetRes.statusSummary as any).replicas = reps;
-          (targetRes.statusSummary as any).readyReplicas = reps;
-          (targetRes.statusSummary as any).availableReplicas = reps;
-          (targetRes.statusSummary as any).unavailableReplicas = 0;
-        }
-        targetRes.status = reps === 0 ? 'ScaledToZero' : 'Running';
-        targetRes.health = reps === 0 ? 'WARNING' : 'HEALTHY';
-        targetRes.updatedAt = now;
-      } else if (payload.actionType === 'RollbackDeployment') {
-        if (!targetRes.annotations) targetRes.annotations = {};
-        targetRes.annotations['deployment.kubernetes.io/revision'] = proposedValue;
-        targetRes.status = 'Running';
-        targetRes.health = 'HEALTHY';
-        targetRes.updatedAt = now;
-      } else if (payload.actionType === 'RestartPod' || payload.actionType === 'DeletePod') {
-        const hasController = Boolean(targetRes.ownerReferences && targetRes.ownerReferences.length > 0);
-        if (hasController) {
-          // Controller automatically recreates a replacement pod
-          const basePrefix = targetName.split('-').slice(0, -1).join('-') || targetName;
-          const replacementPod: KubernetesResource = {
-            id: `${clusterId}:Pod:${targetNamespace}:${basePrefix}-${crypto.randomBytes(3).toString('hex')}`,
-            clusterId,
-            kind: 'Pod',
-            name: `${basePrefix}-${crypto.randomBytes(3).toString('hex')}`,
-            namespace: targetNamespace,
-            status: 'Running',
-            health: 'HEALTHY',
-            createdAt: now,
-            updatedAt: now,
-            uid: `pod-${crypto.randomBytes(8).toString('hex')}`,
-            ownerReferences: targetRes.ownerReferences,
-            nodeName: targetRes.nodeName,
-            restartCount: 0,
-            containers: (targetRes.containers || []).map((c) => ({
-              ...c,
-              ready: true,
-              state: 'running',
-              restartCount: 0,
-              waitingReason: undefined,
-              waitingMessage: undefined
-            }))
-          };
-          const idx = clusterResources.findIndex((r) => r.id === targetRes.id);
-          if (idx !== -1) {
-            clusterResources[idx] = replacementPod;
-          } else {
-            clusterResources.push(replacementPod);
-          }
-          targetRes = replacementPod;
-        } else {
-          // Naked pod: remove from resources without replacement
-          const idx = clusterResources.findIndex((r) => r.id === targetRes.id);
-          if (idx !== -1) {
-            clusterResources.splice(idx, 1);
-          }
-          targetRes.status = 'Terminated';
-          targetRes.health = 'CRITICAL';
-        }
-      } else if (payload.actionType === 'CordonNode') {
-        if (!targetRes.specSummary) targetRes.specSummary = {};
-        (targetRes.specSummary as any).unschedulable = true;
-        targetRes.status = 'SchedulingDisabled';
-        targetRes.health = 'WARNING';
-        targetRes.updatedAt = now;
-      } else if (payload.actionType === 'UncordonNode') {
-        if (!targetRes.specSummary) targetRes.specSummary = {};
-        (targetRes.specSummary as any).unschedulable = false;
-        targetRes.status = 'Ready';
-        targetRes.health = 'HEALTHY';
-        targetRes.updatedAt = now;
-      } else if (payload.actionType === 'DrainNode') {
-        if (!targetRes.specSummary) targetRes.specSummary = {};
-        (targetRes.specSummary as any).unschedulable = true;
-        targetRes.status = 'SchedulingDisabled';
-        targetRes.health = 'WARNING';
-        targetRes.updatedAt = now;
-        // Evict non-DaemonSet pods from this node to other ready nodes
-        const otherNode = clusterResources.find((r) => r.kind === 'Node' && r.name !== targetName && (r.status === 'Ready' || !(r.specSummary as any)?.unschedulable));
-        for (const res of clusterResources) {
-          if (res.kind === 'Pod' && res.nodeName === targetName) {
-            const isDaemon = (res.ownerReferences || []).some((o) => o.kind === 'DaemonSet');
-            if (!isDaemon && otherNode) {
-              res.nodeName = otherNode.name;
-              res.updatedAt = now;
-            }
-          }
-        }
-      } else if (payload.actionType === 'SuspendCronJob') {
-        if (!targetRes.specSummary) targetRes.specSummary = {};
-        (targetRes.specSummary as any).suspend = true;
-        targetRes.status = 'Suspended';
-        targetRes.updatedAt = now;
-      } else if (payload.actionType === 'ResumeCronJob') {
-        if (!targetRes.specSummary) targetRes.specSummary = {};
-        (targetRes.specSummary as any).suspend = false;
-        targetRes.status = 'Active';
-        targetRes.updatedAt = now;
-      } else if (payload.actionType === 'TriggerCronJob') {
-        const manualJob: KubernetesResource = {
-          id: `${clusterId}:Job:${targetNamespace}:${targetName}-manual-${Date.now().toString(36)}`,
-          clusterId,
-          kind: 'Job',
-          name: `${targetName}-manual-${Date.now().toString(36)}`,
-          namespace: targetNamespace,
-          status: 'Running',
-          health: 'HEALTHY',
-          createdAt: now,
-          updatedAt: now,
-          uid: `job-${crypto.randomBytes(6).toString('hex')}`,
-          ownerReferences: [{ kind: 'CronJob', name: targetName, controller: true }]
-        };
-        clusterResources.push(manualJob);
-        targetRes.updatedAt = now;
-      } else if (payload.actionType === 'RerunJob') {
-        const rerunJob: KubernetesResource = {
-          id: `${clusterId}:Job:${targetNamespace}:${targetName}-rerun-${Date.now().toString(36)}`,
-          clusterId,
-          kind: 'Job',
-          name: `${targetName}-rerun-${Date.now().toString(36)}`,
-          namespace: targetNamespace,
-          status: 'Running',
-          health: 'HEALTHY',
-          createdAt: now,
-          updatedAt: now,
-          uid: `job-${crypto.randomBytes(6).toString('hex')}`
-        };
-        clusterResources.push(rerunJob);
-        targetRes.updatedAt = now;
-      }
-
-      action.status = 'SUCCEEDED';
+    // If simulated cluster, apply mutation immediately in-memory and record simulated execution & verification
+    if (isSimulated) {
+      this.applyLiveResourceMutation(clusterId, action);
       action.completedAt = now;
+      action.verifiedAt = now;
       action.executionResult = {
         success: true,
-        message: `Operation ${payload.actionType} executed and verified on ${targetKind} ${targetNamespace}/${targetName}`
+        message: `[SIMULATED DEMO] Operation ${payload.actionType} executed in simulated environment on ${targetKind} ${targetNamespace}/${targetName}. No actual Kubernetes mutation was performed.`
       };
-      // NOTE: Section 5: "Do not mark an incident resolved as a side effect of an unrelated operation. Incident resolution must follow its own verified recovery criteria."
+
+      if (payload.actionType === 'RolloutRestart') {
+        action.mutation = {
+          success: true,
+          restartedAt: action.proposedValue
+        };
+        action.verification = {
+          success: true,
+          status: 'COMPLETED',
+          observedState: 'Healthy'
+        };
+        action.verificationResult = {
+          success: true,
+          observedState: 'Healthy',
+          evidence: [
+            `Annotation kubectl.kubernetes.io/restartedAt updated to ${action.proposedValue}`,
+            'Rolling update cycle progressing',
+            'Rollout completed: all pods converged to healthy state'
+          ],
+          verifiedAt: now
+        };
+      } else if (payload.actionType === 'ScaleDeployment' || payload.actionType === 'ScaleWorkload') {
+        const reps = parseInt(action.proposedValue, 10);
+        action.mutation = {
+          success: true,
+          previousReplicas: parseInt(expectedCurrentValue, 10) || 1,
+          targetReplicas: reps
+        };
+        action.verification = {
+          success: true,
+          desiredReplicas: reps,
+          readyReplicas: reps,
+          availableReplicas: reps,
+          updatedReplicas: reps
+        };
+        action.verificationResult = {
+          success: true,
+          observedState: reps === 0 ? 'ScaledToZero' : 'Running',
+          evidence: [
+            `Scale request dispatched for ${reps} replicas`,
+            `${reps}/${reps} replicas ready and converging`,
+            'Deployment health verified'
+          ],
+          verifiedAt: now
+        };
+      } else if (payload.actionType === 'RollbackDeployment') {
+        action.mutation = {
+          success: true,
+          previousRevision: expectedCurrentValue,
+          targetRevision: proposedValue
+        };
+        action.verification = {
+          success: true,
+          targetRevision: proposedValue,
+          status: 'COMPLETED'
+        };
+        action.verificationResult = {
+          success: true,
+          observedState: 'Active',
+          evidence: [
+            `Reverted from rev ${expectedCurrentValue} to target rev ${proposedValue}`,
+            'ReplicaSet revision template restored',
+            'Rolling update to target revision succeeded',
+            'Scope boundary notice: external databases and shared secrets are out of rollback scope and must be verified independently'
+          ],
+          verifiedAt: now
+        };
+      } else if (payload.actionType === 'DeletePod' || payload.actionType === 'RestartPod') {
+        const hasController = Boolean(targetRes.ownerReferences && targetRes.ownerReferences.length > 0);
+        const repPodName = hasController
+          ? `${targetName.split('-').slice(0, 2).join('-')}-${crypto.randomBytes(3).toString('hex')}`
+          : undefined;
+        action.mutation = {
+          success: true,
+          deletedPodName: targetName,
+          replacementPodName: repPodName
+        };
+        action.verification = {
+          success: true,
+          replacementCreated: hasController
+        };
+        action.verificationResult = {
+          success: true,
+          observedState: hasController ? 'Replaced' : 'Terminated',
+          evidence: [
+            `Pod "${targetName}" deleted`,
+            hasController
+              ? 'Controller observed recreating replacement pod'
+              : 'Standalone pod terminated without replacement'
+          ],
+          verifiedAt: now
+        };
+      } else if (payload.actionType === 'CordonNode') {
+        action.mutation = { success: true, unschedulable: true };
+        action.verification = { success: true, unschedulable: true };
+        action.verificationResult = {
+          success: true,
+          observedState: 'CORDONED',
+          evidence: [
+            `Node "${targetName}" marked unschedulable (SchedulingDisabled)`,
+            'Existing running workloads undisturbed'
+          ],
+          verifiedAt: now
+        };
+      } else if (payload.actionType === 'UncordonNode') {
+        action.mutation = { success: true, unschedulable: false };
+        action.verification = { success: true, unschedulable: false };
+        action.verificationResult = {
+          success: true,
+          observedState: 'SCHEDULABLE',
+          evidence: [
+            `Node "${targetName}" marked schedulable (Ready)`,
+            'Kubernetes scheduler resumed placing pods on worker node'
+          ],
+          verifiedAt: now
+        };
+      } else if (payload.actionType === 'DrainNode') {
+        action.mutation = { success: true, drained: true };
+        action.verification = { success: true, drained: true };
+        action.verificationResult = {
+          success: true,
+          observedState: 'DRAINED',
+          evidence: [
+            `Worker node "${targetName}" cordoned`,
+            'Workloads safely evicted through Eviction API respecting PDBs',
+            'DaemonSet pods and local data handled according to safety options'
+          ],
+          verifiedAt: now
+        };
+      } else if (payload.actionType === 'SuspendCronJob' || payload.actionType === 'ResumeCronJob') {
+        const isSuspended = payload.actionType === 'SuspendCronJob';
+        action.mutation = { success: true, suspend: isSuspended };
+        action.verification = { success: true, suspend: isSuspended };
+        action.verificationResult = {
+          success: true,
+          observedState: isSuspended ? 'Suspended' : 'Active',
+          evidence: [`CronJob "${targetName}" schedule ${isSuspended ? 'suspended' : 'resumed'}`],
+          verifiedAt: now
+        };
+      } else if (payload.actionType === 'TriggerCronJob' || payload.actionType === 'RerunJob') {
+        action.mutation = { success: true, spawnedJob: true };
+        action.verification = { success: true, status: 'Running' };
+        action.verificationResult = {
+          success: true,
+          observedState: 'Running',
+          evidence: [`Job spawned for "${targetName}"`],
+          verifiedAt: now
+        };
+      } else if (payload.actionType === 'DeleteJob') {
+        action.mutation = { success: true, deleted: true };
+        action.verification = { success: true, deleted: true };
+        action.verificationResult = {
+          success: true,
+          observedState: 'Deleted',
+          evidence: [`Job "${targetName}" deleted with cascading pod cleanup`],
+          verifiedAt: now
+        };
+      } else {
+        action.verificationResult = {
+          success: true,
+          observedState: 'Healthy',
+          evidence: [`Operation ${payload.actionType} completed`],
+          verifiedAt: now
+        };
+      }
     }
 
-    let successMsg = `Operation "${payload.actionType}" initiated on ${targetKind} "${targetNamespace}/${targetName}".`;
-    if (action.status === 'SUCCEEDED') {
-      successMsg = `Operation "${payload.actionType}" executed successfully on ${targetKind} "${targetNamespace}/${targetName}".`;
-    }
-
+    this.remediationActions.set(action.id, action);
+    this.recordClusterAction(clusterId);
     this.saveSnapshot();
-    return { action, message: successMsg, updatedResource: targetRes };
+
+    const successMsg = isSimulated
+      ? `[SIMULATED DEMO] Operation "${payload.actionType}" executed successfully in simulated environment.`
+      : `Operation "${payload.actionType}" queued for cluster agent execution on ${targetKind} "${targetNamespace}/${targetName}".`;
+
+    return { action, message: successMsg, updatedResource: isSimulated ? targetRes : undefined };
   }
 
   public getClusterOperations(clusterId: string, orgId?: string): RemediationAction[] {

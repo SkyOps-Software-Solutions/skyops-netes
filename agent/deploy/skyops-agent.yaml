@@ -20,24 +20,26 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: skyops-agent-reader
+  name: skyops-agent-operator
   labels:
     app.kubernetes.io/name: skyops-agent
+    app.kubernetes.io/component: rbac
+    skyops.io/permission-tier: "operator"
 rules:
+  # =========================================================================
+  # 1. OBSERVABILITY & READ-ONLY DISCOVERY (All Tiers)
+  # =========================================================================
   - apiGroups: [""]
     resources:
       - pods
-    verbs: ["get", "list", "watch", "delete"]
+    verbs: ["get", "list", "watch", "delete"] # "delete" enabled for Operator tier (Pod restart & deletion)
   - apiGroups: [""]
     resources:
       - pods/log
-    verbs: ["get"]
-  - apiGroups: [""]
-    resources:
       - pods/status
-      - nodes
       - nodes/status
       - namespaces
+      - services
       - endpoints
       - persistentvolumeclaims
       - persistentvolumes
@@ -50,30 +52,54 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources:
-      - services
-    verbs: ["get", "list", "watch", "delete"]
+      - nodes
+    verbs: ["get", "list", "watch"]
+  # Optional: For Platform Administrator tier (Node Cordon, Uncordon, Drain), uncomment:
+  # - apiGroups: [""]
+  #   resources: ["nodes"]
+  #   verbs: ["get", "list", "watch", "patch", "update"]
+  # - apiGroups: [""]
+  #   resources: ["pods/eviction"]
+  #   verbs: ["create"]
+
+  # =========================================================================
+  # 2. WORKLOAD MANAGEMENT (AppsV1 - Operator Tier)
+  # =========================================================================
   - apiGroups: ["apps"]
     resources:
       - deployments
-      - deployments/status
       - statefulsets
-      - statefulsets/status
       - daemonsets
-      - daemonsets/status
     verbs: ["get", "list", "watch", "patch", "update"]
   - apiGroups: ["apps"]
     resources:
       - deployments/scale
-    verbs: ["get", "update", "patch"]
+      - statefulsets/scale
+    verbs: ["get", "patch", "update"]
   - apiGroups: ["apps"]
     resources:
+      - deployments/status
+      - statefulsets/status
+      - daemonsets/status
       - replicasets
     verbs: ["get", "list", "watch"]
+
+  # =========================================================================
+  # 3. BATCH WORKLOADS (BatchV1 - Operator Tier)
+  # =========================================================================
   - apiGroups: ["batch"]
     resources:
       - jobs
       - cronjobs
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "create", "patch", "update", "delete"]
+
+  # =========================================================================
+  # 4. CAPABILITY DISCOVERY, NETWORKING, STORAGE & METRICS
+  # =========================================================================
+  - apiGroups: ["authorization.k8s.io"]
+    resources:
+      - selfsubjectaccessreviews
+    verbs: ["create"]
   - apiGroups: ["networking.k8s.io"]
     resources:
       - ingresses
@@ -101,13 +127,13 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: skyops-agent-reader-binding
+  name: skyops-agent-operator-binding
   labels:
     app.kubernetes.io/name: skyops-agent
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: skyops-agent-reader
+  name: skyops-agent-operator
 subjects:
   - kind: ServiceAccount
     name: skyops-agent

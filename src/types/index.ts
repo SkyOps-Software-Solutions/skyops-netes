@@ -400,6 +400,21 @@ export interface Cluster {
   regions?: string[];
   zones?: string[];
   instanceTypes?: string[];
+  operationalCapabilities?: OperationalCapabilities;
+  permissionTier?: 'observer' | 'operator' | 'admin' | string;
+  capabilities?: string[];
+}
+
+export interface OperationalCapabilities {
+  canDeletePods: boolean;
+  canRestartDeployments: boolean;
+  canScaleDeployments: boolean;
+  canScaleStatefulSets: boolean;
+  canMutateCronJobs: boolean;
+  canCreateJobs: boolean;
+  canDeleteJobs: boolean;
+  canCordonNodes: boolean;
+  canDrainNodes: boolean;
 }
 
 export type IncidentSeverity = 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
@@ -683,10 +698,19 @@ export type CanonicalRemediationActionType =
   | 'RollbackDeployment'
   | 'ReplacePodImage'
   | 'ScaleDeployment'
+  | 'ScaleWorkload'
   | 'PauseRollout'
   | 'ResumeRollout'
   | 'DeleteWorkload'
-  | 'DeleteService';
+  | 'DeleteService'
+  | 'CordonNode'
+  | 'UncordonNode'
+  | 'DrainNode'
+  | 'SuspendCronJob'
+  | 'ResumeCronJob'
+  | 'TriggerCronJob'
+  | 'RerunJob'
+  | 'DeleteJob';
 
 export interface AvailableAction {
   type: CanonicalRemediationActionType | string;
@@ -828,6 +852,8 @@ export interface RemediationAction {
     error?: string;
     rolledBackAt?: number;
   };
+  executionMode?: 'LIVE' | 'SIMULATED';
+  isSimulated?: boolean;
 }
 
 export type TimelineEventType =

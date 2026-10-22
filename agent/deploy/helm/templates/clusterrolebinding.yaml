@@ -1,14 +1,16 @@
 {{- if .Values.rbac.create -}}
+{{- $tier := .Values.rbac.tier | default "operator" -}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "skyops-agent.fullname" . }}-reader-binding
+  name: {{ include "skyops-agent.fullname" . }}-binding
   labels:
     {{- include "skyops-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "skyops-agent.fullname" . }}-reader
+  name: {{ include "skyops-agent.fullname" . }}-{{ $tier }}
 subjects:
   - kind: ServiceAccount
     name: {{ include "skyops-agent.serviceAccountName" . }}

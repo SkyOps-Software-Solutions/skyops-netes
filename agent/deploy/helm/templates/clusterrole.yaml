@@ -1,23 +1,31 @@
 {{- if .Values.rbac.create -}}
+{{- $tier := .Values.rbac.tier | default "operator" -}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "skyops-agent.fullname" . }}-reader
+  name: {{ include "skyops-agent.fullname" . }}-{{ $tier }}
   labels:
     {{- include "skyops-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac
+    skyops.io/permission-tier: {{ $tier | quote }}
 rules:
+  # =========================================================================
+  # 1. CORE OBSERVABILITY (Granted to all tiers: observer, operator, admin)
+  # =========================================================================
   - apiGroups: [""]
     resources:
       - pods
-    verbs: ["get", "list", "watch"]
+    verbs:
+      - get
+      - list
+      - watch
+      {{- if or (eq $tier "operator") (eq $tier "admin") }}
+      - delete
+      {{- end }}
   - apiGroups: [""]
     resources:
       - pods/log
-    verbs: ["get"]
-  - apiGroups: [""]
-    resources:
       - pods/status
-      - nodes
       - nodes/status
       - namespaces
       - services
@@ -31,21 +39,76 @@ rules:
       - limitranges
       - events
     verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources:
+      - nodes
+    verbs:
+      - get
+      - list
+      - watch
+      {{- if eq $tier "admin" }}
+      - patch
+      - update
+      {{- end }}
+  {{- if eq $tier "admin" }}
+  - apiGroups: [""]
+    resources:
+      - pods/eviction
+    verbs: ["create"]
+  {{- end }}
+
+  # =========================================================================
+  # 2. WORKLOAD CONTROLLERS (AppsV1)
+  # =========================================================================
   - apiGroups: ["apps"]
     resources:
       - deployments
-      - deployments/status
       - statefulsets
-      - statefulsets/status
       - daemonsets
+    verbs:
+      - get
+      - list
+      - watch
+      {{- if or (eq $tier "operator") (eq $tier "admin") }}
+      - patch
+      - update
+      {{- end }}
+  - apiGroups: ["apps"]
+    resources:
+      - deployments/status
+      - statefulsets/status
       - daemonsets/status
       - replicasets
     verbs: ["get", "list", "watch"]
+  {{- if or (eq $tier "operator") (eq $tier "admin") }}
+  - apiGroups: ["apps"]
+    resources:
+      - deployments/scale
+      - statefulsets/scale
+    verbs: ["get", "patch", "update"]
+  {{- end }}
+
+  # =========================================================================
+  # 3. BATCH WORKLOADS (BatchV1)
+  # =========================================================================
   - apiGroups: ["batch"]
     resources:
       - jobs
       - cronjobs
-    verbs: ["get", "list", "watch"]
+    verbs:
+      - get
+      - list
+      - watch
+      {{- if or (eq $tier "operator") (eq $tier "admin") }}
+      - create
+      - patch
+      - update
+      - delete
+      {{- end }}
+
+  # =========================================================================
+  # 4. NETWORKING, DISCOVERY, STORAGE & METRICS (Read-only for all tiers)
+  # =========================================================================
   - apiGroups: ["networking.k8s.io"]
     resources:
       - ingresses
@@ -63,6 +126,10 @@ rules:
       - rolebindings
       - clusterrolebindings
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["authorization.k8s.io"]
+    resources:
+      - selfsubjectaccessreviews
+    verbs: ["create"]
   - apiGroups: ["metrics.k8s.io"]
     resources:
       - nodes

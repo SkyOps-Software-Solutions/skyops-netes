@@ -110,22 +110,37 @@ func (c *Client) RegisterAgent(ctx context.Context, payload RegistrationPayload)
 	return &regResp, nil
 }
 
+// OperationalCapabilities captures authoritative, SSAR-discovered cluster mutation permissions
+type OperationalCapabilities struct {
+	CanDeletePods         bool `json:"canDeletePods"`
+	CanRestartDeployments bool `json:"canRestartDeployments"`
+	CanScaleDeployments   bool `json:"canScaleDeployments"`
+	CanScaleStatefulSets  bool `json:"canScaleStatefulSets"`
+	CanMutateCronJobs     bool `json:"canMutateCronJobs"`
+	CanCreateJobs         bool `json:"canCreateJobs"`
+	CanDeleteJobs         bool `json:"canDeleteJobs"`
+	CanCordonNodes        bool `json:"canCordonNodes"`
+	CanDrainNodes         bool `json:"canDrainNodes"`
+}
+
 // HeartbeatPayload schema matching SkyOps Ingestion API
 type HeartbeatPayload struct {
-	ClusterID     string            `json:"clusterId"`
-	AgentID       string            `json:"agentId,omitempty"`
-	AgentVersion  string            `json:"agentVersion"`
-	K8sVersion    string            `json:"k8sVersion"`
-	NodeCount     int               `json:"nodeCount"`
-	PodCount      int               `json:"podCount"`
-	Timestamp     int64             `json:"timestamp"`
-	UptimeSeconds float64           `json:"uptimeSeconds,omitempty"`
-	Capabilities  []string          `json:"capabilities,omitempty"`
-	QueueDepth    int               `json:"queueDepth,omitempty"`
-	SpoolBytes    int64             `json:"spoolBytes,omitempty"`
-	CircuitState    string            `json:"circuitState,omitempty"`
-	ConnectionState string            `json:"connectionState,omitempty"`
-	Metrics         map[string]int64  `json:"metrics,omitempty"`
+	ClusterID               string                   `json:"clusterId"`
+	AgentID                 string                   `json:"agentId,omitempty"`
+	AgentVersion            string                   `json:"agentVersion"`
+	K8sVersion              string                   `json:"k8sVersion"`
+	NodeCount               int                      `json:"nodeCount"`
+	PodCount                int                      `json:"podCount"`
+	Timestamp               int64                    `json:"timestamp"`
+	UptimeSeconds           float64                  `json:"uptimeSeconds,omitempty"`
+	Capabilities            []string                 `json:"capabilities,omitempty"`
+	OperationalCapabilities *OperationalCapabilities `json:"operationalCapabilities,omitempty"`
+	PermissionTier          string                   `json:"permissionTier,omitempty"`
+	QueueDepth              int                      `json:"queueDepth,omitempty"`
+	SpoolBytes              int64                    `json:"spoolBytes,omitempty"`
+	CircuitState            string                   `json:"circuitState,omitempty"`
+	ConnectionState         string                   `json:"connectionState,omitempty"`
+	Metrics                 map[string]int64         `json:"metrics,omitempty"`
 }
 
 // ActionTarget details the resource targeted by remediation
@@ -173,10 +188,30 @@ func (a *RemediationAction) CanonicalType() string {
 		return "RollbackDeployment"
 	case "SCALE_DEPLOYMENT", "SCALE_REPLICAS", "ScaleDeployment":
 		return "ScaleDeployment"
+	case "SCALE_WORKLOAD", "ScaleWorkload", "ScaleStatefulSet", "SCALE_STATEFULSET":
+		return "ScaleWorkload"
+	case "DELETE_POD", "DeletePod":
+		return "DeletePod"
 	case "RESTART_POD", "RestartPod":
 		return "RestartPod"
 	case "UPDATE_CONTAINER_IMAGE", "ReplacePodImage":
 		return "ReplacePodImage"
+	case "CORDON_NODE", "CordonNode":
+		return "CordonNode"
+	case "UNCORDON_NODE", "UncordonNode":
+		return "UncordonNode"
+	case "DRAIN_NODE", "DrainNode":
+		return "DrainNode"
+	case "SUSPEND_CRONJOB", "SuspendCronJob":
+		return "SuspendCronJob"
+	case "RESUME_CRONJOB", "ResumeCronJob":
+		return "ResumeCronJob"
+	case "TRIGGER_CRONJOB", "TriggerCronJob":
+		return "TriggerCronJob"
+	case "RERUN_JOB", "RerunJob":
+		return "RerunJob"
+	case "DELETE_JOB", "DeleteJob":
+		return "DeleteJob"
 	default:
 		return raw
 	}

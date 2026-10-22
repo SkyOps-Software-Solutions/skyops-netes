@@ -240,7 +240,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
     ).length;
   }, [pods]);
 
-  // Operation execution handler
+    // Operation execution handler
   const handleOperationSuccess = (action: RemediationAction, updatedResource?: KubernetesResource) => {
     // Add to operations list
     setOperations((prev) => [action, ...prev.filter((a) => a.id !== action.id)]);
@@ -252,6 +252,18 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
     }
     fetchClusterOperationsData(true);
   };
+
+  // Auto-refresh when any operation is in-flight (PENDING, EXECUTING, VERIFYING, ROLLING_BACK)
+  useEffect(() => {
+    const hasInFlight = operations.some((o) =>
+      ['PENDING', 'EXECUTING', 'VERIFYING', 'ROLLING_BACK', 'DELIVERED'].includes(o.status)
+    );
+    if (!hasInFlight) return;
+    const interval = setInterval(() => {
+      fetchClusterOperationsData(true);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [operations, activeCluster?.id]);
 
   if (!activeCluster) {
     return (
@@ -315,6 +327,31 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
             {/* K8s Version */}
             <div className="text-xs text-zinc-400 bg-zinc-950/60 px-2.5 py-1 rounded-lg border border-zinc-800 font-mono">
               K8s: <span className="text-zinc-200">{activeCluster.k8sVersion || 'v1.35.1'}</span>
+            </div>
+
+            {/* RBAC Permission Tier Pill */}
+            <div
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border ${
+                activeCluster.isSimulated
+                  ? 'bg-sky-950/60 border-sky-800/70 text-sky-300'
+                  : activeCluster.permissionTier === 'admin' || activeCluster.permissionTier === 'platform-admin'
+                  ? 'bg-purple-950/60 border-purple-800/70 text-purple-300'
+                  : activeCluster.permissionTier === 'operator'
+                  ? 'bg-emerald-950/60 border-emerald-800/70 text-emerald-300'
+                  : 'bg-zinc-900 border-zinc-800 text-zinc-400'
+              }`}
+              title={
+                activeCluster.isSimulated
+                  ? 'Simulated Cluster Demo Mode'
+                  : `Agent RBAC Tier: ${activeCluster.permissionTier || 'observer'}`
+              }
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span className="capitalize">
+                {activeCluster.isSimulated
+                  ? 'Simulated'
+                  : `RBAC: ${activeCluster.permissionTier || 'observer'}`}
+              </span>
             </div>
           </div>
 
@@ -670,6 +707,64 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                                   </>
                                 )}
 
+                                {w.kind === 'StatefulSet' && (
+                                  <button
+                                    onClick={() => setActiveActionModal({ resource: w, actionType: 'ScaleWorkload' })}
+                                    disabled={!isConnected && !activeCluster.isSimulated}
+                                    className="p-1.5 text-zinc-400 hover:text-indigo-300 hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer disabled:opacity-40"
+                                    title="Scale StatefulSet Replicas"
+                                  >
+                                    <Sliders className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+
+                                {w.kind === 'CronJob' && (
+                                  <>
+                                    <button
+                                      onClick={() => setActiveActionModal({ resource: w, actionType: 'TriggerCronJob' })}
+                                      disabled={!isConnected && !activeCluster.isSimulated}
+                                      className="p-1.5 text-zinc-400 hover:text-sky-300 hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer disabled:opacity-40"
+                                      title="Trigger Immediate Run"
+                                    >
+                                      <Zap className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        setActiveActionModal({
+                                          resource: w,
+                                          actionType: (w.specSummary as any)?.suspend ? 'ResumeCronJob' : 'SuspendCronJob'
+                                        })
+                                      }
+                                      disabled={!isConnected && !activeCluster.isSimulated}
+                                      className="p-1.5 text-zinc-400 hover:text-amber-300 hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer disabled:opacity-40"
+                                      title={(w.specSummary as any)?.suspend ? 'Resume Schedule' : 'Suspend Schedule'}
+                                    >
+                                      <Clock className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                )}
+
+                                {w.kind === 'Job' && (
+                                  <>
+                                    <button
+                                      onClick={() => setActiveActionModal({ resource: w, actionType: 'RerunJob' })}
+                                      disabled={!isConnected && !activeCluster.isSimulated}
+                                      className="p-1.5 text-zinc-400 hover:text-indigo-300 hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer disabled:opacity-40"
+                                      title="Rerun Batch Job"
+                                    >
+                                      <RefreshCw className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => setActiveActionModal({ resource: w, actionType: 'DeleteJob' })}
+                                      disabled={!isConnected && !activeCluster.isSimulated}
+                                      className="p-1.5 text-zinc-400 hover:text-rose-400 hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer disabled:opacity-40"
+                                      title="Delete Job"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                )}
+
                                 <button
                                   onClick={() => setSelectedResource(w)}
                                   className="px-2 py-1 text-[11px] font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-md transition-colors cursor-pointer"
@@ -921,6 +1016,19 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                                   className="px-2 py-1 text-[11px] font-medium text-amber-300 bg-amber-950/60 border border-amber-800/60 rounded-md hover:bg-amber-900/60 transition-colors cursor-pointer disabled:opacity-40"
                                 >
                                   {isCordoned ? 'Uncordon' : 'Cordon'}
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    setActiveActionModal({
+                                      resource: n,
+                                      actionType: 'DrainNode'
+                                    })
+                                  }
+                                  disabled={!isConnected && !activeCluster.isSimulated}
+                                  className="px-2 py-1 text-[11px] font-medium text-rose-300 bg-rose-950/60 border border-rose-800/60 rounded-md hover:bg-rose-900/60 transition-colors cursor-pointer disabled:opacity-40"
+                                  title="Safely evict workloads and drain node"
+                                >
+                                  Drain
                                 </button>
                                 <button
                                   onClick={() => setSelectedResource(n)}

@@ -348,15 +348,26 @@ export const ResourceDetailPanel: React.FC<ResourceDetailPanelProps> = ({
             )}
 
             {canRerunJob && (
-              <button
-                onClick={() => setActiveActionModal('RerunJob')}
-                disabled={!isConnected && !cluster.isSimulated}
-                className="px-3 py-1.5 rounded-lg bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-800/60 disabled:opacity-50 text-xs font-medium text-indigo-200 flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="Spawn a fresh instance of this batch Job"
-              >
-                <RefreshCw className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Rerun Job</span>
-              </button>
+              <>
+                <button
+                  onClick={() => setActiveActionModal('RerunJob')}
+                  disabled={!isConnected && !cluster.isSimulated}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-800/60 disabled:opacity-50 text-xs font-medium text-indigo-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Spawn a fresh instance of this batch Job"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Rerun Job</span>
+                </button>
+                <button
+                  onClick={() => setActiveActionModal('DeleteJob')}
+                  disabled={!isConnected && !cluster.isSimulated}
+                  className="px-3 py-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900/60 border border-rose-800/60 disabled:opacity-50 text-xs font-medium text-rose-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Delete batch Job and cascade to pods"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Delete Job</span>
+                </button>
+              </>
             )}
           </div>
         </div>

@@ -579,7 +579,8 @@ class ApiClient {
         | 'SuspendCronJob'
         | 'ResumeCronJob'
         | 'TriggerCronJob'
-        | 'RerunJob';
+        | 'RerunJob'
+        | 'DeleteJob';
       targetKind: string;
       targetName: string;
       targetNamespace?: string;

@@ -1,21 +1,28 @@
 import { FirestoreStore } from './FirestoreStore';
 import { InMemoryStore } from './InMemoryStore';
+import { PostgresStore } from './PostgresStore';
 import { IPersistenceStore } from './types';
 import fallbackConfig from '../firebaseAppletConfig';
 
 let storeInstance: IPersistenceStore | null = null;
 
 export interface PersistenceProviderConfig {
-  provider: 'firestore' | 'memory';
+  provider: 'firestore' | 'postgres' | 'memory';
   projectId?: string;
   databaseId?: string;
 }
 
-export function determinePersistenceProvider(): 'firestore' | 'memory' {
+export function determinePersistenceProvider(): 'firestore' | 'postgres' | 'memory' {
   const envProvider = process.env.PERSISTENCE_PROVIDER?.toLowerCase();
+  const deploymentMode = process.env.SKYOPS_DEPLOYMENT_MODE?.toLowerCase();
 
-  // If in production, firestore is strictly required
-  if (process.env.NODE_ENV === 'production') {
+  // Explicit postgres request
+  if (envProvider === 'postgres' || (deploymentMode === 'self_hosted' && envProvider !== 'firestore' && envProvider !== 'memory')) {
+    return 'postgres';
+  }
+
+  // If in production hosted mode, firestore is strictly required
+  if (process.env.NODE_ENV === 'production' && deploymentMode !== 'self_hosted') {
     if (envProvider && envProvider !== 'firestore') {
       throw new Error(
         `[Persistence] CRITICAL PRODUCTION ERROR: PERSISTENCE_PROVIDER is set to "${envProvider}", but Production strictly requires "firestore". Local filesystem and in-memory persistence are forbidden in production.`
@@ -26,6 +33,7 @@ export function determinePersistenceProvider(): 'firestore' | 'memory' {
 
   // If test environment, default to in-memory unless explicitly overridden for integration tests
   if (process.env.NODE_ENV === 'test') {
+    if (process.env.TEST_PERSISTENCE_PROVIDER === 'postgres') return 'postgres';
     return process.env.TEST_PERSISTENCE_PROVIDER === 'firestore' ? 'firestore' : 'memory';
   }
 
@@ -47,8 +55,12 @@ export function determinePersistenceProvider(): 'firestore' | 'memory' {
     process.env.FIREBASE_SERVICE_ACCOUNT_KEY
   );
 
-  if (hasFirebaseConfig) {
+  if (hasFirebaseConfig && deploymentMode !== 'self_hosted') {
     return 'firestore';
+  }
+
+  if (process.env.DATABASE_URL || process.env.POSTGRES_HOST) {
+    return 'postgres';
   }
 
   return 'memory';
@@ -106,6 +118,18 @@ export function getPersistenceStore(): IPersistenceStore {
       console.warn(`${message}. Falling back to InMemoryStore only in non-production mode.`);
       storeInstance = new InMemoryStore();
     }
+  } else if (provider === 'postgres') {
+    try {
+      storeInstance = new PostgresStore();
+      console.log('[Persistence] Initialized PostgresStore for self-hosted persistence');
+    } catch (err: any) {
+      const message = `[Persistence] PostgreSQL initialization failed: ${err?.message || err}`;
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(`${message}. Production will not fall back to in-memory persistence.`);
+      }
+      console.warn(`${message}. Falling back to InMemoryStore in non-production mode.`);
+      storeInstance = new InMemoryStore();
+    }
   } else {
     storeInstance = new InMemoryStore();
   }
@@ -128,10 +152,17 @@ export function resetPersistenceStore(): void {
 export async function verifyProductionPersistence(): Promise<void> {
   const isProd = process.env.NODE_ENV === 'production';
   const envProvider = process.env.PERSISTENCE_PROVIDER?.toLowerCase();
+  const deploymentMode = process.env.SKYOPS_DEPLOYMENT_MODE?.toLowerCase();
 
-  if (isProd && envProvider && envProvider !== 'firestore') {
+  if (isProd && deploymentMode !== 'self_hosted' && envProvider && envProvider !== 'firestore') {
     throw new Error(
       `[Persistence] CRITICAL PRODUCTION ERROR: PERSISTENCE_PROVIDER is set to "${envProvider}", but Production strictly requires "firestore". Local filesystem and in-memory persistence are forbidden in production.`
+    );
+  }
+
+  if (isProd && deploymentMode === 'self_hosted' && envProvider !== 'postgres') {
+    throw new Error(
+      `[Persistence] CRITICAL PRODUCTION ERROR: Self-hosted mode requires PERSISTENCE_PROVIDER="postgres". Found "${envProvider || 'none'}".`
     );
   }
 
@@ -147,3 +178,4 @@ export { resolvePersistenceConfig } from '../persistence';
 export * from './types';
 export * from './InMemoryStore';
 export * from './FirestoreStore';
+export * from './PostgresStore';

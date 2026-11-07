@@ -51,12 +51,18 @@ export interface ClusterResourcesRecord {
 }
 
 export interface IPersistenceStore {
-  readonly providerName: 'firestore' | 'memory';
+  readonly providerName: 'firestore' | 'postgres' | 'memory';
 
   // --- Initialization & Health ---
   init(): Promise<void>;
   close(): Promise<void>;
   isHealthy(): Promise<boolean>;
+
+  // --- Local Credentials & Self-Hosted Auth (Optional) ---
+  getLocalCredential?(userId: string): Promise<{ userId: string; passwordHash: string; passwordAlgo: string; mustChangePassword?: boolean } | null>;
+  saveLocalCredential?(userId: string, passwordHash: string, passwordAlgo?: string): Promise<void>;
+  countUsers?(): Promise<number>;
+  countAdmins?(): Promise<number>;
 
   // --- Users ---
   getUser(userId: string): Promise<User | null>;

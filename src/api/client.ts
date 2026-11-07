@@ -55,6 +55,7 @@ import {
   ClusterHealthSummary,
   IncidentMultiClusterSummary,
   CostOverview,
+  CostBudget,
   CostAllocationBreakdown,
   ResourceRightsizingRecommendation,
   CostWasteItem,
@@ -149,6 +150,16 @@ export function normalizeClusterResourcesResponse(data: unknown): KubernetesReso
 }
 
 class ApiClient {
+  private localSessionToken: string | null = null;
+
+  public setSessionToken(token: string | null): void {
+    this.localSessionToken = token;
+  }
+
+  public getSessionToken(): string | null {
+    return this.localSessionToken;
+  }
+
   private async getHeaders(): Promise<HeadersInit> {
     // If auth state is still resolving on initial page load, wait for Firebase to finish
     if (!auth.currentUser && typeof (auth as any).authStateReady === 'function') {
@@ -168,8 +179,11 @@ class ApiClient {
       headers['x-org-id'] = savedOrg;
     }
 
-    // Attach real Firebase ID token
-    if (auth.currentUser) {
+    // Attach local session token if available
+    if (this.localSessionToken) {
+      headers['Authorization'] = `Bearer ${this.localSessionToken}`;
+    } else if (auth.currentUser) {
+      // Attach real Firebase ID token
       try {
         const idToken = await auth.currentUser.getIdToken();
         headers['Authorization'] = `Bearer ${idToken}`;
@@ -193,7 +207,7 @@ class ApiClient {
 
     let res: Response;
     try {
-      res = await fetch(url, { ...options, headers });
+      res = await fetch(url, { credentials: 'include', ...options, headers });
     } catch (netErr: any) {
       throw new Error(`Network connection error: ${netErr?.message || 'Failed to communicate with SkyOps server'}`);
     }
@@ -286,6 +300,34 @@ class ApiClient {
     }
 
     return (data ?? {}) as T;
+  }
+
+  public async get<T>(url: string): Promise<T> {
+    return this.request<T>(url, { method: 'GET' });
+  }
+
+  public async post<T>(url: string, body?: any): Promise<T> {
+    return this.request<T>(url, {
+      method: 'POST',
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined
+    });
+  }
+
+  public async put<T>(url: string, body?: any): Promise<T> {
+    return this.request<T>(url, {
+      method: 'PUT',
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined
+    });
+  }
+
+  public async delete<T>(url: string, body?: any): Promise<T> {
+    return this.request<T>(url, {
+      method: 'DELETE',
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined
+    });
   }
 
   // --- Auth & Session ---
@@ -1825,18 +1867,27 @@ class ApiClient {
   }
 
   // ==========================================
-  // ENTERPRISE COST INTELLIGENCE
+  // ENTERPRISE COST INTELLIGENCE & FINOPS
   // ==========================================
-  async getCostOverview(): Promise<{ overview: CostOverview }> {
-    return this.request('/api/v1/cost/overview');
+  async getCostOverview(clusterId?: string): Promise<{ overview: CostOverview }> {
+    const query = clusterId && clusterId !== 'ALL' && clusterId !== 'all' ? `?clusterId=${encodeURIComponent(clusterId)}` : '';
+    return this.request(`/api/v1/cost/overview${query}`);
   }
 
-  async getCostAllocation(): Promise<{ allocation: CostAllocationBreakdown }> {
-    return this.request('/api/v1/cost/allocation');
+  async getCostAllocation(clusterId?: string): Promise<{ allocation: CostAllocationBreakdown }> {
+    const query = clusterId && clusterId !== 'ALL' && clusterId !== 'all' ? `?clusterId=${encodeURIComponent(clusterId)}` : '';
+    return this.request(`/api/v1/cost/allocation${query}`);
   }
 
-  async getRightsizingRecommendations(): Promise<{ recommendations: ResourceRightsizingRecommendation[] }> {
-    return this.request('/api/v1/cost/rightsizing');
+  async getRightsizingRecommendations(clusterId?: string): Promise<{ recommendations: ResourceRightsizingRecommendation[] }> {
+    const query = clusterId && clusterId !== 'ALL' && clusterId !== 'all' ? `?clusterId=${encodeURIComponent(clusterId)}` : '';
+    return this.request(`/api/v1/cost/rightsizing${query}`);
+  }
+
+  async approveRightsizing(id: string): Promise<{ success: boolean; message: string; recommendation: ResourceRightsizingRecommendation }> {
+    return this.request(`/api/v1/cost/rightsizing/${id}/approve`, {
+      method: 'POST'
+    });
   }
 
   async applyRightsizing(id: string): Promise<{ success: boolean; message: string; recommendation: ResourceRightsizingRecommendation }> {
@@ -1845,12 +1896,26 @@ class ApiClient {
     });
   }
 
-  async getCostWaste(): Promise<{ wasteItems: CostWasteItem[] }> {
-    return this.request('/api/v1/cost/waste');
+  async getCostWaste(clusterId?: string): Promise<{ wasteItems: CostWasteItem[] }> {
+    const query = clusterId && clusterId !== 'ALL' && clusterId !== 'all' ? `?clusterId=${encodeURIComponent(clusterId)}` : '';
+    return this.request(`/api/v1/cost/waste${query}`);
   }
 
-  async getCostSavings(): Promise<{ savings: CostSavingsTracking }> {
-    return this.request('/api/v1/cost/savings');
+  async getCostSavings(clusterId?: string): Promise<{ savings: CostSavingsTracking }> {
+    const query = clusterId && clusterId !== 'ALL' && clusterId !== 'all' ? `?clusterId=${encodeURIComponent(clusterId)}` : '';
+    return this.request(`/api/v1/cost/savings${query}`);
+  }
+
+  async getCostBudget(clusterId?: string): Promise<{ budget: CostBudget | null }> {
+    const query = clusterId && clusterId !== 'ALL' && clusterId !== 'all' ? `?clusterId=${encodeURIComponent(clusterId)}` : '';
+    return this.request(`/api/v1/cost/budget${query}`);
+  }
+
+  async saveCostBudget(data: { monthlyBudgetUsd: number; alertThresholds?: number[]; clusterId?: string; notificationEmails?: string[] }): Promise<{ success: boolean; message: string; budget: CostBudget }> {
+    return this.request('/api/v1/cost/budget', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
   }
 
   // ==========================================
@@ -1891,6 +1956,43 @@ class ApiClient {
   // ==========================================
   async getRoleCapabilities(): Promise<{ capabilities: RoleCapabilitySummary[] }> {
     return this.request('/api/v1/auth/roles/capabilities');
+  }
+
+  // ==========================================
+  // SELF-HOSTED LOCAL AUTHENTICATION
+  // ==========================================
+  async getAuthStatus(): Promise<{ authProvider: 'local' | 'firebase'; deploymentMode: string; setupRequired: boolean; initialized: boolean }> {
+    return this.request('/api/v1/auth/status');
+  }
+
+  async setupInitialAdmin(data: { name: string; email: string; password: string; organizationName?: string }): Promise<any> {
+    const res = await this.request<any>('/api/v1/auth/setup', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    if (res?.token) {
+      this.setSessionToken(res.token);
+    }
+    return res;
+  }
+
+  async localLogin(email: string, password: string): Promise<any> {
+    const res = await this.request<any>('/api/v1/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password })
+    });
+    if (res?.token) {
+      this.setSessionToken(res.token);
+    }
+    return res;
+  }
+
+  async localLogout(): Promise<any> {
+    const res = await this.request<any>('/api/v1/auth/logout', {
+      method: 'POST'
+    });
+    this.setSessionToken(null);
+    return res;
   }
 }
 

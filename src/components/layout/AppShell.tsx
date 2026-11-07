@@ -18,6 +18,7 @@ import { DocTopic, KnowledgeBaseModal } from '../docs/KnowledgeBaseModal';
 import { OperationsWorkspaceView } from '../operations/OperationsWorkspaceView';
 import { NotificationCenter } from '../notifications/NotificationCenter';
 import { PodLogsViewer } from '../logs/PodLogsViewer';
+import { CostIntelligenceView } from '../cost/CostIntelligenceView';
 import { Modal } from '../common/UI';
 
 interface AppShellProps {
@@ -49,6 +50,10 @@ const PAGE_METADATA: Record<string, { title: string; subtitle: string }> = {
   observability: {
     title: 'Observability',
     subtitle: 'Live CPU & memory metrics, Kubernetes events, and container logs'
+  },
+  cost: {
+    title: 'Cost Intelligence & FinOps',
+    subtitle: 'Kubernetes resource allocation, waste elimination, budgets & verified savings'
   },
   audit: {
     title: 'Activity Log',
@@ -303,7 +308,7 @@ export const AppShell: React.FC<AppShellProps> = ({
       setActiveTab('observability');
       return;
     }
-    if (tab === 'cost' || tab === 'security') {
+    if (tab === 'security') {
       setActiveTab('overview');
       return;
     }
@@ -319,6 +324,8 @@ export const AppShell: React.FC<AppShellProps> = ({
           window.history.pushState({ tab: 'incidents' }, '', '/incidents');
         } else if (tab === 'observability') {
           window.history.pushState({ tab: 'observability' }, '', '/observability');
+        } else if (tab === 'cost') {
+          window.history.pushState({ tab: 'cost' }, '', '/cost');
         }
       }
     } catch {
@@ -365,6 +372,17 @@ export const AppShell: React.FC<AppShellProps> = ({
           setActiveTab('operations');
           const targetCluster = searchParams.get('clusterId');
           if (targetCluster) setSelectedClusterId(targetCluster);
+          return;
+        }
+
+        const costMatch =
+          searchParams.get('tab') === 'cost' ||
+          window.location.pathname.startsWith('/cost') ||
+          window.location.hash.startsWith('#/cost');
+        if (costMatch) {
+          setActiveTab('cost');
+          setSelectedClusterId(null);
+          setSelectedIncidentId(null);
           return;
         }
       } catch {
@@ -671,6 +689,13 @@ export const AppShell: React.FC<AppShellProps> = ({
               logIntent={pendingLogIntent}
               onClearLogIntent={() => setPendingLogIntent(null)}
               onRefresh={handleManualRefresh}
+            />
+          )}
+
+          {activeTab === 'cost' && (
+            <CostIntelligenceView
+              clusters={clusters}
+              onOpenAddCluster={() => setIsAddClusterOpen(true)}
             />
           )}
 

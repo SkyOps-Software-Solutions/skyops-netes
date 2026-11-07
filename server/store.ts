@@ -77,7 +77,7 @@ import {
   PodLogAlertSubscription,
   OperationalCapabilities
 } from '../src/types/index';
-import { ResourceRightsizingRecommendation } from '../src/types/enterprise';
+import { CostBudget, ResourceRightsizingRecommendation } from '../src/types/enterprise';
 import { TelemetryStore } from './telemetry_store';
 import { AGENT_VERSION } from '../src/config/version';
 import { IncidentDetector } from './engine/detector';
@@ -202,6 +202,7 @@ export class DataStore {
   private deployments: Map<string, DeploymentRecord> = new Map(); // deploymentId -> DeploymentRecord
   private postmortems: Map<string, IncidentPostmortem> = new Map(); // incidentId -> IncidentPostmortem
   private appliedRightsizing: Map<string, ResourceRightsizingRecommendation> = new Map(); // recId -> ResourceRightsizingRecommendation
+  private costBudgets: Map<string, CostBudget> = new Map(); // key: orgId:clusterKey -> CostBudget
   private notifications: Map<string, AppNotification[]> = new Map(); // orgId -> notifications
   private podAlertSubscriptions: Map<string, PodLogAlertSubscription> = new Map(); // subKey -> subscription
   private incidentCounter = 1001;
@@ -528,6 +529,7 @@ export class DataStore {
         if (data.deployments) this.deployments = new Map(Object.entries(data.deployments));
         if (data.postmortems) this.postmortems = new Map(Object.entries(data.postmortems));
         if (data.appliedRightsizing) this.appliedRightsizing = new Map(Object.entries(data.appliedRightsizing));
+        if (data.costBudgets) this.costBudgets = new Map(Object.entries(data.costBudgets));
         if (data.deletedOrgIds && Array.isArray(data.deletedOrgIds)) {
           this.deletedOrgIds = new Set(data.deletedOrgIds);
         }
@@ -660,6 +662,7 @@ export class DataStore {
         deployments: Object.fromEntries(this.deployments),
         postmortems: Object.fromEntries(this.postmortems),
         appliedRightsizing: Object.fromEntries(this.appliedRightsizing),
+        costBudgets: Object.fromEntries(this.costBudgets),
         deletedOrgIds: Array.from(this.deletedOrgIds),
         processedWebhookIds: Array.from(this.processedWebhookIds),
         clusterMetricHistory: Object.fromEntries(this.clusterMetricHistory),
@@ -6986,6 +6989,30 @@ export class DataStore {
     this.appliedRightsizing.set(rec.id, updated);
     this.saveSnapshot();
     return updated;
+  }
+
+  public getCostBudget(orgId: string, clusterId?: string): CostBudget | null {
+    const clusterKey = clusterId && clusterId !== 'ALL' && clusterId !== 'all' ? clusterId : 'global';
+    const budget = this.costBudgets.get(`${orgId}:${clusterKey}`);
+    if (budget) return budget;
+    if (clusterKey !== 'global') {
+      return this.costBudgets.get(`${orgId}:global`) || null;
+    }
+    return null;
+  }
+
+  public saveCostBudget(budget: CostBudget): CostBudget {
+    const clusterKey = budget.clusterId && budget.clusterId !== 'ALL' && budget.clusterId !== 'all' ? budget.clusterId : 'global';
+    const key = `${budget.orgId}:${clusterKey}`;
+    const clean: CostBudget = {
+      ...budget,
+      id: budget.id || `bgt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      clusterId: clusterKey === 'global' ? undefined : clusterKey,
+      updatedAt: Date.now()
+    };
+    this.costBudgets.set(key, clean);
+    this.saveSnapshot();
+    return clean;
   }
 
   public queueMetricsServerVerificationRequest(clusterId: string): string {

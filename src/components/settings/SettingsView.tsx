@@ -26,7 +26,9 @@ import {
   Webhook,
   Zap,
   LogOut,
-  ShieldCheck
+  ShieldCheck,
+  ArrowUpCircle,
+  Sparkles
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
@@ -43,6 +45,9 @@ import { ContactManager } from './ContactManager';
 import { InvoicesManager } from './InvoicesManager';
 import { IntegrationsHubManager } from './IntegrationsHubManager';
 import { AutoHealingManager } from './AutoHealingManager';
+import { LicenseManager } from './LicenseManager';
+import { AIConfigManager } from './AIConfigManager';
+import { SoftwareUpdatesManager } from './SoftwareUpdatesManager';
 
 interface SettingsViewProps {
   clusters: Cluster[];
@@ -57,6 +62,9 @@ export type SettingsTab =
   | 'integrations'
   | 'billing'
   | 'support'
+  | 'license'
+  | 'ai_config'
+  | 'software_updates'
   | 'testbed';
 
 interface TabGroup {
@@ -385,6 +393,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
         { id: 'integrations', label: 'Alerts & Integrations', icon: <Bell className="w-3.5 h-3.5" /> },
         { id: 'billing', label: 'Billing & Usage', icon: <CreditCard className="w-3.5 h-3.5" /> },
         { id: 'support', label: 'Help & System Status', icon: <Headphones className="w-3.5 h-3.5" /> }
+      ]
+    },
+    {
+      category: 'PLATFORM & GOVERNANCE',
+      items: [
+        { id: 'license', label: 'Commercial License', icon: <Shield className="w-3.5 h-3.5 text-sky-400" /> },
+        { id: 'ai_config', label: 'AI & Privacy', icon: <Sparkles className="w-3.5 h-3.5 text-purple-400" /> },
+        { id: 'software_updates', label: 'Software Updates', icon: <ArrowUpCircle className="w-3.5 h-3.5 text-emerald-400" /> }
       ]
     },
     ...(import.meta.env.DEV
@@ -908,6 +924,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ clusters, onSelectIn
           </div>
         </div>
       )}
+
+      {/* Tab: Commercial License & Entitlements */}
+      {activeTab === 'license' && <LicenseManager />}
+
+      {/* Tab: Configurable AI Provider & Privacy Settings */}
+      {activeTab === 'ai_config' && <AIConfigManager />}
+
+      {/* Tab: Software Updates & Upgrade Engine */}
+      {activeTab === 'software_updates' && <SoftwareUpdatesManager />}
 
       {/* Tab: QA Scenario Testbed (Dev Only) */}
       {import.meta.env.DEV && activeTab === 'testbed' && (

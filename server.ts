@@ -19,9 +19,14 @@ import cors from 'cors';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import express, { NextFunction, Request, Response } from 'express';
+import cookieParser from 'cookie-parser';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { z } from 'zod';
+import { localAuthRouter } from './server/auth/localAuth';
+import { licenseRouter } from './server/licensing/licenseRoutes';
+import { aiConfigRouter } from './server/ai/aiRoutes';
+import { updateRouter } from './server/updates/updateRoutes';
 import {
   AuthenticatedAgentRequest,
   AuthenticatedUserRequest,
@@ -136,10 +141,15 @@ app.use((req, res, next) => {
 });
 
 app.use(correlationIdMiddleware);
+app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use('/api/v1/auth', localAuthRouter);
 app.use(storageRouter);
 app.use('/api/v1/logs', logRouter);
+app.use('/api/v1/system', licenseRouter);
+app.use('/api/v1/system', aiConfigRouter);
+app.use('/api/v1/system', updateRouter);
 app.use(express.static(path.join(process.cwd(), 'public')));
 
 // Explicit brand logo and browser favicon endpoints
@@ -3933,19 +3943,60 @@ app.get('/api/v1/settings/notifications/deliveries', requireUserAuth, requireOrg
 // ==========================================
 // ENTERPRISE COST INTELLIGENCE ROUTES
 // ==========================================
+// ENTERPRISE COST INTELLIGENCE & FINOPS ROUTES
+// ==========================================
 app.get('/api/v1/cost/overview', requireUserAuth, requireOrgMembership, requirePermission('cost.view'), (req: AuthenticatedUserRequest, res) => {
-  const overview = CostEngine.getCostOverview(req.orgId!);
+  const clusterId = req.query.clusterId as string | undefined;
+  const overview = CostEngine.getCostOverview(req.orgId!, clusterId);
   res.json({ overview });
 });
 
 app.get('/api/v1/cost/allocation', requireUserAuth, requireOrgMembership, requirePermission('cost.view'), (req: AuthenticatedUserRequest, res) => {
-  const allocation = CostEngine.getCostAllocation(req.orgId!);
+  const clusterId = req.query.clusterId as string | undefined;
+  const allocation = CostEngine.getCostAllocation(req.orgId!, clusterId);
   res.json({ allocation });
 });
 
 app.get('/api/v1/cost/rightsizing', requireUserAuth, requireOrgMembership, requirePermission('cost.view'), (req: AuthenticatedUserRequest, res) => {
-  const recommendations = CostEngine.getRightsizingRecommendations(req.orgId!);
+  const clusterId = req.query.clusterId as string | undefined;
+  const recommendations = CostEngine.getRightsizingRecommendations(req.orgId!, clusterId);
   res.json({ recommendations });
+});
+
+app.post('/api/v1/cost/rightsizing/:id/approve', requireUserAuth, requireOrgMembership, requirePermission('cost.optimize'), (req: AuthenticatedUserRequest, res) => {
+  const recommendations = CostEngine.getRightsizingRecommendations(req.orgId!);
+  const rec = recommendations.find((r) => r.id === req.params.id);
+  if (!rec) {
+    return res.status(404).json({ error: 'Rightsizing recommendation not found' });
+  }
+
+  const updatedRec = {
+    ...rec,
+    status: 'APPROVED' as const,
+    lifecycleStage: 'APPROVED' as const,
+    approvedAt: Date.now()
+  };
+
+  store.applyRightsizingRecommendation(updatedRec, req.user!.id, req.user!.name);
+
+  auditService.record({
+    orgId: req.orgId!,
+    actorId: req.user!.id,
+    actorName: req.user!.name,
+    actorType: 'HUMAN',
+    action: 'cost.recommendation_approved',
+    resourceType: 'COST',
+    resourceId: rec.id,
+    result: 'SUCCESS',
+    details: {
+      workloadName: rec.workloadName,
+      namespace: rec.namespace,
+      clusterName: rec.clusterName,
+      estimatedMonthlySavingsUsd: rec.estimatedMonthlySavingsUsd
+    }
+  });
+
+  res.json({ success: true, message: `Recommendation for ${rec.workloadName} marked as Approved.`, recommendation: updatedRec });
 });
 
 app.post('/api/v1/cost/rightsizing/:id/apply', requireUserAuth, requireOrgMembership, requirePermission('cost.optimize'), (req: AuthenticatedUserRequest, res) => {
@@ -3976,18 +4027,69 @@ app.post('/api/v1/cost/rightsizing/:id/apply', requireUserAuth, requireOrgMember
     }
   });
 
-  const appliedRec = store.applyRightsizingRecommendation(rec, req.user!.id, req.user!.name);
+  const appliedRec = store.applyRightsizingRecommendation({
+    ...rec,
+    status: 'APPLIED',
+    lifecycleStage: 'IMPLEMENTED',
+    appliedAt: Date.now()
+  }, req.user!.id, req.user!.name);
+
   res.json({ success: true, message: `Rightsizing recommendation applied for ${rec.workloadName}. Verified safety checks passed.`, recommendation: appliedRec });
 });
 
 app.get('/api/v1/cost/waste', requireUserAuth, requireOrgMembership, requirePermission('cost.view'), (req: AuthenticatedUserRequest, res) => {
-  const wasteItems = CostEngine.getCostWasteItems(req.orgId!);
+  const clusterId = req.query.clusterId as string | undefined;
+  const wasteItems = CostEngine.getCostWasteItems(req.orgId!, clusterId);
   res.json({ wasteItems });
 });
 
 app.get('/api/v1/cost/savings', requireUserAuth, requireOrgMembership, requirePermission('cost.view'), (req: AuthenticatedUserRequest, res) => {
-  const savings = CostEngine.getCostSavingsTracking(req.orgId!);
+  const clusterId = req.query.clusterId as string | undefined;
+  const savings = CostEngine.getCostSavingsTracking(req.orgId!, clusterId);
   res.json({ savings });
+});
+
+app.get('/api/v1/cost/budget', requireUserAuth, requireOrgMembership, requirePermission('cost.view'), (req: AuthenticatedUserRequest, res) => {
+  const clusterId = req.query.clusterId as string | undefined;
+  const budget = store.getCostBudget(req.orgId!, clusterId);
+  res.json({ budget });
+});
+
+app.post('/api/v1/cost/budget', requireUserAuth, requireOrgMembership, requirePermission('cost.optimize'), (req: AuthenticatedUserRequest, res) => {
+  const { monthlyBudgetUsd, alertThresholds, clusterId, notificationEmails } = req.body;
+  if (typeof monthlyBudgetUsd !== 'number' || monthlyBudgetUsd < 0) {
+    return res.status(400).json({ error: 'Invalid monthly budget amount. Must be a non-negative number.' });
+  }
+
+  const budget = store.saveCostBudget({
+    id: `bgt-${Date.now()}`,
+    orgId: req.orgId!,
+    clusterId: clusterId || undefined,
+    monthlyBudgetUsd,
+    alertThresholds: Array.isArray(alertThresholds) ? alertThresholds : [70, 85, 100],
+    notificationEmails: Array.isArray(notificationEmails) ? notificationEmails : undefined,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    updatedBy: req.user!.name || req.user!.email
+  });
+
+  auditService.record({
+    orgId: req.orgId!,
+    actorId: req.user!.id,
+    actorName: req.user!.name,
+    actorType: 'HUMAN',
+    action: 'cost.budget_updated',
+    resourceType: 'COST',
+    resourceId: budget.id,
+    result: 'SUCCESS',
+    details: {
+      monthlyBudgetUsd,
+      alertThresholds: budget.alertThresholds,
+      clusterId: clusterId || 'GLOBAL'
+    }
+  });
+
+  res.json({ success: true, message: 'Monthly cost budget updated successfully.', budget });
 });
 
 // ==========================================

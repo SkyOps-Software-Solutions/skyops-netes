@@ -57,6 +57,9 @@ interface AuthContextType {
   canViewAuditLogs: boolean;
   isViewer: boolean;
   isAuditor: boolean;
+  authProvider: 'local' | 'firebase';
+  setupRequired: boolean;
+  setupInitialAdmin: (name: string, email: string, pass: string, orgName: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -71,6 +74,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [role, setRole] = useState<Role>('OWNER');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [authProvider, setAuthProvider] = useState<'local' | 'firebase'>('firebase');
+  const [setupRequired, setSetupRequired] = useState(false);
 
   const syncUserWithFirestore = async (
     fbUser: FirebaseUser,
@@ -128,6 +133,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
+    // 1. Probe server authentication mode (local self-hosted vs hosted firebase)
+    api.getAuthStatus().then((status) => {
+      if (status?.authProvider === 'local') {
+        setAuthProvider('local');
+        setSetupRequired(Boolean(status.setupRequired));
+        refreshSession();
+      }
+    }).catch(() => {
+      // Non-fatal: default to hosted Firebase
+    });
+
     console.info('[SkyOps AuthContext] Initializing Firebase runtime environment:', {
       projectId: resolvedFirebaseConfig.projectId,
       firestoreDatabaseId: resolvedFirebaseConfig.firestoreDatabaseId || '(default)',
@@ -142,12 +158,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await syncUserWithFirestore(fbUser);
         await refreshSession();
       } else {
-        setUser(null);
-        setCurrentOrg(null);
-        setOrganizations([]);
-        setMembers([]);
-        setRole('VIEWER');
-        setLoading(false);
+        setAuthProvider((current) => {
+          if (current !== 'local') {
+            setUser(null);
+            setCurrentOrg(null);
+            setOrganizations([]);
+            setMembers([]);
+            setRole('VIEWER');
+            setLoading(false);
+          }
+          return current;
+        });
       }
     });
 
@@ -217,6 +238,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setError(null);
       setLoading(true);
+
+      // Mode B: Self-Hosted Local Authentication
+      if (authProvider === 'local') {
+        const res = await api.localLogin(email.trim(), pass);
+        if (res && res.user) {
+          setUser(res.user);
+          setCurrentOrg(res.currentOrg || null);
+          setOrganizations(res.organizations || []);
+          setRole(res.role || 'OWNER');
+          await refreshSession();
+          return;
+        }
+      }
+
+      // Mode A: Cloud Firebase Authentication
       try {
         const result = await signInWithEmailAndPassword(auth, email.trim(), pass);
         if (result.user) {
@@ -248,6 +284,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       setError(friendlyMessage);
       throw new Error(friendlyMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const setupInitialAdmin = async (name: string, email: string, pass: string, orgName: string) => {
+    try {
+      setError(null);
+      setLoading(true);
+      const res = await api.setupInitialAdmin({
+        name: name.trim(),
+        email: email.trim(),
+        password: pass,
+        organizationName: orgName.trim()
+      });
+      if (res && res.user) {
+        setUser(res.user);
+        setCurrentOrg(res.currentOrg || null);
+        setOrganizations(res.currentOrg ? [res.currentOrg] : []);
+        setRole('OWNER');
+        setSetupRequired(false);
+        await refreshSession();
+      }
+    } catch (err: any) {
+      const msg = err.message || 'Administrator setup failed';
+      setError(msg);
+      throw new Error(msg);
     } finally {
       setLoading(false);
     }
@@ -323,9 +386,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = async () => {
     try {
-      await firebaseSignOut(auth);
+      if (authProvider === 'local') {
+        await api.localLogout();
+      } else {
+        await firebaseSignOut(auth);
+      }
     } catch (err) {
-      console.warn('Firebase sign out warning:', err);
+      console.warn('Sign out notice:', err);
     } finally {
       localStorage.removeItem('skyops_active_org_id');
       setUser(null);
@@ -463,7 +530,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         canManageOrgSettings,
         canViewAuditLogs,
         isViewer,
-        isAuditor
+        isAuditor,
+        authProvider,
+        setupRequired,
+        setupInitialAdmin
       }}
     >
       {children}

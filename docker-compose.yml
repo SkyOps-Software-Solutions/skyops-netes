@@ -1,0 +1,106 @@
+# ==============================================================================
+# SkyOps Self-Hosted Deployment - Docker Compose Specification
+# ==============================================================================
+name: skyops
+
+services:
+  # ----------------------------------------------------------------------------
+  # PostgreSQL 16 - Relational Persistence Layer
+  # ----------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: skyops-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-skyops}
+      POSTGRES_USER: ${POSTGRES_USER:-skyops}
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Error: POSTGRES_PASSWORD must be configured in .env}"
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - skyops_pgdata:/var/lib/postgresql/data
+    networks:
+      - skyops-network
+    # Port 5432 is strictly internal and NEVER published to host network for security
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-skyops} -d ${POSTGRES_DB:-skyops}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # ----------------------------------------------------------------------------
+  # SkyOps Control Plane - Application, Web Dashboard & Central Telemetry Ingestion
+  # ----------------------------------------------------------------------------
+  skyops:
+    image: skyops/control-plane:${SKYOPS_VERSION:-v1.0.0}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: skyops-control-plane
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      SKYOPS_DEPLOYMENT_MODE: self_hosted
+      PERSISTENCE_PROVIDER: postgres
+      AUTH_PROVIDER: local
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-skyops}
+      POSTGRES_USER: ${POSTGRES_USER:-skyops}
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Error: POSTGRES_PASSWORD must be configured in .env}"
+      POSTGRES_POOL_MAX: ${POSTGRES_POOL_MAX:-25}
+      SKYOPS_JWT_SECRET: "${SKYOPS_JWT_SECRET:?Error: SKYOPS_JWT_SECRET must be configured in .env}"
+      STORAGE_DRIVER: local
+      LOCAL_STORAGE_PATH: /var/lib/skyops/data
+      APP_URL: ${SKYOPS_APP_URL:-http://localhost:3000}
+      SKYOPS_SERVER_URL: ${SKYOPS_SERVER_URL:-http://localhost:3000}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+    ports:
+      - "${SKYOPS_PORT:-3000}:3000"
+    volumes:
+      - skyops_appdata:/var/lib/skyops/data
+    networks:
+      - skyops-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:3000/api/v1/auth/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+# ------------------------------------------------------------------------------
+# Persistent Volume Declarations
+# ------------------------------------------------------------------------------
+volumes:
+  skyops_pgdata:
+    name: skyops_pgdata
+  skyops_appdata:
+    name: skyops_appdata
+
+# ------------------------------------------------------------------------------
+# Isolated Internal Network
+# ------------------------------------------------------------------------------
+networks:
+  skyops-network:
+    name: skyops-network
+    driver: bridge

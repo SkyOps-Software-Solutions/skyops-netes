@@ -262,6 +262,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <Activity className="w-4 h-4" />
     },
     {
+      id: 'cost',
+      label: 'Cost Intelligence',
+      subtitle: 'FinOps, budgets & savings',
+      icon: <DollarSign className="w-4 h-4" />
+    },
+    {
       id: 'audit',
       label: 'Activity Log',
       subtitle: 'Team actions & audit trail',

@@ -1,0 +1,285 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# SkyOps Self-Hosted Management CLI Tool
+# ==============================================================================
+# Usage: skyops [command] [options]
+# Commands: status, start, stop, restart, logs, update, backup, restore, version, uninstall
+# ==============================================================================
+
+set -euo pipefail
+
+SKYOPS_HOME="${SKYOPS_HOME:-/opt/skyops}"
+if [ ! -f "${SKYOPS_HOME}/docker-compose.yml" ] && [ -f "./docker-compose.yml" ]; then
+    SKYOPS_HOME="$(pwd)"
+fi
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+log_info() {
+    echo -e "${CYAN}[SkyOps]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SkyOps ✓]${NC} ${BOLD}$1${NC}"
+}
+
+log_warn() {
+    echo -e "${YELLOW}[SkyOps ⚠]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[SkyOps ✗] ERROR:${NC} $1" >&2
+}
+
+require_compose() {
+    if [ ! -f "${SKYOPS_HOME}/docker-compose.yml" ]; then
+        log_error "No SkyOps deployment found at ${SKYOPS_HOME} (missing docker-compose.yml)."
+        echo -e "If installed in a custom location, specify SKYOPS_HOME=/path/to/skyops"
+        exit 1
+    fi
+    if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+        log_error "Docker Engine or Docker Compose v2 is required but not found in PATH."
+        exit 1
+    fi
+}
+
+cmd_status() {
+    require_compose
+    cd "${SKYOPS_HOME}"
+    echo -e "${BLUE}=== SkyOps Service Status (${SKYOPS_HOME}) ===${NC}"
+    docker compose ps
+
+    echo ""
+    echo -e "${BLUE}=== Health & Connectivity Probe ===${NC}"
+    local port="3000"
+    if [ -f "${SKYOPS_HOME}/.env" ]; then
+        port="$(grep -E '^SKYOPS_PORT=' "${SKYOPS_HOME}/.env" | cut -d'=' -f2 || echo "3000")"
+        [ -z "$port" ] && port="3000"
+    fi
+
+    if curl -fsSL "http://127.0.0.1:${port}/api/v1/auth/status" 2>/dev/null; then
+        echo ""
+        log_success "SkyOps Control Plane is ONLINE and responding at http://127.0.0.1:${port}"
+    else
+        log_warn "SkyOps HTTP probe failed on port ${port}. Services may still be starting or restarting."
+    fi
+
+    echo ""
+    echo -e "${BLUE}=== Persistent Storage Utilization ===${NC}"
+    if docker volume inspect skyops_pgdata >/dev/null 2>&1; then
+        echo -n "PostgreSQL Volume (skyops_pgdata): "
+        docker system df -v | grep skyops_pgdata | awk '{print $3}' 2>/dev/null || echo "Active"
+    fi
+    if docker volume inspect skyops_appdata >/dev/null 2>&1; then
+        echo -n "Telemetry & Artifact Volume (skyops_appdata): "
+        docker system df -v | grep skyops_appdata | awk '{print $3}' 2>/dev/null || echo "Active"
+    fi
+    if [ -d "${SKYOPS_HOME}/backups" ]; then
+        local backup_count
+        backup_count="$(find "${SKYOPS_HOME}/backups" -maxdepth 1 -name "*.tar.gz" 2>/dev/null | wc -l)"
+        echo -e "Available Backups: ${backup_count} archives in ${SKYOPS_HOME}/backups"
+    fi
+}
+
+cmd_start() {
+    require_compose
+    cd "${SKYOPS_HOME}"
+    log_info "Starting SkyOps services..."
+    docker compose up -d
+    log_success "SkyOps services started successfully."
+}
+
+cmd_stop() {
+    require_compose
+    cd "${SKYOPS_HOME}"
+    log_info "Stopping SkyOps services..."
+    docker compose stop
+    log_success "SkyOps services stopped."
+}
+
+cmd_restart() {
+    require_compose
+    cd "${SKYOPS_HOME}"
+    log_info "Restarting SkyOps services..."
+    docker compose restart "$@"
+    log_success "SkyOps services restarted."
+}
+
+cmd_logs() {
+    require_compose
+    cd "${SKYOPS_HOME}"
+    docker compose logs -f "$@"
+}
+
+cmd_update() {
+    require_compose
+    cd "${SKYOPS_HOME}"
+    log_info "Checking for SkyOps platform updates..."
+    
+    # Optional automated pre-update backup
+    if [ -f "${SKYOPS_HOME}/scripts/backup.sh" ]; then
+        log_info "Creating safety backup prior to update..."
+        bash "${SKYOPS_HOME}/scripts/backup.sh" || log_warn "Pre-update backup warning. Proceeding with caution."
+    fi
+
+    log_info "Pulling latest container images..."
+    docker compose pull
+
+    log_info "Applying updates and running pending database migrations..."
+    docker compose up -d
+
+    log_success "SkyOps updated and restarted successfully."
+}
+
+cmd_backup() {
+    local backup_script="${SKYOPS_HOME}/scripts/backup.sh"
+    if [ ! -f "$backup_script" ]; then
+        backup_script="$(dirname "$0")/../scripts/backup.sh"
+    fi
+
+    if [ -f "$backup_script" ]; then
+        bash "$backup_script" "$@"
+    else
+        log_error "Backup script not found at ${backup_script}."
+        exit 1
+    fi
+}
+
+cmd_restore() {
+    local restore_script="${SKYOPS_HOME}/scripts/restore.sh"
+    if [ ! -f "$restore_script" ]; then
+        restore_script="$(dirname "$0")/../scripts/restore.sh"
+    fi
+
+    if [ -f "$restore_script" ]; then
+        bash "$restore_script" "$@"
+    else
+        log_error "Restore script not found at ${restore_script}."
+        exit 1
+    fi
+}
+
+cmd_version() {
+    echo -e "${BOLD}SkyOps Self-Hosted Platform${NC}"
+    echo -e "Version: ${CYAN}v1.0.0${NC}"
+    echo -e "Architecture: x86_64"
+    if [ -f "${SKYOPS_HOME}/.env" ]; then
+        local mode
+        mode="$(grep -E '^SKYOPS_DEPLOYMENT_MODE=' "${SKYOPS_HOME}/.env" | cut -d'=' -f2 || echo "self_hosted")"
+        echo -e "Deployment Mode: ${mode}"
+    fi
+}
+
+cmd_uninstall() {
+    require_compose
+    cd "${SKYOPS_HOME}"
+
+    echo -e "${RED}${BOLD}======================================================================${NC}"
+    echo -e "${RED}${BOLD}   DANGER: UNINSTALL SKYOPS PLATFORM & PERMANENT DATA REMOVAL         ${NC}"
+    echo -e "${RED}${BOLD}======================================================================${NC}"
+    echo -e "This operation will completely stop and destroy:"
+    echo -e "  - SkyOps Control Plane and PostgreSQL containers"
+    echo -e "  - Named Docker volumes (skyops_pgdata, skyops_appdata)"
+    echo -e "  - All stored cluster incidents, telemetry, logs, and user credentials"
+    echo ""
+    echo -ne "${YELLOW}Type ${BOLD}DESTROY ALL DATA${NC}${YELLOW} to confirm permanent uninstallation: ${NC}"
+    read -r confirmation
+
+    if [ "$confirmation" != "DESTROY ALL DATA" ]; then
+        log_info "Uninstallation aborted. No changes made."
+        exit 0
+    fi
+
+    log_info "Stopping and removing SkyOps containers and persistent volumes..."
+    docker compose down -v --remove-orphans
+
+    if [ "${SKYOPS_HOME}" = "/opt/skyops" ]; then
+        log_warn "Backups stored in ${SKYOPS_HOME}/backups have been preserved for safety."
+        log_info "To remove remaining configuration files, run: sudo rm -rf ${SKYOPS_HOME}"
+    fi
+
+    if [ -f "/usr/local/bin/skyops" ]; then
+        rm -f /usr/local/bin/skyops
+        log_info "Removed /usr/local/bin/skyops CLI utility"
+    fi
+
+    log_success "SkyOps platform uninstalled successfully."
+}
+
+cmd_help() {
+    cat << EOF
+SkyOps Self-Hosted Management Utility
+
+Usage:
+  skyops <command> [arguments]
+
+Commands:
+  status             Display container status, healthcheck results, and storage usage
+  start              Start all SkyOps background services
+  stop               Stop all running SkyOps services
+  restart            Restart SkyOps services or a specific service (e.g. skyops restart skyops)
+  logs               Follow live structured logs (e.g. skyops logs -f skyops)
+  update             Pull updated images, run schema migrations, and gracefully restart
+  backup [dest_dir]  Create a timestamped archive of PostgreSQL and application storage
+  restore <file>     Restore a previous backup archive after validation and confirmation
+  version            Print platform version and deployment information
+  uninstall          Safely remove containers and volumes with interactive confirmation
+  help               Show this help message
+
+Environment Variables:
+  SKYOPS_HOME        Path to SkyOps installation (default: /opt/skyops)
+EOF
+}
+
+# ------------------------------------------------------------------------------
+# Command Dispatcher
+# ------------------------------------------------------------------------------
+COMMAND="${1:-help}"
+shift 2>/dev/null || true
+
+case "$COMMAND" in
+    status)
+        cmd_status "$@"
+        ;;
+    start)
+        cmd_start "$@"
+        ;;
+    stop)
+        cmd_stop "$@"
+        ;;
+    restart)
+        cmd_restart "$@"
+        ;;
+    logs)
+        cmd_logs "$@"
+        ;;
+    update)
+        cmd_update "$@"
+        ;;
+    backup)
+        cmd_backup "$@"
+        ;;
+    restore)
+        cmd_restore "$@"
+        ;;
+    version)
+        cmd_version "$@"
+        ;;
+    uninstall)
+        cmd_uninstall "$@"
+        ;;
+    help|--help|-h)
+        cmd_help
+        ;;
+    *)
+        log_error "Unknown command: ${COMMAND}"
+        cmd_help
+        exit 1
+        ;;
+esac

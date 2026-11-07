@@ -21,6 +21,7 @@ import {
 } from './validation';
 import { MemoryStorageDriver } from './drivers/MemoryStorageDriver';
 import { CloudStorageDriver } from './drivers/CloudStorageDriver';
+import { LocalStorageDriver } from './drivers/LocalStorageDriver';
 import { resolveStorageBucket } from '../config';
 import { getPersistenceStore } from '../persistence/index';
 import { auditService } from '../audit';
@@ -53,12 +54,14 @@ export class StorageService {
 
     if (options?.driver) {
       this.driver = options.driver;
+    } else if (process.env.STORAGE_DRIVER === 'local' || process.env.SKYOPS_DEPLOYMENT_MODE === 'self_hosted') {
+      this.driver = new LocalStorageDriver();
     } else if (process.env.NODE_ENV === 'test') {
       this.driver = new MemoryStorageDriver(this.bucketName);
     } else {
       this.driver = new CloudStorageDriver({
         bucketName: this.bucketName,
-        // An in-memory fallback silently loses artifacts at restart.  It is
+        // An in-memory fallback silently loses artifacts at restart. It is
         // useful only for local development; production must fail closed so an
         // operator can repair the backend service identity/storage binding.
         useFallbackOnFailure: process.env.NODE_ENV !== 'production'

@@ -93,19 +93,59 @@ export interface IncidentMultiClusterSummary {
 // ==========================================
 // 3. KUBERNETES COST INTELLIGENCE
 // ==========================================
+// 3. KUBERNETES COST INTELLIGENCE & FINOPS
+// ==========================================
+
+export interface CostBudget {
+  id: string;
+  orgId: string;
+  clusterId?: string; // undefined or empty for organization-wide budget
+  monthlyBudgetUsd: number;
+  alertThresholds: number[]; // e.g. [70, 85, 100]
+  notificationEmails?: string[];
+  createdAt: number;
+  updatedAt: number;
+  updatedBy?: string;
+}
 
 export interface CostOverview {
   estimatedMonthlyCostUsd: number;
+  monthToDateSpendUsd: number;
+  forecastedMonthEndCostUsd: number;
   potentialMonthlySavingsUsd: number;
   cpuWastePercent: number;
   memoryWastePercent: number;
   idleWorkloadsCount: number;
+  activeWorkloadCount: number;
+  totalWorkloadCount: number;
+  dataCoveragePercent: number; // percentage of workloads with live metrics
+  hasStaleOrMissingMetrics: boolean;
   calculatedAt: number;
   currency: string;
   pricingBasis: {
     cpuCoreHourUsd: number; // default $0.040/core-hr
     memoryGibHourUsd: number; // default $0.005/GiB-hr
-    source: 'PROVIDER_INTEGRATED' | 'ESTIMATED_BASELINE';
+    source: 'CLOUD_BILLING_EXPORT' | 'VERIFIED_PROVIDER_RATES' | 'ESTIMATED_BASELINE' | 'UNAVAILABLE';
+    providerName?: string;
+    region?: string;
+    pricingTimestamp?: number;
+    isPricingAvailable: boolean;
+    methodology: string;
+  };
+  budget?: {
+    monthlyBudgetUsd: number;
+    budgetRemainingUsd: number;
+    projectedVarianceUsd: number;
+    utilizationPercent: number;
+    status: 'ON_TRACK' | 'WARNING' | 'EXCEEDED' | 'UNCONFIGURED';
+    thresholds: number[];
+  };
+  fiveKeyQuestions: {
+    currentCostSummary: string;
+    monthEndForecastSummary: string;
+    budgetTrackSummary: string;
+    wasteSummary: string;
+    recommendedNextAction: string;
   };
   isEstimate: boolean;
   estimateDisclaimer: string;
@@ -157,9 +197,43 @@ export interface ResourceRightsizingRecommendation {
   confidencePercent: number; // e.g. 91%
   risk: AIRiskLevel; // LOW, MEDIUM, HIGH
   reason: string;
+  // Production-Grade FinOps Evidence & Safety
+  whatWeFound: string;
+  evidence: {
+    observedCpu: string;
+    requestedCpu: string;
+    observedMemory: string;
+    requestedMemory: string;
+    observationPeriodHours: number;
+    metricsSampleCount: number;
+    telemetryQuality: 'HIGH' | 'MEDIUM' | 'INSUFFICIENT';
+  };
+  recommendedChange: {
+    currentCpu: string;
+    targetCpu: string;
+    currentMemory: string;
+    targetMemory: string;
+    currentReplicas: number;
+    targetReplicas?: number;
+  };
+  expectedBenefit: {
+    monthlySavingsUsd: number;
+    calculationMethod: string;
+    assumptions: string;
+  };
+  riskAssessment: {
+    level: AIRiskLevel;
+    details: string;
+    availabilityImpact: string;
+  };
+  validationPlan: string;
+  rollbackPlan: string;
   rollbackAvailable: boolean;
-  status: 'PENDING_REVIEW' | 'APPLIED' | 'DISMISSED';
+  lifecycleStage?: 'POTENTIAL' | 'APPROVED' | 'IMPLEMENTED' | 'VERIFIED' | 'REALIZED';
+  status: 'PENDING_REVIEW' | 'APPROVED' | 'APPLIED' | 'DISMISSED';
   appliedAt?: number;
+  approvedAt?: number;
+  verifiedAt?: number;
   remediationActionId?: string;
 }
 
@@ -196,6 +270,7 @@ export interface CostWasteItem {
 export interface CostSavingsTracking {
   estimatedOpportunityUsd: number;
   projectedSavingsUsd: number;
+  approvedSavingsUsd: number;
   implementedSavingsUsd: number;
   verifiedSavingsUsd: number;
   realizedSavingsUsd: number;
@@ -207,6 +282,13 @@ export interface CostSavingsTracking {
     verified: number;
     realized: number;
   }>;
+  lifecycleCounts: {
+    potential: number;
+    approved: number;
+    implemented: number;
+    verified: number;
+    realized: number;
+  };
 }
 
 // ==========================================

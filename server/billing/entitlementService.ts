@@ -12,6 +12,7 @@ import { webhookService } from '../integrations/webhooks';
 import { store } from '../store';
 import { billingService } from './billingService';
 import { getPlanDefinition } from './planConfig';
+import { licenseService } from '../licensing/licenseService';
 
 export interface QuotaCheckResult {
   allowed: boolean;
@@ -55,6 +56,26 @@ export class EntitlementService {
     const features: PlanFeatures = {
       ...plan.features
     };
+
+    if (process.env.SKYOPS_DEPLOYMENT_MODE === 'self_hosted') {
+      const licenseVerif = licenseService.getVerificationResult();
+      limits.clusters = licenseVerif.maxClusters;
+      limits.nodes = licenseVerif.maxNodes;
+      if (licenseVerif.features && licenseVerif.features.length > 0) {
+        if (licenseVerif.features.includes('enterprise_rbac')) features.rbac = 'advanced';
+        if (licenseVerif.features.includes('autonomous_remediation')) {
+          features.automatedRemediation = 'full';
+          features.autonomousRemediation = true;
+        }
+        if (licenseVerif.features.includes('advanced_ai_recommendations')) {
+          features.aiInvestigation = 'advanced';
+          features.geminiRootCauseAnalysis = true;
+        }
+        if (licenseVerif.features.includes('custom_reporting')) features.auditLogExport = true;
+        if (licenseVerif.features.includes('sso_oidc')) features.ssoSaml = true;
+        if (licenseVerif.features.includes('advanced_integrations')) features.customIntegrations = true;
+      }
+    }
 
     const now = Date.now();
     const isTrial = sub.status === 'TRIALING';

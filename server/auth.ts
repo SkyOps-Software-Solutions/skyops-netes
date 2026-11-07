@@ -6,6 +6,7 @@ import { store } from './store';
 import { Role, Organization } from '../src/types/index';
 import { config, isProduction } from './config';
 import fallbackConfig from './firebaseAppletConfig';
+import { isLocalAuthMode, verifyLocalJwtToken } from './auth/localAuth';
 
 export interface AuthenticatedUser {
   id: string; // Firebase UID
@@ -295,22 +296,62 @@ export async function verifyFirebaseIdToken(rawToken: string, projectId: string)
 
 /**
  * Middleware: Require a cryptographically verified user identity.
+ * Supports both Mode A (Firebase ID token) and Mode B (Local Auth JWT or httpOnly session cookie).
  */
 export async function requireUserAuth(
   req: AuthenticatedUserRequest,
   res: Response,
   next: NextFunction
 ): Promise<void | Response> {
+  let token: string | null = null;
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.substring(7).trim();
+  } else if ((req as any).cookies?.skyops_session) {
+    token = (req as any).cookies.skyops_session;
+  }
+
+  if (!token) {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  const idToken = authHeader.substring(7).trim();
+  // 1. If explicitly in local auth mode, strictly verify via local JWT
+  if (isLocalAuthMode()) {
+    try {
+      const localUser = verifyLocalJwtToken(token);
+      req.user = localUser;
+      store.upsertUser({
+        id: localUser.id,
+        email: localUser.email,
+        name: localUser.name
+      });
+      return next();
+    } catch {
+      return res.status(401).json({ error: 'Invalid or expired local session token' });
+    }
+  }
+
+  // 2. Check if token is local JWT (supports hybrid or testing flows)
+  try {
+    const localUser = verifyLocalJwtToken(token);
+    if (localUser) {
+      req.user = localUser;
+      store.upsertUser({
+        id: localUser.id,
+        email: localUser.email,
+        name: localUser.name
+      });
+      return next();
+    }
+  } catch {
+    // Proceed to Firebase ID token verification
+  }
+
+  // 3. Fallback: Verify Firebase ID token
   const projectId = config.FIREBASE_PROJECT_ID || (config.FIREBASE_TRUSTED_PROJECT_IDS || '').split(',')[0]?.trim() || '';
 
   try {
-    const verifiedUser = await verifyFirebaseIdToken(idToken, projectId);
+    const verifiedUser = await verifyFirebaseIdToken(token, projectId);
     req.user = verifiedUser;
 
     // Sync user into store

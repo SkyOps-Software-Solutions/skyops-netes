@@ -33,6 +33,9 @@ test('Cost Intelligence: Killercoda Ground Truth & Non-Fabrication Suite', async
     assert.equal(overview.cpuWastePercent, 0, 'Must not fabricate 42% or any synthetic CPU waste');
     assert.equal(overview.memoryWastePercent, 0, 'Must not fabricate 51% or any synthetic memory waste');
     assert.equal(overview.idleWorkloadsCount, 0, 'Must not fabricate 7 idle workloads');
+    assert.equal(overview.pricingBasis.source, 'UNAVAILABLE', 'Empty cluster without resources must report UNAVAILABLE pricing source');
+    assert.equal(overview.pricingBasis.isPricingAvailable, false, 'Must not invent pricing for empty cluster');
+    assert.ok(overview.fiveKeyQuestions.currentCostSummary.includes('$0'));
 
     const allocation = CostEngine.getCostAllocation(testOrg.id);
     assert.equal(allocation.byNamespace.length, 0, 'Must not fabricate synthetic namespaces');
@@ -49,6 +52,7 @@ test('Cost Intelligence: Killercoda Ground Truth & Non-Fabrication Suite', async
     assert.equal(savings.implementedSavingsUsd, 0, 'Must not return hardcoded $3,180');
     assert.equal(savings.verifiedSavingsUsd, 0, 'Must not return hardcoded $2,840');
     assert.equal(savings.realizedSavingsUsd, 0, 'Must not return hardcoded $2,640');
+    assert.equal(savings.lifecycleCounts.potential, 0);
   });
 
   await t.test('2. Killercoda Ground Truth Telemetry: overprovisioned vs cpu-test workloads', async () => {
@@ -287,6 +291,14 @@ test('Cost Intelligence: Killercoda Ground Truth & Non-Fabrication Suite', async
     assert.equal(overprovRec.risk, 'LOW');
     assert.equal(overprovRec.rollbackAvailable, true);
     assert.equal(overprovRec.status, 'PENDING_REVIEW');
+    assert.equal(overprovRec.lifecycleStage, 'POTENTIAL');
+
+    // FinOps Evidence Fields Check
+    assert.ok(overprovRec.whatWeFound.includes('overprovisioned'));
+    assert.equal(overprovRec.evidence.telemetryQuality, 'HIGH');
+    assert.equal(overprovRec.evidence.observationPeriodHours, 24);
+    assert.ok(overprovRec.validationPlan.includes('15 minutes'));
+    assert.ok(overprovRec.rollbackPlan.includes('Reapply previous allocation'));
 
     // Must NOT generate recommendation for cpu-test because it is actively using 969m
     const cpuTestRec = recs.find((r) => r.workloadName === 'cpu-test');
@@ -300,7 +312,24 @@ test('Cost Intelligence: Killercoda Ground Truth & Non-Fabrication Suite', async
     assert.equal(idleItem.recommendedReplicas, 1);
     assert.ok(idleItem.potentialMonthlyWasteUsd > 0);
 
-    // 5. Applying Rightsizing
+    // 5. Budget Management & Variance Forecasting
+    store.saveCostBudget({
+      id: `budget-${testOrg.id}`,
+      orgId: testOrg.id,
+      monthlyBudgetUsd: 100,
+      alertThresholds: [70, 85, 100],
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+
+    const overviewWithBudget = CostEngine.getCostOverview(testOrg.id);
+    assert.ok(overviewWithBudget.budget, 'Budget data must be returned');
+    assert.equal(overviewWithBudget.budget.monthlyBudgetUsd, 100);
+    assert.equal(overviewWithBudget.budget.status, 'ON_TRACK');
+    assert.ok(overviewWithBudget.budget.budgetRemainingUsd > 0);
+    assert.ok(overviewWithBudget.fiveKeyQuestions.budgetTrackSummary.includes('Within budget'));
+
+    // 6. Savings Lifecycle Tracking & Applying Rightsizing
     const applied = store.applyRightsizingRecommendation(overprovRec, 'user-auditor', 'Cost Auditor');
     assert.equal(applied.status, 'APPLIED');
     assert.ok(applied.appliedAt);
@@ -317,5 +346,11 @@ test('Cost Intelligence: Killercoda Ground Truth & Non-Fabrication Suite', async
     assert.ok(savings.verifiedSavingsUsd > 0, 'Verified savings must reflect healthy applied workload');
     assert.ok(savings.realizedSavingsUsd > 0, 'Realized savings must reflect verified savings');
     assert.ok(savings.trackingBreakdown.length > 0, 'Tracking breakdown must have active month');
+    assert.ok(savings.lifecycleCounts.verified >= 1);
   });
 });
+
+// Explicit clean exit to prevent Firestore snapshot client handles from keeping test process open
+setTimeout(() => {
+  process.exit(0);
+}, 500);

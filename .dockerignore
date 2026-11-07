@@ -1,0 +1,53 @@
+# Git and Version Control
+.git
+.gitignore
+.github
+
+# Node and Dependencies
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build and Temporary Output
+dist
+dist-ssr
+*.local
+.cache
+.vite
+
+# Local Environment and Secrets (CRITICAL: Never bake credentials into image)
+.env
+.env.*
+!.env.example
+!.env.production.template
+
+# Testing, Coverage and Mocks
+coverage
+.nyc_output
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+__tests__
+
+# Local Database and File Storage
+data
+backups
+*.sqlite
+*.db
+*.dump
+*.pg
+
+# Operating System and IDEs
+.DS_Store
+Thumbs.db
+.idea
+.vscode
+*.sublime-project
+*.sublime-workspace
+
+# Documentation and Scratch Artifacts
+.aistudio
+*.md
+!README.md

@@ -29,8 +29,27 @@ export const AuthView: React.FC<AuthViewProps> = ({
   onBackToHome,
   onAuthSuccess
 }) => {
-  const { signInWithEmail, signUpWithEmail, signInWithGoogle, sendPasswordReset, error: authError } = useAuth();
-  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>(initialMode);
+  const {
+    signInWithEmail,
+    signUpWithEmail,
+    signInWithGoogle,
+    sendPasswordReset,
+    error: authError,
+    authProvider,
+    setupRequired,
+    setupInitialAdmin
+  } = useAuth();
+  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot' | 'setup'>(() => {
+    if (authProvider === 'local' && setupRequired) return 'setup';
+    return initialMode;
+  });
+
+  // Automatically transition to setup mode if server requires initial bootstrap
+  React.useEffect(() => {
+    if (authProvider === 'local' && setupRequired) {
+      setMode('setup');
+    }
+  }, [authProvider, setupRequired]);
 
   // Form states
   const [email, setEmail] = useState('');
@@ -58,6 +77,27 @@ export const AuthView: React.FC<AuthViewProps> = ({
     e.preventDefault();
     setLocalError(null);
     setResetSuccess(false);
+
+    if (mode === 'setup') {
+      if (!displayName.trim() || !email.trim() || !password.trim()) {
+        setLocalError('Please complete all administrator fields');
+        return;
+      }
+      if (password.length < 8) {
+        setLocalError('Password must be at least 8 characters in length');
+        return;
+      }
+      try {
+        setSubmitting(true);
+        await setupInitialAdmin(displayName.trim(), email.trim(), password, orgName.trim() || 'Default Workspace');
+        if (onAuthSuccess) onAuthSuccess();
+      } catch (err: any) {
+        setLocalError(err.message || 'Initial administrator setup failed');
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
 
     if (mode === 'forgot') {
       if (!email.trim()) {
@@ -149,15 +189,25 @@ export const AuthView: React.FC<AuthViewProps> = ({
               <div className="flex justify-center">
                 <BrandLogo size="xl" className="rounded-xl shadow-lg" />
               </div>
+              {authProvider === 'local' && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-sky-950/40 border border-sky-800/60 rounded-full text-[11px] font-mono text-sky-300">
+                  <Server className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Self-Hosted Deployment • Local Identity</span>
+                </div>
+              )}
               <h1 className="text-2xl font-bold tracking-tight text-zinc-100">
-                {mode === 'signup'
+                {mode === 'setup'
+                  ? 'Initial Administrator Setup'
+                  : mode === 'signup'
                   ? 'Create SkyOps Account'
                   : mode === 'forgot'
                   ? 'Reset Your Password'
                   : 'Sign In to SkyOps'}
               </h1>
               <p className="text-xs font-mono text-zinc-400">
-                {mode === 'signup'
+                {mode === 'setup'
+                  ? 'Bootstrap your self-hosted control plane & primary workspace'
+                  : mode === 'signup'
                   ? 'Initialize your tenant workspace & team environment'
                   : mode === 'forgot'
                   ? 'We will send a password reset link to your email'
@@ -208,8 +258,8 @@ export const AuthView: React.FC<AuthViewProps> = ({
               </div>
             )}
 
-            {/* Google Auth Button (For Sign In & Sign Up) */}
-            {mode !== 'forgot' && (
+            {/* Google Auth Button (For Sign In & Sign Up - Cloud Mode Only) */}
+            {mode !== 'forgot' && mode !== 'setup' && authProvider !== 'local' && (
               <div className="space-y-3">
                 <button
                   type="button"
@@ -256,8 +306,8 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
             {/* Email Form */}
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Organization Name (Required for Sign Up) */}
-              {mode === 'signup' && (
+              {/* Organization Name (Required for Sign Up and Setup) */}
+              {(mode === 'signup' || mode === 'setup') && (
                 <div>
                   <label className="block text-xs font-mono font-medium text-zinc-300 mb-1.5">
                     Organization / Workspace Name <span className="text-rose-400">*</span>
@@ -276,16 +326,17 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 </div>
               )}
 
-              {/* Full Name (Optional for Sign Up) */}
-              {mode === 'signup' && (
+              {/* Full Name */}
+              {(mode === 'signup' || mode === 'setup') && (
                 <div>
                   <label className="block text-xs font-mono font-medium text-zinc-300 mb-1.5">
-                    Full Name (Optional)
+                    {mode === 'setup' ? 'Administrator Full Name' : 'Full Name (Optional)'} <span className="text-rose-400">*</span>
                   </label>
                   <div className="relative">
                     <UserIcon className="w-4 h-4 text-zinc-500 absolute left-3 top-2.5" />
                     <input
                       type="text"
+                      required={mode === 'setup'}
                       placeholder="e.g. Alex Rivera"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
@@ -299,7 +350,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs font-mono font-medium text-zinc-300">
-                    Work Email <span className="text-rose-400">*</span>
+                    {mode === 'setup' ? 'Administrator Email' : 'Work Email'} <span className="text-rose-400">*</span>
                   </label>
                 </div>
                 <div className="relative">
@@ -320,7 +371,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="block text-xs font-mono font-medium text-zinc-300">
-                      Password <span className="text-rose-400">*</span>
+                      {mode === 'setup' ? 'Administrator Password (Min 8 characters)' : 'Password'} <span className="text-rose-400">*</span>
                     </label>
                     {mode === 'signin' && (
                       <button
@@ -361,6 +412,11 @@ export const AuthView: React.FC<AuthViewProps> = ({
                     <Loader2 className="w-4 h-4 animate-spin" />
                     <span>Processing...</span>
                   </>
+                ) : mode === 'setup' ? (
+                  <>
+                    <span>Complete Administrator Setup</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
                 ) : mode === 'signup' ? (
                   <>
                     <span>Create Account & Organization</span>
@@ -382,7 +438,11 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
             {/* Toggle Modes */}
             <div className="pt-2 border-t border-zinc-800/80 text-center text-xs font-mono text-zinc-400">
-              {mode === 'signup' ? (
+              {mode === 'setup' ? (
+                <div className="text-[11px] text-zinc-500">
+                  Initial administrator setup is performed once on installation. Credentials lock immediately upon submission.
+                </div>
+              ) : mode === 'signup' ? (
                 <div>
                   Already have an account?{' '}
                   <button
@@ -407,6 +467,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
                   >
                     Back to Sign In
                   </button>
+                </div>
+              ) : authProvider === 'local' ? (
+                <div className="text-[11px] text-zinc-500">
+                  Self-hosted access is governed by local administrator accounts and workspace invitations.
                 </div>
               ) : (
                 <div>
